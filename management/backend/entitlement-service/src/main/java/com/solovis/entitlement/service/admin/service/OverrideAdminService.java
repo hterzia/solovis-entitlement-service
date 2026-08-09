@@ -13,6 +13,7 @@ import com.solovis.entitlement.service.audit.AuditRecorder;
 import com.solovis.entitlement.service.dto.ValueMapper;
 import com.solovis.entitlement.service.error.EntitlementApiException;
 import com.solovis.entitlement.service.error.ErrorCode;
+import com.solovis.entitlement.service.error.RefId;
 import com.solovis.entitlement.service.snapshot.*;
 import com.solovis.entitlement.service.store.*;
 import org.springframework.stereotype.Service;
@@ -27,18 +28,20 @@ public class OverrideAdminService {
     private final AccountOverrideRepository accountOverrideRepository;
     private final CapabilityRepository capabilityRepository;
     private final AuditRecorder auditRecorder;
+    private final AuditJson auditJson;
     private final ActorResolver actorResolver;
     private final SnapshotPublisher snapshotPublisher;
     private final SnapshotHolder snapshotHolder;
     private final Clock clock;
 
     public OverrideAdminService(AccountRepository accountRepository, AccountOverrideRepository accountOverrideRepository,
-            CapabilityRepository capabilityRepository, AuditRecorder auditRecorder, ActorResolver actorResolver,
+            CapabilityRepository capabilityRepository, AuditRecorder auditRecorder, AuditJson auditJson, ActorResolver actorResolver,
             SnapshotPublisher snapshotPublisher, SnapshotHolder snapshotHolder, Clock clock) {
         this.accountRepository = accountRepository;
         this.accountOverrideRepository = accountOverrideRepository;
         this.capabilityRepository = capabilityRepository;
         this.auditRecorder = auditRecorder;
+        this.auditJson = auditJson;
         this.actorResolver = actorResolver;
         this.snapshotPublisher = snapshotPublisher;
         this.snapshotHolder = snapshotHolder;
@@ -75,7 +78,7 @@ public class OverrideAdminService {
 
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actor).source("UI").entityType("OVERRIDE")
             .entityId("ovr_" + id).action("CREATE").accountId(accountRow.id()).capabilityId(capRow.id())
-            .reason(request.reason()).afterJson(AuditJson.write(request)).build());
+            .reason(request.reason()).afterJson(auditJson.write(request)).build());
         var base = snapshotHolder.current();
         var next = SnapshotMutator.withOverrideAdded(base, base.snapshotVersion() + 1, override);
         long newVersion = snapshotPublisher.publish((b, v) -> next, auditSeq,
@@ -87,7 +90,7 @@ public class OverrideAdminService {
 
     @Transactional
     public OverrideMutationResponseDto delete(String external, String overrideRef, String removeReason) {
-        long id = Long.parseLong(overrideRef.replace("ovr_", ""));
+        long id = RefId.parse(overrideRef, "ovr_");
         var overrideRow = accountOverrideRepository.findById(id)
             .orElseThrow(() -> new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "No override '" + overrideRef + "'."));
         var accountRow = accountRepository.findByExternalId(external)

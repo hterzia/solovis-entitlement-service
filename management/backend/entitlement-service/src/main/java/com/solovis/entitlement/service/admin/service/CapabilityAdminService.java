@@ -31,18 +31,20 @@ public class CapabilityAdminService {
     private final AccountOverrideRepository accountOverrideRepository;
     private final PlanRepository planRepository;
     private final AuditRecorder auditRecorder;
+    private final AuditJson auditJson;
     private final ActorResolver actorResolver;
     private final SnapshotPublisher snapshotPublisher;
     private final Clock clock;
 
     public CapabilityAdminService(CapabilityRepository capabilityRepository, PlanEntitlementRepository planEntitlementRepository,
             AccountOverrideRepository accountOverrideRepository, PlanRepository planRepository, AuditRecorder auditRecorder,
-            ActorResolver actorResolver, SnapshotPublisher snapshotPublisher, Clock clock) {
+            AuditJson auditJson, ActorResolver actorResolver, SnapshotPublisher snapshotPublisher, Clock clock) {
         this.capabilityRepository = capabilityRepository;
         this.planEntitlementRepository = planEntitlementRepository;
         this.accountOverrideRepository = accountOverrideRepository;
         this.planRepository = planRepository;
         this.auditRecorder = auditRecorder;
+        this.auditJson = auditJson;
         this.actorResolver = actorResolver;
         this.snapshotPublisher = snapshotPublisher;
         this.clock = clock;
@@ -96,7 +98,7 @@ public class CapabilityAdminService {
         long auditSeq = auditRecorder.record(AuditEntry.builder()
             .actor(actorResolver.currentActor()).source("UI").entityType("CAPABILITY")
             .entityId(capability.key().value()).action("CREATE").capabilityId(id)
-            .afterJson(AuditJson.write(descriptor)).build());
+            .afterJson(auditJson.write(descriptor)).build());
 
         snapshotPublisher.publish((base, v) -> SnapshotMutator.withCapability(base, v, capability), auditSeq,
             new DeltaChange.CapabilityUpserted(descriptor));
@@ -132,8 +134,8 @@ public class CapabilityAdminService {
         long auditSeq = auditRecorder.record(AuditEntry.builder()
             .actor(actorResolver.currentActor()).source("UI").entityType("CAPABILITY")
             .entityId(key).action("UPDATE").capabilityId(row.id())
-            .beforeJson(AuditJson.write(CapabilityDescriptorMapper.toDescriptor(current)))
-            .afterJson(AuditJson.write(descriptor)).build());
+            .beforeJson(auditJson.write(CapabilityDescriptorMapper.toDescriptor(current)))
+            .afterJson(auditJson.write(descriptor)).build());
 
         snapshotPublisher.publish((base, v) -> SnapshotMutator.withCapability(base, v, updated), auditSeq,
             new DeltaChange.CapabilityUpserted(descriptor));
@@ -162,7 +164,7 @@ public class CapabilityAdminService {
         long auditSeq = auditRecorder.record(AuditEntry.builder()
             .actor(actorResolver.currentActor()).source("UI").entityType("CAPABILITY_TIER")
             .entityId(key).action("CREATE").capabilityId(row.id())
-            .afterJson(AuditJson.write(descriptor)).build());
+            .afterJson(auditJson.write(descriptor)).build());
 
         snapshotPublisher.publish((base, v) -> SnapshotMutator.withCapability(base, v, updated), auditSeq,
             new DeltaChange.CapabilityUpserted(descriptor));
@@ -193,7 +195,7 @@ public class CapabilityAdminService {
         long auditSeq = auditRecorder.record(AuditEntry.builder()
             .actor(actorResolver.currentActor()).source("UI").entityType("CAPABILITY")
             .entityId(key).action("RETIRE").capabilityId(row.id())
-            .afterJson(AuditJson.write(descriptor)).build());
+            .afterJson(auditJson.write(descriptor)).build());
 
         snapshotPublisher.publish((base, v) -> SnapshotMutator.withCapability(base, v, updated), auditSeq,
             new DeltaChange.CapabilityRetired(key));

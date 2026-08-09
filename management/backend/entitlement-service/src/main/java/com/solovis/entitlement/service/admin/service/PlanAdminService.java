@@ -29,18 +29,20 @@ public class PlanAdminService {
     private final CapabilityRepository capabilityRepository;
     private final PlanEntitlementRepository planEntitlementRepository;
     private final AuditRecorder auditRecorder;
+    private final AuditJson auditJson;
     private final ActorResolver actorResolver;
     private final SnapshotPublisher snapshotPublisher;
     private final SnapshotHolder snapshotHolder;
     private final Clock clock;
 
     public PlanAdminService(PlanRepository planRepository, CapabilityRepository capabilityRepository,
-            PlanEntitlementRepository planEntitlementRepository, AuditRecorder auditRecorder, ActorResolver actorResolver,
+            PlanEntitlementRepository planEntitlementRepository, AuditRecorder auditRecorder, AuditJson auditJson, ActorResolver actorResolver,
             SnapshotPublisher snapshotPublisher, SnapshotHolder snapshotHolder, Clock clock) {
         this.planRepository = planRepository;
         this.capabilityRepository = capabilityRepository;
         this.planEntitlementRepository = planEntitlementRepository;
         this.auditRecorder = auditRecorder;
+        this.auditJson = auditJson;
         this.actorResolver = actorResolver;
         this.snapshotPublisher = snapshotPublisher;
         this.snapshotHolder = snapshotHolder;
@@ -78,7 +80,7 @@ public class PlanAdminService {
 
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
             .entityType("PLAN").entityId(request.key()).action("CREATE").planId(requireRow(request.key()).id())
-            .afterJson(AuditJson.write(request)).build());
+            .afterJson(auditJson.write(request)).build());
         snapshotPublisher.publish((base, v) -> SnapshotMutator.withPlan(base, v, plan), auditSeq,
             new DeltaChange.PlanUpserted(plan.key(), plan.name(), "ACTIVE", false));
 
@@ -96,7 +98,7 @@ public class PlanAdminService {
 
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
             .entityType("PLAN").entityId(key).action("UPDATE").planId(row.id())
-            .beforeJson(AuditJson.write(Map.of("name", row.name()))).afterJson(AuditJson.write(Map.of("name", name))).build());
+            .beforeJson(auditJson.write(Map.of("name", row.name()))).afterJson(auditJson.write(Map.of("name", name))).build());
         snapshotPublisher.publish((base, v) -> SnapshotMutator.withPlan(base, v, plan), auditSeq,
             new DeltaChange.PlanUpserted(key, name, row.status(), row.defaultForNewAccounts()));
 
@@ -185,7 +187,7 @@ public class PlanAdminService {
         long affected = planRepository.countAccounts(row.id());
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
             .entityType("PLAN_ENTITLEMENT").entityId(key).action("UPDATE").planId(row.id())
-            .afterJson(AuditJson.write(setDtos)).affectedAccountCount(affected).build());
+            .afterJson(auditJson.write(setDtos)).affectedAccountCount(affected).build());
 
         long newVersion = snapshotPublisher.publish((base, v) -> {
             Snapshot next = base;

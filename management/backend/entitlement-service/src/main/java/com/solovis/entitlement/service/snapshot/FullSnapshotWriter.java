@@ -1,6 +1,5 @@
 package com.solovis.entitlement.service.snapshot;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.solovis.entitlement.core.conformance.ConformanceVector;
 import com.solovis.entitlement.core.conformance.ResolverContract;
 import com.solovis.entitlement.core.model.AccountAssignment;
@@ -11,10 +10,12 @@ import com.solovis.entitlement.core.view.EntitlementView;
 import com.solovis.entitlement.core.view.Snapshot;
 import com.solovis.entitlement.service.dto.CapabilityDescriptorMapper;
 import com.solovis.entitlement.service.dto.ValueMapper;
+import tools.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -23,7 +24,13 @@ import java.util.Map;
 @org.springframework.stereotype.Component
 public class FullSnapshotWriter {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private final ObjectMapper mapper;
+    private final Clock clock;
+
+    public FullSnapshotWriter(ObjectMapper mapper, Clock clock) {
+        this.mapper = mapper;
+        this.clock = clock;
+    }
 
     public void write(Snapshot snapshot, OutputStream out) throws IOException {
         var writer = new PrintWriter(new java.io.OutputStreamWriter(out, StandardCharsets.UTF_8));
@@ -52,15 +59,15 @@ public class FullSnapshotWriter {
         }
 
         var header = Map.of("kind", "header", "version", snapshot.snapshotVersion(), "format", 1,
-            "resolverContract", ResolverContract.VERSION, "publishedAt", java.time.Instant.now().toString(),
+            "resolverContract", ResolverContract.VERSION, "publishedAt", clock.instant().toString(),
             "counts", Map.of("capabilities", capabilityCount, "plans", planCount,
                 "accounts", accountCount, "overrides", overrideCount));
-        writer.println(MAPPER.writeValueAsString(header));
+        writer.println(mapper.writeValueAsString(header));
         for (var line : lines) {
-            writer.println(MAPPER.writeValueAsString(line));
+            writer.println(mapper.writeValueAsString(line));
         }
         var footer = Map.of("kind", "footer", "version", snapshot.snapshotVersion(), "recordCount", lines.size() + 2);
-        writer.println(MAPPER.writeValueAsString(footer));
+        writer.println(mapper.writeValueAsString(footer));
         writer.flush();
     }
 

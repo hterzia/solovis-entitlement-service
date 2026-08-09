@@ -1,13 +1,15 @@
 package com.solovis.entitlement.service.snapshot;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.SerializationFeature;
+import tools.jackson.databind.json.JsonMapper;
 
 /** (De)serialises one {@link DeltaChange} to/from the {@code snapshot_version.delta_json} column. A dedicated, minimal mapper — this format is internal, decoupled from the API-response Jackson configuration in Task 10. */
 public final class DeltaJson {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper()
-        .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
+    private static final ObjectMapper MAPPER = JsonMapper.builder()
+        .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
+        .build();
 
     private DeltaJson() {}
 

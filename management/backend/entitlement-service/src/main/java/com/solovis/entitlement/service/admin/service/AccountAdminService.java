@@ -29,6 +29,7 @@ public class AccountAdminService {
     private final PlanRepository planRepository;
     private final CapabilityRepository capabilityRepository;
     private final AuditRecorder auditRecorder;
+    private final AuditJson auditJson;
     private final ActorResolver actorResolver;
     private final SnapshotPublisher snapshotPublisher;
     private final SnapshotHolder snapshotHolder;
@@ -36,12 +37,13 @@ public class AccountAdminService {
 
     public AccountAdminService(AccountRepository accountRepository, AccountOverrideRepository accountOverrideRepository,
             PlanRepository planRepository, CapabilityRepository capabilityRepository, AuditRecorder auditRecorder,
-            ActorResolver actorResolver, SnapshotPublisher snapshotPublisher, SnapshotHolder snapshotHolder, Clock clock) {
+            AuditJson auditJson, ActorResolver actorResolver, SnapshotPublisher snapshotPublisher, SnapshotHolder snapshotHolder, Clock clock) {
         this.accountRepository = accountRepository;
         this.accountOverrideRepository = accountOverrideRepository;
         this.planRepository = planRepository;
         this.capabilityRepository = capabilityRepository;
         this.auditRecorder = auditRecorder;
+        this.auditJson = auditJson;
         this.actorResolver = actorResolver;
         this.snapshotPublisher = snapshotPublisher;
         this.snapshotHolder = snapshotHolder;
@@ -173,17 +175,22 @@ public class AccountAdminService {
         }
         String source = request.source() != null ? request.source() : actorResolver.currentActor().kind().name();
         String actorId = request.actor() != null ? request.actor() : actorResolver.currentActor().id();
+        com.solovis.entitlement.service.audit.Actor.Kind sourceKind;
+        try {
+            sourceKind = com.solovis.entitlement.service.audit.Actor.Kind.valueOf(source);
+        } catch (IllegalArgumentException e) {
+            throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "Unknown actor source '" + source + "'.");
+        }
         String now = clock.instant().toString();
         accountRepository.updatePlanAssignment(row.id(), targetPlan.id(), now, source, actorId, now);
         var assignment = new AccountAssignment(external, targetPlan.key());
 
         long auditSeq = auditRecorder.record(AuditEntry.builder()
-            .actor(new com.solovis.entitlement.service.audit.Actor(actorId,
-                com.solovis.entitlement.service.audit.Actor.Kind.valueOf(source)))
+            .actor(new com.solovis.entitlement.service.audit.Actor(actorId, sourceKind))
             .source("UI").entityType("ACCOUNT_PLAN").entityId(external).action("ASSIGN").accountId(row.id())
             .planId(targetPlan.id()).reason(request.reason())
-            .beforeJson(AuditJson.write(Map.of("planKey", planRepository.findById(row.planId()).map(PlanRow::key).orElse(null))))
-            .afterJson(AuditJson.write(Map.of("planKey", targetPlan.key()))).build());
+            .beforeJson(auditJson.write(Map.of("planKey", planRepository.findById(row.planId()).map(PlanRow::key).orElse(null))))
+            .afterJson(auditJson.write(Map.of("planKey", targetPlan.key()))).build());
         long newVersion = snapshotPublisher.publish((base, v) -> SnapshotMutator.withAccount(base, v, assignment), auditSeq,
             new DeltaChange.AccountUpserted(external, targetPlan.key()));
 
