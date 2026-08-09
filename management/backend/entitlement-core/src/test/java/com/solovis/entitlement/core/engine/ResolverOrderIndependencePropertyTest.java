@@ -48,11 +48,15 @@ class ResolverOrderIndependencePropertyTest {
         }
 
         var baseline = resolveWith(planAmount, overrides);
+        assertThat(explainValueWith(planAmount, overrides))
+            .as("resolve() and explain() must agree on the value (c24)")
+            .isEqualTo(baseline);
 
         for (int trial = 0; trial < 5; trial++) {
             var shuffled = new java.util.ArrayList<>(overrides);
             Collections.shuffle(shuffled);
             assertThat(resolveWith(planAmount, shuffled)).isEqualTo(baseline);
+            assertThat(explainValueWith(planAmount, shuffled)).isEqualTo(baseline);
         }
     }
 
@@ -62,6 +66,14 @@ class ResolverOrderIndependencePropertyTest {
     }
 
     private static EntitlementValue resolveWith(long planAmount, List<AccountOverride> overrides) {
+        return Resolver.resolve(snapshotWith(planAmount, overrides), "acct_1", REPORTS, Instant.now()).value();
+    }
+
+    private static EntitlementValue explainValueWith(long planAmount, List<AccountOverride> overrides) {
+        return Resolver.explain(snapshotWith(planAmount, overrides), "acct_1", REPORTS, Instant.now()).decision().value();
+    }
+
+    private static com.solovis.entitlement.core.view.Snapshot snapshotWith(long planAmount, List<AccountOverride> overrides) {
         var builder = new SnapshotBuilder()
             .capability(new Capability(REPORTS, "Monthly reports", null, ValueType.QUANTITY,
                 EntitlementValue.Quantity.of(0), Optional.empty(), TierOrder.NONE, Capability.Status.ACTIVE, null))
@@ -69,6 +81,6 @@ class ResolverOrderIndependencePropertyTest {
             .planEntitlement(new PlanEntitlement("pro", REPORTS, EntitlementValue.Quantity.of(planAmount)))
             .account(new AccountAssignment("acct_1", "pro"));
         overrides.forEach(builder::override);
-        return Resolver.resolve(builder.build(1), "acct_1", REPORTS, Instant.now()).value();
+        return builder.build(1);
     }
 }

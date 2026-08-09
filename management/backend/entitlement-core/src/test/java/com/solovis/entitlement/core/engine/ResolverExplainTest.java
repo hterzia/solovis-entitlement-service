@@ -153,6 +153,64 @@ class ResolverExplainTest {
     }
 
     @Test
+    void nonApplyingTopGrantStillLeavesOtherGrantsMarkedLostToTheWinningGrant() {
+        var weaker = new AccountOverride(OptionalLong.of(1), "acct_1", REPORTS, OverrideKind.GRANT,
+            EntitlementValue.Quantity.of(100), Optional.of("r1"), Optional.of("a1"), Optional.of(NOW));
+        var strongerButStillBelowPlan = new AccountOverride(OptionalLong.of(2), "acct_1", REPORTS, OverrideKind.GRANT,
+            EntitlementValue.Quantity.of(150), Optional.of("r2"), Optional.of("a2"), Optional.of(NOW));
+
+        var snapshot = new SnapshotBuilder()
+            .capability(new Capability(REPORTS, "Monthly reports", null, ValueType.QUANTITY,
+                EntitlementValue.Quantity.of(0), Optional.empty(), TierOrder.NONE, Capability.Status.ACTIVE, null))
+            .plan(new Plan("pro", "Pro", Plan.Status.ACTIVE, false))
+            .planEntitlement(new PlanEntitlement("pro", REPORTS, EntitlementValue.Quantity.of(200)))
+            .account(new AccountAssignment("acct_1", "pro"))
+            .override(weaker)
+            .override(strongerButStillBelowPlan)
+            .build(1);
+
+        var explanation = Resolver.explain(snapshot, "acct_1", REPORTS, NOW);
+
+        assertThat(explanation.trace().grantWinner()).isEmpty(); // the plan still stands
+        var topEntry = explanation.trace().grants().stream()
+            .filter(e -> e.overrideId().equals(OptionalLong.of(2))).findFirst().orElseThrow();
+        assertThat(topEntry.outcome()).contains(Outcome.LOST_NOT_MORE_GENEROUS_THAN_PLAN);
+        var otherEntry = explanation.trace().grants().stream()
+            .filter(e -> e.overrideId().equals(OptionalLong.of(1))).findFirst().orElseThrow();
+        assertThat(otherEntry.outcome()).contains(Outcome.LOST_NOT_MORE_GENEROUS_THAN_WINNING_GRANT);
+        assertThat(explanation.trace().result()).isEqualTo(EntitlementValue.Quantity.of(200));
+    }
+
+    @Test
+    void nonApplyingTopHoldStillLeavesOtherHoldsMarkedLostToTheWinningHold() {
+        var lessRestrictive = new AccountOverride(OptionalLong.of(1), "acct_1", REPORTS, OverrideKind.HOLD,
+            EntitlementValue.Quantity.of(100), Optional.of("r1"), Optional.of("a1"), Optional.of(NOW));
+        var stillNotRestrictiveEnough = new AccountOverride(OptionalLong.of(2), "acct_1", REPORTS, OverrideKind.HOLD,
+            EntitlementValue.Quantity.of(75), Optional.of("r2"), Optional.of("a2"), Optional.of(NOW));
+
+        var snapshot = new SnapshotBuilder()
+            .capability(new Capability(REPORTS, "Monthly reports", null, ValueType.QUANTITY,
+                EntitlementValue.Quantity.of(0), Optional.empty(), TierOrder.NONE, Capability.Status.ACTIVE, null))
+            .plan(new Plan("pro", "Pro", Plan.Status.ACTIVE, false))
+            .planEntitlement(new PlanEntitlement("pro", REPORTS, EntitlementValue.Quantity.of(50)))
+            .account(new AccountAssignment("acct_1", "pro"))
+            .override(lessRestrictive)
+            .override(stillNotRestrictiveEnough)
+            .build(1);
+
+        var explanation = Resolver.explain(snapshot, "acct_1", REPORTS, NOW);
+
+        assertThat(explanation.trace().holdWinner()).isEmpty(); // 50 already beats both holds
+        var topEntry = explanation.trace().holds().stream()
+            .filter(e -> e.overrideId().equals(OptionalLong.of(2))).findFirst().orElseThrow(); // 75 is the more restrictive of the two
+        assertThat(topEntry.outcome()).contains(Outcome.WON); // always WON regardless of whether it applies
+        var otherEntry = explanation.trace().holds().stream()
+            .filter(e -> e.overrideId().equals(OptionalLong.of(1))).findFirst().orElseThrow();
+        assertThat(otherEntry.outcome()).contains(Outcome.LOST_NOT_MORE_RESTRICTIVE_THAN_WINNING_HOLD);
+        assertThat(explanation.trace().result()).isEqualTo(EntitlementValue.Quantity.of(50));
+    }
+
+    @Test
     void resolveAndExplainAlwaysAgreeOnTheValue() {
         var snapshot = new SnapshotBuilder()
             .capability(new Capability(REPORTS, "Monthly reports", null, ValueType.QUANTITY,
