@@ -43,6 +43,18 @@ describe('CapabilityDetailRoute', () => {
     })
   })
 
+  it('does not retire on the initial click — Cancel truly cancels', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<CapabilityDetailRoute capabilityKey="reports.monthly" />)
+    await waitFor(() => expect(screen.getByText('Monthly reports')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'Retire capability' }))
+    expect(screen.getByText(/used by 1 plan/i)).toBeInTheDocument()
+    await expect(getCapability('reports.monthly')).resolves.toMatchObject({ status: 'ACTIVE' })
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByText(/used by 1 plan/i)).not.toBeInTheDocument()
+    await expect(getCapability('reports.monthly')).resolves.toMatchObject({ status: 'ACTIVE' })
+  })
+
   it('retires with a confirmation naming usage, and offers no delete control', async () => {
     const user = userEvent.setup()
     renderWithProviders(<CapabilityDetailRoute capabilityKey="reports.monthly" />)

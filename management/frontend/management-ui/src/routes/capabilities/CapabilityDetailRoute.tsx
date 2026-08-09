@@ -22,7 +22,6 @@ export function CapabilityDetailRoute({ capabilityKey }: { capabilityKey?: strin
   const [newTierKey, setNewTierKey] = useState('')
   const [newTierName, setNewTierName] = useState('')
   const [confirmingRetire, setConfirmingRetire] = useState(false)
-  const [usage, setUsage] = useState<{ plans: string[]; liveOverrides: number } | null>(null)
 
   useEffect(() => {
     if (capability.data) {
@@ -42,16 +41,13 @@ export function CapabilityDetailRoute({ capabilityKey }: { capabilityKey?: strin
     mutationFn: () => addCapabilityTier(key, { tier: newTierKey, displayName: newTierName }),
     onSuccess: () => { invalidate(); setNewTierKey(''); setNewTierName('') },
   })
-  const retireMutation = useMutation({ mutationFn: () => retireCapability(key), onSuccess: invalidate })
+  const retireMutation = useMutation({
+    mutationFn: () => retireCapability(key),
+    onSuccess: () => { invalidate(); setConfirmingRetire(false) },
+  })
 
   if (!capability.data || !defaultValue) return <p>Loading…</p>
   const cap = capability.data
-
-  async function startRetire() {
-    const result = await retireCapability(key)
-    setUsage(result.usage)
-    setConfirmingRetire(true)
-  }
 
   return (
     <div className="app-panel">
@@ -85,11 +81,11 @@ export function CapabilityDetailRoute({ capabilityKey }: { capabilityKey?: strin
       )}
 
       {cap.status === 'ACTIVE' && !confirmingRetire && (
-        <button type="button" className="sv-btn--secondary" onClick={startRetire}>Retire capability</button>
+        <button type="button" className="sv-btn--secondary" onClick={() => setConfirmingRetire(true)}>Retire capability</button>
       )}
-      {confirmingRetire && usage && (
+      {confirmingRetire && (
         <div className="app-panel">
-          <p>Used by {usage.plans.length} plan{usage.plans.length === 1 ? '' : 's'}, {usage.liveOverrides} live overrides.</p>
+          <p>Used by {cap.usage.plans.length} plan{cap.usage.plans.length === 1 ? '' : 's'}, {cap.usage.liveOverrides} live overrides.</p>
           <p>Retirement is permanent. This capability stays visible in history.</p>
           <button type="button" className="sv-btn" onClick={() => retireMutation.mutate()}>Confirm retirement</button>
           <button type="button" className="sv-btn--secondary" onClick={() => setConfirmingRetire(false)}>Cancel</button>

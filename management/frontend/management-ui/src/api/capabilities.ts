@@ -11,7 +11,7 @@ export function listCapabilities(params?: { area?: string; q?: string; status?: 
 }
 
 export function getCapability(key: string) {
-  return apiGet<Capability>(`/capabilities/${key}`)
+  return apiGet<Capability & { usage: { plans: string[]; liveOverrides: number } }>(`/capabilities/${key}`)
 }
 
 export interface CreateCapabilityInput {

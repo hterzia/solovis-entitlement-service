@@ -84,7 +84,7 @@ export const handlers = [
   http.get('/admin/v1/capabilities/:key', ({ params }) => {
     const cap = db.capabilities.find((c) => c.key === params.key)
     if (!cap) return problem(404, 'entitlement/unknown-capability', `No capability '${params.key}'.`)
-    return HttpResponse.json(cap)
+    return HttpResponse.json({ ...cap, usage: { plans: ['pro'], liveOverrides: 1 } })
   }),
 
   http.patch('/admin/v1/capabilities/:key', async ({ params, request }) => {
