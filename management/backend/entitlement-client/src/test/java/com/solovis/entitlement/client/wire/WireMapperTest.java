@@ -56,6 +56,15 @@ class WireMapperTest {
     }
 
     @Test
+    void aQuantityDeclaringBothUnlimitedAndAnAmountIsAMalformedFeedBecauseUnlimitedIsNeverANumber() {
+        var dto = new ValueDto("QUANTITY", null, 9999L, true, null, null);
+
+        assertThatThrownBy(() -> WireMapper.toValue(dto))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("QUANTITY");
+    }
+
+    @Test
     void aCapabilityLineWithoutOffValueOrTiersParsesBecauseTheServiceOmitsRatherThanNullsThem() {
         var json = """
             {"kind":"capability","key":"api.access","area":"api","valueType":"SWITCH",
