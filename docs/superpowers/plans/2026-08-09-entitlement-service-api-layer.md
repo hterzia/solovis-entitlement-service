@@ -4738,6 +4738,302 @@ git commit -m "feat(entitlement-service): Jackson/OpenAPI/SPA-fallback wiring an
 
 ---
 
+## Task 11: `GET /admin/v1/capabilities/{key}` returns usage (post-merge contract audit, 2026-08-09)
+
+Tasks 1–10 above shipped and merged; this task and Task 12 are an addendum written after a UI-vs-contract audit found two of this plan's own Steps under-specified their endpoint relative to `admin-api.md`. This is a planning gap in this document, not an implementer deviation — Task 5 Step 4 above literally specifies the same bare `CapabilityDescriptorDto` return that shipped.
+
+The contract's route table (`admin-api.md` line 23) states this endpoint returns "One capability, plus where it is used" — the same `usage: { plans, liveOverrides }` shape Task 5's retire endpoint already returns. The operator UI's retire-confirmation screen depends on this field being present on the plain GET (it must show usage *before* an irreversible retire, not after) and currently crashes reading `undefined.plans` against the real backend.
+
+**Files:**
+- Create: `entitlement-service/src/main/java/com/solovis/entitlement/service/admin/dto/CapabilityDetailResponseDto.java`
+- Modify: `entitlement-service/src/main/java/com/solovis/entitlement/service/admin/service/CapabilityAdminService.java`
+- Modify: `entitlement-service/src/main/java/com/solovis/entitlement/service/admin/CapabilityAdminController.java`
+- Test: `entitlement-service/src/test/java/com/solovis/entitlement/service/admin/CapabilityAdminServiceTest.java`
+- Test: `entitlement-service/src/test/java/com/solovis/entitlement/service/admin/CapabilityAdminControllerTest.java`
+
+**Interfaces:**
+- Produces: `CapabilityAdminService.get(String key)` now returns `CapabilityDetailResponseDto` (was `CapabilityDescriptorDto`). `CapabilityDetailResponseDto` wire-serializes with the descriptor's fields (`key`, `area`, `displayName`, `description`, `valueType`, `default`, `offValue`, `tiers`, `status`) at the **top level**, via `@JsonUnwrapped`, with `usage: { plans, liveOverrides }` alongside — the exact same flat shape the retire endpoint's descriptor portion already has, just without retirement having happened.
+- Consumes: `CapabilityRetireResponseDto.Usage` (Task 5, existing), `PlanEntitlementRepository.findPlanIdsUsingCapability`, `AccountOverrideRepository.countLiveForCapability`, `CapabilityDescriptorMapper.toDescriptor` (all Task 5, already used by `retire()`).
+
+- [ ] **Step 1: Write the failing tests**
+
+Add to `CapabilityAdminControllerTest.java` (add `import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;` alongside the existing `post` import):
+
+```java
+    @Test
+    void getReturnsTheDescriptorFlatWithUsageAlongside() throws Exception {
+        String body = """
+            {"key":"t9.export.csv","displayName":"Export CSV","valueType":"SWITCH",
+             "default":{"type":"SWITCH","enabled":false}}
+            """;
+        mockMvc.perform(post("/admin/v1/capabilities").contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/admin/v1/capabilities/t9.export.csv"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.key").value("t9.export.csv"))
+            .andExpect(jsonPath("$.displayName").value("Export CSV"))
+            .andExpect(jsonPath("$.usage.plans").isArray())
+            .andExpect(jsonPath("$.usage.liveOverrides").value(0));
+    }
+```
+
+Add to `CapabilityAdminServiceTest.java` (the file that already has `retireReturnsUsageAndRemainsReadableAfterwards`):
+
+```java
+    @Test
+    void getIncludesUsage() {
+        var create = new CapabilityCreateRequest("t8.export.csv", "Export CSV", null, "SWITCH",
+            new ValueDto("SWITCH", false, null, null, null, null), null, null);
+        service.create(create);
+
+        var result = service.get("t8.export.csv");
+
+        assertThat(result.descriptor().key()).isEqualTo("t8.export.csv");
+        assertThat(result.usage().plans()).isEmpty();
+        assertThat(result.usage().liveOverrides()).isZero();
+    }
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `./mvnw -pl entitlement-service -am test -Dtest=CapabilityAdminServiceTest#getIncludesUsage,CapabilityAdminControllerTest#getReturnsTheDescriptorFlatWithUsageAlongside`
+Expected: compile failure (`CapabilityAdminService.get` doesn't return a type with `.descriptor()`/`.usage()`; JSON path `$.usage` doesn't exist yet).
+
+- [ ] **Step 3: Create the response DTO**
+
+```java
+package com.solovis.entitlement.service.admin.dto;
+
+import com.fasterxml.jackson.annotation.JsonUnwrapped;
+import com.solovis.entitlement.service.dto.CapabilityDescriptorDto;
+
+/**
+ * GET /admin/v1/capabilities/{key} — the descriptor's own fields at the top level (admin-api.md:
+ * "One capability, plus where it is used"), with `usage` alongside. Unwrapped rather than nested
+ * under a `capability` key so a caller reading `displayName`/`valueType`/... sees the same shape
+ * here as from every other capability-returning endpoint except retire.
+ */
+public record CapabilityDetailResponseDto(
+    @JsonUnwrapped CapabilityDescriptorDto descriptor,
+    CapabilityRetireResponseDto.Usage usage
+) {}
+```
+
+- [ ] **Step 4: Extract the shared usage computation and wire it into `get()`**
+
+In `CapabilityAdminService.java`, replace the existing `get()` method:
+
+```java
+    public CapabilityDetailResponseDto get(String key) {
+        var row = capabilityRepository.findByKey(key)
+            .orElseThrow(() -> new com.solovis.entitlement.core.error.UnknownCapabilityException(key));
+        var domain = com.solovis.entitlement.service.snapshot.RowMappers.toCapability(row, capabilityRepository.findTiers(row.id()));
+        return new CapabilityDetailResponseDto(CapabilityDescriptorMapper.toDescriptor(domain), usageOf(row));
+    }
+```
+
+Inside `retire()`, replace:
+
+```java
+        var planKeys = planEntitlementRepository.findPlanIdsUsingCapability(row.id()).stream()
+            .map(planId -> planRepository.findById(planId).orElseThrow().key()).toList();
+        long liveOverrides = accountOverrideRepository.countLiveForCapability(row.id());
+```
+
+and its use in the final `new CapabilityRetireResponseDto(descriptor, new CapabilityRetireResponseDto.Usage(planKeys, liveOverrides));` line, with:
+
+```java
+        var usage = usageOf(row);
+```
+
+updating that final line to `new CapabilityRetireResponseDto(descriptor, usage);`. Add the shared private helper (near `loadDomain`):
+
+```java
+    private CapabilityRetireResponseDto.Usage usageOf(CapabilityRow row) {
+        var planKeys = planEntitlementRepository.findPlanIdsUsingCapability(row.id()).stream()
+            .map(planId -> planRepository.findById(planId).orElseThrow().key()).toList();
+        long liveOverrides = accountOverrideRepository.countLiveForCapability(row.id());
+        return new CapabilityRetireResponseDto.Usage(planKeys, liveOverrides);
+    }
+```
+
+- [ ] **Step 5: Update the controller's return type**
+
+In `CapabilityAdminController.java`, change:
+
+```java
+    @GetMapping("/{key}")
+    public com.solovis.entitlement.service.dto.CapabilityDescriptorDto get(@PathVariable String key) {
+        return service.get(key);
+    }
+```
+
+to:
+
+```java
+    @GetMapping("/{key}")
+    public CapabilityDetailResponseDto get(@PathVariable String key) {
+        return service.get(key);
+    }
+```
+
+(`CapabilityDetailResponseDto` is already in scope via the existing `import com.solovis.entitlement.service.admin.dto.*;`.)
+
+- [ ] **Step 6: Run the tests to verify they pass**
+
+Run: `./mvnw -pl entitlement-service -am test -Dtest=CapabilityAdminServiceTest,CapabilityAdminControllerTest`
+Expected: all pass, including the two new tests. The controller test's `$.displayName` / `$.usage.plans` assertions are the proof `@JsonUnwrapped` actually flattens `descriptor` rather than nesting it. If Jackson 3 refuses to unwrap here (the codebase has one documented case, in `SnapshotDeltaResponseDto`, where `@JsonUnwrapped` doesn't work for a *polymorphic* type — this DTO is not polymorphic, but verify empirically), fall back to a hand-written `Map<String, Object>` merge of the descriptor's fields and `usage`, and note the deviation in the report.
+
+- [ ] **Step 7: Run the whole reactor's tests and commit**
+
+Run: `./mvnw -pl entitlement-service -am test`
+Expected: full suite green, no regressions elsewhere in `CapabilityAdminService`'s callers.
+
+```bash
+git add entitlement-service/src/main/java/com/solovis/entitlement/service/admin/dto/CapabilityDetailResponseDto.java \
+        entitlement-service/src/main/java/com/solovis/entitlement/service/admin/service/CapabilityAdminService.java \
+        entitlement-service/src/main/java/com/solovis/entitlement/service/admin/CapabilityAdminController.java \
+        entitlement-service/src/test/java/com/solovis/entitlement/service/admin/CapabilityAdminServiceTest.java \
+        entitlement-service/src/test/java/com/solovis/entitlement/service/admin/CapabilityAdminControllerTest.java
+git commit -m "fix(entitlement-service): GET capability includes usage, per contract"
+```
+
+---
+
+## Task 12: `GET /admin/v1/accounts` returns a genuine `nextCursor` (post-merge contract audit, 2026-08-09)
+
+Same category of gap as Task 11, this time in Task 7 Step 4 above: the contract's route table (`admin-api.md` line 181) states this endpoint is "cursor-paged," but the Step 4 controller code this plan specified returns `Map.of("accounts", service.search(...))` — no cursor field at all, so no caller can ever reach a second page. This task makes the response carry an opaque `acct_<id>` cursor (mirroring the existing `aud_<seq>` convention already used by the audit endpoint, Task 8) whenever more rows exist.
+
+**Files:**
+- Create: `entitlement-service/src/main/java/com/solovis/entitlement/service/admin/dto/AccountSearchResponseDto.java`
+- Modify: `entitlement-service/src/main/java/com/solovis/entitlement/service/admin/service/AccountAdminService.java`
+- Modify: `entitlement-service/src/main/java/com/solovis/entitlement/service/admin/AccountAdminController.java`
+- Test: `entitlement-service/src/test/java/com/solovis/entitlement/service/admin/AccountAdminServiceTest.java`
+
+**Interfaces:**
+- Produces: `AccountAdminService.search(String q, String planKey, long afterId, int limit)` now returns `AccountSearchResponseDto(List<AccountSummaryDto> accounts, String nextCursor)` (was `List<AccountSummaryDto>`). `nextCursor` is `null` when the page returned is the last one.
+- Consumes: `AccountRepository.search(String q, Long planId, long afterId, int limit)` (Task 7, unchanged signature — called with `limit + 1` to detect a next page without changing the repository's own contract), `RefId.parse`/prefix convention (Task 1, `error/RefId.java`).
+
+- [ ] **Step 1: Write the failing test**
+
+Add to `AccountAdminServiceTest.java`:
+
+```java
+    @Test
+    void searchPagesByCursorWhenMoreAccountsExist() {
+        planService.create(new PlanCreateRequest("cursor-test-plan", "Cursor test plan", null));
+        planService.designateDefault("cursor-test-plan");
+        accountService.create(new AccountCreateRequest("acct_cursor_page_0", null));
+        accountService.create(new AccountCreateRequest("acct_cursor_page_1", null));
+        accountService.create(new AccountCreateRequest("acct_cursor_page_2", null));
+
+        var firstPage = accountService.search("acct_cursor_page", null, 0, 2);
+        assertThat(firstPage.accounts()).hasSize(2);
+        assertThat(firstPage.nextCursor()).isNotNull();
+
+        long afterId = com.solovis.entitlement.service.error.RefId.parse(firstPage.nextCursor(), "acct_");
+        var secondPage = accountService.search("acct_cursor_page", null, afterId, 2);
+        assertThat(secondPage.accounts()).hasSize(1);
+        assertThat(secondPage.nextCursor()).isNull();
+    }
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `./mvnw -pl entitlement-service -am test -Dtest=AccountAdminServiceTest#searchPagesByCursorWhenMoreAccountsExist`
+Expected: compile failure — `search()` currently returns `List<AccountSummaryDto>`, which has no `.accounts()`/`.nextCursor()`.
+
+- [ ] **Step 3: Create the response DTO**
+
+```java
+package com.solovis.entitlement.service.admin.dto;
+
+import java.util.List;
+
+public record AccountSearchResponseDto(List<AccountSummaryDto> accounts, String nextCursor) {}
+```
+
+- [ ] **Step 4: Rewrite `AccountAdminService.search()`**
+
+Replace:
+
+```java
+    public List<AccountSummaryDto> search(String q, String planKey, long afterId, int limit) {
+        Long planId = planKey == null ? null : planRepository.findByKey(planKey).map(PlanRow::id).orElse(-1L);
+        return accountRepository.search(q, planId, afterId, limit).stream()
+            .map(row -> new AccountSummaryDto(row.externalId(), row.name(),
+                planRepository.findById(row.planId()).map(PlanRow::key).orElseThrow(), row.status()))
+            .toList();
+    }
+```
+
+with:
+
+```java
+    public AccountSearchResponseDto search(String q, String planKey, long afterId, int limit) {
+        Long planId = planKey == null ? null : planRepository.findByKey(planKey).map(PlanRow::id).orElse(-1L);
+        var rows = accountRepository.search(q, planId, afterId, limit + 1);
+        boolean hasMore = rows.size() > limit;
+        var page = hasMore ? rows.subList(0, limit) : rows;
+        var accounts = page.stream()
+            .map(row -> new AccountSummaryDto(row.externalId(), row.name(),
+                planRepository.findById(row.planId()).map(PlanRow::key).orElseThrow(), row.status()))
+            .toList();
+        String nextCursor = hasMore ? "acct_" + page.get(page.size() - 1).id() : null;
+        return new AccountSearchResponseDto(accounts, nextCursor);
+    }
+```
+
+- [ ] **Step 5: Update the controller**
+
+In `AccountAdminController.java`, add `import com.solovis.entitlement.service.error.RefId;`, remove the now-unused `import java.util.Map;` (nothing else in this file uses `Map`), and replace:
+
+```java
+    @GetMapping
+    public Map<String, Object> search(
+        @RequestParam(required = false) String q, @RequestParam(required = false) String planKey,
+        @RequestParam(required = false, defaultValue = "0") long cursor,
+        @RequestParam(required = false, defaultValue = "50") int limit) {
+        return Map.of("accounts", service.search(q, planKey, cursor, limit));
+    }
+```
+
+with:
+
+```java
+    @GetMapping
+    public AccountSearchResponseDto search(
+        @RequestParam(required = false) String q, @RequestParam(required = false) String planKey,
+        @RequestParam(required = false) String cursor,
+        @RequestParam(required = false, defaultValue = "50") int limit) {
+        long afterId = cursor == null ? 0 : RefId.parse(cursor, "acct_");
+        return service.search(q, planKey, afterId, limit);
+    }
+```
+
+- [ ] **Step 6: Run the tests to verify they pass**
+
+Run: `./mvnw -pl entitlement-service -am test -Dtest=AccountAdminServiceTest`
+Expected: all pass, including `searchPagesByCursorWhenMoreAccountsExist`.
+
+- [ ] **Step 7: Run the whole reactor's tests and commit**
+
+Run: `./mvnw -pl entitlement-service -am test`
+Expected: full suite green. Confirm `AccountAdminController` is `search()`'s only caller before assuming the return-type change is contained (`grep -rn "\.search(" entitlement-service/src/main/java`).
+
+```bash
+git add entitlement-service/src/main/java/com/solovis/entitlement/service/admin/dto/AccountSearchResponseDto.java \
+        entitlement-service/src/main/java/com/solovis/entitlement/service/admin/service/AccountAdminService.java \
+        entitlement-service/src/main/java/com/solovis/entitlement/service/admin/AccountAdminController.java \
+        entitlement-service/src/test/java/com/solovis/entitlement/service/admin/AccountAdminServiceTest.java
+git commit -m "fix(entitlement-service): GET accounts returns a genuine nextCursor, per contract"
+```
+
+- [ ] **Final verification for Tasks 11–12:** `./mvnw -pl entitlement-service -am test` green; `spring-boot:run` then `curl http://172.17.192.221:8081/admin/v1/capabilities/<any-active-key>` shows a top-level `usage`; `curl http://172.17.192.221:8081/admin/v1/accounts?limit=1` shows a non-null `nextCursor` when more than one account exists.
+
+---
+
 ## Self-Review
 
 **Spec coverage** — every route in `contracts/decision-api.md`, `contracts/admin-api.md` and `contracts/snapshot-feed.md` maps to a task above: decision API → Task 4; capabilities/plans/accounts+overrides/checker/audit/meta → Tasks 5–8; snapshot feed → Tasks 3+9. `contracts/java-client-sdk.md` and `contracts/ui-screens.md` are explicitly **not** in scope — the SDK is a separate future module (`entitlement-client` stays an empty shell after this plan) and the UI is the concurrent frontend-worktree agent's own plan. The error model (`contracts/README.md`) is Task 1 and reused everywhere via `EntitlementApiException`/`GlobalExceptionHandler` — no task defines a competing error shape.
