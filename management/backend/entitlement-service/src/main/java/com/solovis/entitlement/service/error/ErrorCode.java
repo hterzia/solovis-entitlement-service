@@ -18,6 +18,8 @@ public enum ErrorCode {
     SNAPSHOT_BEHIND("entitlement/snapshot-behind", HttpStatus.CONFLICT, "Snapshot behind"),
     VALIDATION_FAILED("entitlement/validation-failed", HttpStatus.UNPROCESSABLE_ENTITY, "Validation failed"),
     PREVIEW_TOKEN_INVALID("entitlement/preview-token-invalid", HttpStatus.CONFLICT, "Preview token invalid or stale"),
+    /** 002 c7 — start after expiry, a window wholly in the past, or a back-dated start. */
+    INVALID_WINDOW("entitlement/invalid-window", HttpStatus.UNPROCESSABLE_ENTITY, "Invalid override window"),
     INTERNAL_ERROR("entitlement/internal-error", HttpStatus.INTERNAL_SERVER_ERROR, "Internal error"),
     WRITE_CONFLICT("entitlement/conflict", HttpStatus.CONFLICT, "Conflict"),
     // Same `type` slug as VALIDATION_FAILED (contracts/README.md's error table has no dedicated

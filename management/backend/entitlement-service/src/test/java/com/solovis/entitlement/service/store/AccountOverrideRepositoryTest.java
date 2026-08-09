@@ -42,7 +42,7 @@ class AccountOverrideRepositoryTest {
 	}
 
 	private AccountOverrideRow grant(long amount, String reason) {
-		return new AccountOverrideRow(null, accountId, capabilityId, "GRANT",
+		return AccountOverrideRow.openEnded(null, accountId, capabilityId, "GRANT",
 				null, amount, false, null, reason,
 				"2026-08-09T00:00:00.000Z", "j.okafor", "PERSON",
 				null, null, null);
@@ -50,7 +50,7 @@ class AccountOverrideRepositoryTest {
 
 	@Test
 	void insertRejectsABlankReason() {
-		AccountOverrideRow blank = new AccountOverrideRow(null, accountId, capabilityId, "GRANT",
+		AccountOverrideRow blank = AccountOverrideRow.openEnded(null, accountId, capabilityId, "GRANT",
 				null, 200L, false, null, "   ",
 				"2026-08-09T00:00:00.000Z", "j.okafor", "PERSON", null, null, null);
 

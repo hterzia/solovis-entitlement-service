@@ -12,6 +12,10 @@ spring:
     default-property-inclusion: non_null
 
 entitlement:
+  clock:
+    # One zone for the whole service. Dates an operator types mean this zone and no other.
+    # Must be a zone whose midnight is unambiguous — asserted at startup (ServiceZone).
+    zone: "${ENTITLEMENT_CLOCK_ZONE:America/New_York}"
   database:
     path: "${ENTITLEMENT_DB_PATH:./data/entitlement.db}"
     write-pool-size: 1

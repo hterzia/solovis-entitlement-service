@@ -76,9 +76,9 @@ public class OverrideAdminService {
         String now = Timestamps.iso(clock.instant());
         var actor = actorResolver.currentActor();
         var columns = ValueColumnCodec.toColumns(value);
-        long id = accountOverrideRepository.insert(new AccountOverrideRow(null, accountRow.id(), capRow.id(), kind.name(),
-            columns.boolValue(), columns.qtyValue(), columns.qtyUnlimited(), columns.tierValue(), request.reason(),
-            now, actor.id(), actor.kind().name(), null, null, null));
+        long id = accountOverrideRepository.insert(AccountOverrideRow.openEnded(null, accountRow.id(), capRow.id(),
+            kind.name(), columns.boolValue(), columns.qtyValue(), columns.qtyUnlimited(), columns.tierValue(),
+            request.reason(), now, actor.id(), actor.kind().name(), null, null, null));
         var override = new AccountOverride(java.util.OptionalLong.of(id), external, capability.key(), kind, value,
             Optional.of(request.reason()), Optional.of(actor.id()), Optional.of(java.time.Instant.parse(now)));
 

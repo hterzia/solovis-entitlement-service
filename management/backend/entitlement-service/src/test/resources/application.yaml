@@ -1,4 +1,6 @@
 entitlement:
+  clock:
+    zone: "America/New_York"
   database:
     path: "${java.io.tmpdir}/entitlement-test-${random.uuid}.db"
     write-pool-size: 1
