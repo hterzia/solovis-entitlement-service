@@ -72,6 +72,7 @@ class SnapshotMutatorTest {
         assertThat(updated.planEntitlementsMap()).isSameAs(base.planEntitlementsMap());
         assertThat(updated.capabilitiesMap()).isSameAs(base.capabilitiesMap());
         assertThat(updated.accountsMap()).isSameAs(base.accountsMap());
+        assertThat(updated.liveOverridesMap()).isNotSameAs(base.liveOverridesMap());
     }
 
     @Test
