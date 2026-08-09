@@ -118,7 +118,7 @@ public class CapabilityRepository {
 			sql.append(" AND status = :status");
 		}
 		if (query != null) {
-			sql.append(" AND (key LIKE :query OR display_name LIKE :query)");
+			sql.append(" AND (key LIKE :query ESCAPE '\\' OR display_name LIKE :query ESCAPE '\\')");
 		}
 		sql.append(" ORDER BY area, key");
 
@@ -130,7 +130,7 @@ public class CapabilityRepository {
 			spec = spec.param("status", status);
 		}
 		if (query != null) {
-			spec = spec.param("query", "%" + query + "%");
+			spec = spec.param("query", SqlLike.contains(query));
 		}
 		return spec.query(ROW_MAPPER).list();
 	}

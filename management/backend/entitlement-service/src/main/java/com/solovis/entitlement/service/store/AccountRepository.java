@@ -82,7 +82,7 @@ public class AccountRepository {
 			sql.append(" AND plan_id = :planId");
 		}
 		if (q != null) {
-			sql.append(" AND (external_id LIKE :query OR name LIKE :query)");
+			sql.append(" AND (external_id LIKE :query ESCAPE '\\' OR name LIKE :query ESCAPE '\\')");
 		}
 		sql.append(" ORDER BY id LIMIT :limit");
 
@@ -93,7 +93,7 @@ public class AccountRepository {
 			spec = spec.param("planId", planId);
 		}
 		if (q != null) {
-			spec = spec.param("query", "%" + q + "%");
+			spec = spec.param("query", SqlLike.contains(q));
 		}
 		return spec.query(ROW_MAPPER).list();
 	}
