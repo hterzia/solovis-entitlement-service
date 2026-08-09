@@ -3,6 +3,14 @@ name: Deploy to Cloud Run
 on:
   push:
     branches: [main]
+    # Documentation changes cannot alter the image, so rebuilding and cutting a
+    # new Cloud Run revision for them is pure waste — and a redeploy is not free
+    # here: the revision switchover is the window where two Litestream writers
+    # briefly overlap and recent writes can be lost.
+    paths-ignore:
+      - 'docs/**'
+      - '.specs/**'
+      - '**/*.md'
   workflow_dispatch:
 
 # id-token is what makes Workload Identity Federation work: GitHub mints an OIDC

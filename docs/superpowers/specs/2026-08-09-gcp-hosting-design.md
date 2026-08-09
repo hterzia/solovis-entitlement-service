@@ -331,7 +331,9 @@ The Gemini key for the natural-language checker is held in Secret Manager as `ge
 
 ### Known gap
 
-The public repository currently carries **committed history only**, by explicit decision. `spec.md`, `CLAUDE.md`, `README.md`, specs 002 and 003 and `frontend-plan.md` are uncommitted and therefore absent, while the superseded `init-spec.md` and `homepage.html` are still present in the pushed history. A reviewer cloning today reads the wrong specification. This is recorded so it is not later mistaken for the repository's intended state.
+The public repository carries **committed history only**, by explicit decision. `README.md`, `DECISIONS.md` and the prompt transcripts have since been committed and pushed, but `spec.md`, `CLAUDE.md`, specs 002 and 003 and `frontend-plan.md` remain uncommitted and therefore absent, while the superseded `init-spec.md` and `homepage.html` are still present in the pushed history.
+
+So a reviewer cloning today finds a README describing the work, and next to it the *wrong* specification — `init-spec.md` where `spec.md` should be. Recorded so this is not later mistaken for the repository's intended state.
 
 ---
 
