@@ -36,6 +36,13 @@ public final class SnapshotMutator {
             Map.copyOf(planEntitlements), base.accountsMap(), base.liveOverridesMap());
     }
 
+    public static Snapshot withPlanEntitlementRemoved(Snapshot base, long newVersion, String planKey, CapabilityKey capabilityKey) {
+        var planEntitlements = new HashMap<>(base.planEntitlementsMap());
+        planEntitlements.remove(new Snapshot.PlanCapabilityKey(planKey, capabilityKey));
+        return new Snapshot(newVersion, base.capabilitiesMap(), base.plansMap(),
+            Map.copyOf(planEntitlements), base.accountsMap(), base.liveOverridesMap());
+    }
+
     public static Snapshot withAccount(Snapshot base, long newVersion, AccountAssignment account) {
         var accounts = new HashMap<>(base.accountsMap());
         accounts.put(account.accountExternalId(), account);

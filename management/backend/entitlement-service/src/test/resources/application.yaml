@@ -4,3 +4,5 @@ entitlement:
     write-pool-size: 1
     read-pool-size: 4
     busy-timeout-millis: 5000
+  seed:
+    enabled: false

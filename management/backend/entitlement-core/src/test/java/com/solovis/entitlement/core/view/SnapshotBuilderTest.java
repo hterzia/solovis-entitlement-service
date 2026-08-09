@@ -9,6 +9,8 @@ import com.solovis.entitlement.core.model.OverrideKind;
 import com.solovis.entitlement.core.model.Plan;
 import com.solovis.entitlement.core.model.PlanEntitlement;
 import com.solovis.entitlement.core.model.TierOrder;
+import com.solovis.entitlement.core.model.ValueType;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.OptionalLong;
 import org.junit.jupiter.api.Test;
@@ -72,5 +74,38 @@ class SnapshotBuilderTest {
         assertThat(snapshot.capability(REPORTS)).isEmpty();
         assertThat(snapshot.account("acct_missing")).isEmpty();
         assertThat(snapshot.liveOverrides("acct_missing", REPORTS)).isEmpty();
+    }
+
+    @Test
+    void capabilitiesReturnsEveryCapabilityRegardlessOfStatus() {
+        var active = new Capability(new CapabilityKey("api.access"), "API", null, ValueType.SWITCH,
+            new EntitlementValue.Switch(false), Optional.empty(), TierOrder.NONE, Capability.Status.ACTIVE, null);
+        var retired = new Capability(new CapabilityKey("export.parquet"), "Export", null, ValueType.SWITCH,
+            new EntitlementValue.Switch(false), Optional.empty(), TierOrder.NONE, Capability.Status.RETIRED, Instant.now());
+        var snapshot = new SnapshotBuilder().capability(active).capability(retired).build(1);
+
+        assertThat(snapshot.capabilities()).containsExactlyInAnyOrder(active, retired);
+        assertThat(snapshot.activeCapabilities()).containsExactly(active);
+    }
+
+    @Test
+    void accountAssignmentsReturnsEveryAccountRegardlessOfPlan() {
+        var acme = new AccountAssignment("acct_acme", "pro");
+        var globex = new AccountAssignment("acct_globex", "free");
+        var snapshot = new SnapshotBuilder().account(acme).account(globex).build(1);
+
+        assertThat(snapshot.accountAssignments()).containsExactlyInAnyOrder(acme, globex);
+    }
+
+    @Test
+    void allLiveOverridesReturnsEveryOverrideAcrossAccountsAndCapabilities() {
+        var exportKey = new CapabilityKey("export.parquet");
+        var reportsOverride = new AccountOverride(OptionalLong.of(1), "acct_9931", REPORTS, OverrideKind.GRANT,
+            EntitlementValue.Quantity.of(200), Optional.of("goodwill"), Optional.of("s.patel"), Optional.empty());
+        var exportOverride = new AccountOverride(OptionalLong.of(2), "acct_1177", exportKey, OverrideKind.HOLD,
+            new EntitlementValue.Switch(false), Optional.of("suspended"), Optional.of("s.patel"), Optional.empty());
+        var snapshot = new SnapshotBuilder().override(reportsOverride).override(exportOverride).build(1);
+
+        assertThat(snapshot.allLiveOverrides()).containsExactlyInAnyOrder(reportsOverride, exportOverride);
     }
 }

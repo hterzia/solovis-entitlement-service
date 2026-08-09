@@ -21,15 +21,24 @@ public interface EntitlementView {
 
     Optional<Capability> capability(CapabilityKey key);
 
+    /** Every declared capability, retired or not — the registry read needs this; resolution never does. */
+    Collection<Capability> capabilities();
+
     /** Every non-retired capability, for whole-account resolution (c20). */
     Collection<Capability> activeCapabilities();
 
     Optional<AccountAssignment> account(String accountExternalId);
 
+    /** Every account's plan assignment, for the snapshot replication feed's full resync. */
+    Collection<AccountAssignment> accountAssignments();
+
     Optional<PlanEntitlement> planEntitlement(String planKey, CapabilityKey capabilityKey);
 
     /** Every LIVE override of either kind for this account and capability (§4). */
     List<AccountOverride> liveOverrides(String accountExternalId, CapabilityKey capabilityKey);
+
+    /** Every LIVE override across all accounts and capabilities, for the snapshot replication feed's full resync. */
+    Collection<AccountOverride> allLiveOverrides();
 
     /** A single plan by key, for the operator UI's plan list and editor. */
     Optional<Plan> plan(String planKey);

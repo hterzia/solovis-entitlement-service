@@ -52,6 +52,11 @@ public final class Snapshot implements EntitlementView {
     }
 
     @Override
+    public Collection<Capability> capabilities() {
+        return capabilities.values();
+    }
+
+    @Override
     public Collection<Capability> activeCapabilities() {
         return capabilities.values().stream().filter(c -> !c.isRetired()).toList();
     }
@@ -62,6 +67,11 @@ public final class Snapshot implements EntitlementView {
     }
 
     @Override
+    public Collection<AccountAssignment> accountAssignments() {
+        return accounts.values();
+    }
+
+    @Override
     public Optional<PlanEntitlement> planEntitlement(String planKey, CapabilityKey capabilityKey) {
         return Optional.ofNullable(planEntitlements.get(new PlanCapabilityKey(planKey, capabilityKey)));
     }
@@ -69,6 +79,11 @@ public final class Snapshot implements EntitlementView {
     @Override
     public List<AccountOverride> liveOverrides(String accountExternalId, CapabilityKey capabilityKey) {
         return liveOverrides.getOrDefault(new AccountCapabilityKey(accountExternalId, capabilityKey), List.of());
+    }
+
+    @Override
+    public Collection<AccountOverride> allLiveOverrides() {
+        return liveOverrides.values().stream().flatMap(List::stream).toList();
     }
 
     @Override

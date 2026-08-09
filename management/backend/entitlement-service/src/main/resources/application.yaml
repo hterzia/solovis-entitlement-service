@@ -17,6 +17,10 @@ entitlement:
     write-pool-size: 1
     read-pool-size: 4
     busy-timeout-millis: 5000
+  actor:
+    id: "${ENTITLEMENT_DEV_ACTOR:dev-operator}"
+  seed:
+    enabled: "${ENTITLEMENT_SEED_ENABLED:false}"
 
 management:
   endpoints:
