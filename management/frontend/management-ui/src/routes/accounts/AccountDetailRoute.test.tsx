@@ -82,5 +82,52 @@ describe('AccountDetailRoute', () => {
     await user.click(screen.getByLabelText('A person'))
     await user.click(screen.getByRole('button', { name: 'Confirm plan change' }))
     await waitFor(() => expect(screen.getByText(/2 overrides are retained/)).toBeInTheDocument())
+    expect(screen.getByText(/Active everywhere within 60 seconds/)).toBeInTheDocument()
+  })
+
+  it('states how many overrides survive the plan change before the operator confirms it', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<AccountDetailRoute external="acct_9931" />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Change plan' })).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'Change plan' }))
+    expect(screen.getByText(/2 overrides on this account will be kept/)).toBeInTheDocument()
+  })
+
+  it('promises the change is live everywhere after an override is added', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<AccountDetailRoute external="acct_9931" />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add override' })).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'Add override' }))
+    await waitFor(() => expect(screen.getByLabelText('Capability')).toBeInTheDocument())
+    await user.selectOptions(screen.getByLabelText('Capability'), 'reports.monthly')
+    await user.selectOptions(screen.getByLabelText('Kind'), 'GRANT')
+    await user.type(screen.getByLabelText('Reason'), 'Pilot expansion')
+    await user.click(screen.getByRole('button', { name: 'Save override' }))
+    await waitFor(() => expect(screen.getByText(/Active everywhere within 60 seconds/)).toBeInTheDocument())
+  })
+
+  it('promises the change is live everywhere after an override is removed', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<AccountDetailRoute external="acct_9931" />)
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Remove' })).toHaveLength(2))
+    await user.click(screen.getByTestId('remove-ovr_7788'))
+    await user.click(screen.getByRole('button', { name: 'Confirm removal' }))
+    await waitFor(() => expect(screen.getByText(/Active everywhere within 60 seconds/)).toBeInTheDocument())
+  })
+
+  it('clears a previous action’s result when a different action is started', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<AccountDetailRoute external="acct_9931" />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add override' })).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'Add override' }))
+    await waitFor(() => expect(screen.getByLabelText('Capability')).toBeInTheDocument())
+    await user.selectOptions(screen.getByLabelText('Capability'), 'reports.monthly')
+    await user.selectOptions(screen.getByLabelText('Kind'), 'GRANT')
+    await user.type(screen.getByLabelText('Reason'), 'Pilot expansion')
+    await user.click(screen.getByRole('button', { name: 'Save override' }))
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Resulting decision' })).toBeInTheDocument())
+
+    await user.click(screen.getByTestId('remove-ovr_7788'))
+    expect(screen.queryByRole('heading', { name: 'Resulting decision' })).not.toBeInTheDocument()
   })
 })

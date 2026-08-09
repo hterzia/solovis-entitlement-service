@@ -5,9 +5,11 @@ import { getAccount, addOverride, removeOverride, setAccountPlan } from '../../a
 import { checkDecision } from '../../api/checker'
 import { listPlans } from '../../api/plans'
 import { listCapabilities } from '../../api/capabilities'
+import { getMeta } from '../../api/meta'
 import { queryKeys } from '../../queries/keys'
 import { ValueBadge, ValueEditor } from '../../components/ValueEditor'
 import { TraceView } from '../../components/TraceView'
+import { SaveConfirmation } from '../../components/SaveConfirmation'
 import { zeroValueFor } from '../../types/value'
 import type { EntitlementValue } from '../../types/value'
 import type { AssignmentSource, Decision, OverrideEffect, OverrideKind } from '../../types/domain'
@@ -39,6 +41,7 @@ export function AccountDetailRoute({ external: externalProp }: { external?: stri
   const accountQuery = useQuery({ queryKey: queryKeys.account(external), queryFn: () => getAccount(external) })
   const capabilitiesQuery = useQuery({ queryKey: queryKeys.capabilities({ status: 'ACTIVE' }), queryFn: () => listCapabilities({ status: 'ACTIVE' }) })
   const plansQuery = useQuery({ queryKey: queryKeys.plans(), queryFn: listPlans })
+  const meta = useQuery({ queryKey: queryKeys.meta, queryFn: getMeta })
 
   const [openTraceFor, setOpenTraceFor] = useState<string | null>(null)
   const traceQuery = useQuery({
@@ -90,6 +93,14 @@ export function AccountDetailRoute({ external: externalProp }: { external?: stri
     onSuccess: (result) => { setRetainedOverrideCount(result.retainedOverrideCount); invalidateAccount() },
   })
 
+  // Each action's result panel describes only its own action, so starting a different one
+  // must clear the previous panel rather than leave two contradictory results on screen.
+  function clearActionResults() {
+    setAddedDecision(null)
+    setRemovedDecision(null)
+    setRetainedOverrideCount(null)
+  }
+
   if (!accountQuery.data) return <p>Loading…</p>
   const account = accountQuery.data
 
@@ -101,9 +112,16 @@ export function AccountDetailRoute({ external: externalProp }: { external?: stri
         <dt>Assigned</dt>
         <dd>{account.plan.assignedAt} by {account.plan.assignedBy} ({account.plan.source === 'PERSON' ? 'a person' : 'an upstream system'})</dd>
       </dl>
-      <button type="button" className="sv-btn--secondary" onClick={() => setChangingPlan((v) => !v)}>Change plan</button>
+      <button
+        type="button"
+        className="sv-btn--secondary"
+        onClick={() => setChangingPlan((v) => { if (!v) clearActionResults(); return !v })}
+      >
+        Change plan
+      </button>
       {changingPlan && (
         <form onSubmit={(e) => { e.preventDefault(); changePlanMutation.mutate() }}>
+          <p>{`${account.overrides.length} overrides on this account will be kept when the plan changes.`}</p>
           <label className="sv-label">New plan
             <select className="sv-field" aria-label="New plan" value={newPlanKey} onChange={(e) => setNewPlanKey(e.target.value)}>
               <option value="" disabled>Select a plan</option>
@@ -116,7 +134,10 @@ export function AccountDetailRoute({ external: externalProp }: { external?: stri
         </form>
       )}
       {retainedOverrideCount !== null && (
-        <p role="status">{`Plan changed. ${retainedOverrideCount} overrides are retained.`}</p>
+        <>
+          <p role="status">{`Plan changed. ${retainedOverrideCount} overrides are retained.`}</p>
+          {changePlanMutation.isSuccess && meta.data && <SaveConfirmation seconds={meta.data.changeVisibleEverywhereWithinSeconds} />}
+        </>
       )}
 
       <h2>Effective entitlements</h2>
@@ -136,7 +157,10 @@ export function AccountDetailRoute({ external: externalProp }: { external?: stri
       {openTraceFor && traceQuery.data && (
         <div className="app-panel">
           <h3>{openTraceFor}</h3>
-          <TraceView trace={traceQuery.data.trace} />
+          <TraceView
+            trace={traceQuery.data.trace}
+            tiers={capabilitiesQuery.data?.capabilities.find((c) => c.key === openTraceFor)?.tiers ?? []}
+          />
           <button type="button" className="sv-btn--secondary" onClick={() => setOpenTraceFor(null)}>Close</button>
         </div>
       )}
@@ -155,7 +179,7 @@ export function AccountDetailRoute({ external: externalProp }: { external?: stri
                 <button type="button" className="sv-btn--secondary" onClick={() => setConfirmingRemoveId(null)}>Cancel</button>
               </span>
             ) : (
-              <button type="button" className="sv-btn--secondary" data-testid={`remove-${o.id}`} onClick={() => setConfirmingRemoveId(o.id)}>Remove</button>
+              <button type="button" className="sv-btn--secondary" data-testid={`remove-${o.id}`} onClick={() => { clearActionResults(); setConfirmingRemoveId(o.id) }}>Remove</button>
             )}
           </li>
         ))}
@@ -164,10 +188,17 @@ export function AccountDetailRoute({ external: externalProp }: { external?: stri
         <div className="app-panel">
           <h3>Restored value</h3>
           <TraceView trace={removedDecision.trace} />
+          {meta.data && <SaveConfirmation seconds={meta.data.changeVisibleEverywhereWithinSeconds} />}
         </div>
       )}
 
-      <button type="button" className="sv-btn--secondary" onClick={() => setAddingOverride((v) => !v)}>Add override</button>
+      <button
+        type="button"
+        className="sv-btn--secondary"
+        onClick={() => setAddingOverride((v) => { if (!v) clearActionResults(); return !v })}
+      >
+        Add override
+      </button>
       {addingOverride && (
         <form onSubmit={(e) => { e.preventDefault(); addMutation.mutate() }}>
           <label className="sv-label">Capability
@@ -205,6 +236,7 @@ export function AccountDetailRoute({ external: externalProp }: { external?: stri
         <div className="app-panel">
           <h3>Resulting decision</h3>
           <TraceView trace={addedDecision.trace} />
+          {addMutation.data && <SaveConfirmation seconds={addMutation.data.changeVisibleEverywhereWithinSeconds} />}
         </div>
       )}
     </div>
