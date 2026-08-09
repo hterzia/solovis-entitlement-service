@@ -3,9 +3,11 @@ package com.solovis.entitlement.service.error;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(controllers = ThrowingController.class)
@@ -27,5 +29,21 @@ class GlobalExceptionHandlerTest {
         mockMvc.perform(get("/test/reason-required"))
             .andExpect(status().isUnprocessableEntity())
             .andExpect(jsonPath("$.type").value("entitlement/reason-required"));
+    }
+
+    @Test
+    void malformedJsonBodyMapsToValidationFailedProblemJsonNotSpringsDefaultErrorPage() throws Exception {
+        mockMvc.perform(post("/test/body").contentType(MediaType.APPLICATION_JSON).content("{\"value\":"))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+            .andExpect(jsonPath("$.type").value("entitlement/validation-failed"));
+    }
+
+    @Test
+    void unexpectedExceptionMapsToAStableInternalErrorProblemJsonRatherThanLeakingAStackTrace() throws Exception {
+        mockMvc.perform(get("/test/unexpected"))
+            .andExpect(status().isInternalServerError())
+            .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+            .andExpect(jsonPath("$.type").value("entitlement/internal-error"));
     }
 }

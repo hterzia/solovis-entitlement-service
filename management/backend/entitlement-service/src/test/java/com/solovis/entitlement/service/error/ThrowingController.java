@@ -2,6 +2,8 @@ package com.solovis.entitlement.service.error;
 
 import com.solovis.entitlement.core.error.UnknownAccountException;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -14,6 +16,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 class ThrowingController {
 
+    record Body(String value) {}
+
     @GetMapping("/test/unknown-account")
     void unknownAccount() {
         throw new UnknownAccountException("acct_missing");
@@ -22,5 +26,14 @@ class ThrowingController {
     @GetMapping("/test/reason-required")
     void reasonRequired() {
         throw new EntitlementApiException(ErrorCode.REASON_REQUIRED, "Reason is required.");
+    }
+
+    @PostMapping("/test/body")
+    void body(@RequestBody Body body) {
+    }
+
+    @GetMapping("/test/unexpected")
+    void unexpected() {
+        throw new IllegalStateException("Something nobody handled explicitly.");
     }
 }
