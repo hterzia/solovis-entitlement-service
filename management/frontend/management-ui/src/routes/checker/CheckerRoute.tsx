@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { checkDecision } from '../../api/checker'
 import { ApiError } from '../../api/http'
@@ -18,6 +18,7 @@ export function CheckerRoute() {
   const [capability, setCapability] = useState('')
   const [overrideRef, setOverrideRef] = useState('')
   const [submitted, setSubmitted] = useState<CheckParams | null>(null)
+  const explanationRef = useRef<HTMLDivElement>(null)
 
   const query = useQuery({
     queryKey: queryKeys.check(submitted ?? { account: '' }),
@@ -32,18 +33,8 @@ export function CheckerRoute() {
   }
 
   function copyExplanation() {
-    if (!query.data) return
-    const { trace } = query.data
-    const lines = [
-      `Account: ${query.data.account}`,
-      `Capability: ${query.data.capability}`,
-      `Allowed: ${query.data.allowed}`,
-      trace.baseline.note,
-      trace.grantStep.note ?? '',
-      trace.holdStep.note ?? '',
-      `Result: allowed=${trace.result.allowed}`,
-    ].filter(Boolean)
-    navigator.clipboard.writeText(lines.join('\n'))
+    if (!explanationRef.current) return
+    navigator.clipboard.writeText(explanationRef.current.textContent ?? '')
   }
 
   const errorType = query.error instanceof ApiError ? query.error.problem.type : null
@@ -68,8 +59,13 @@ export function CheckerRoute() {
 
       {query.data && (
         <div>
-          <p>Allowed: {String(query.data.allowed)} · Snapshot v{query.data.snapshotVersion} · Evaluated {query.data.evaluatedAt}</p>
-          <TraceView trace={query.data.trace} />
+          <div ref={explanationRef}>
+            <p>
+              Account: {query.data.account} · Capability: {query.data.capability} · Allowed: {String(query.data.allowed)} ·
+              {' '}Snapshot v{query.data.snapshotVersion} · Evaluated {query.data.evaluatedAt}
+            </p>
+            <TraceView trace={query.data.trace} />
+          </div>
           <button type="button" className="sv-btn--secondary" onClick={copyExplanation}>Copy explanation</button>
         </div>
       )}

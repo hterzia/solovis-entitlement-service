@@ -60,5 +60,7 @@ describe('CheckerRoute', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Copy explanation' })).toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: 'Copy explanation' }))
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('Most restrictive HOLD'))
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('j.okafor'))
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('Renewal concession'))
   })
 })
