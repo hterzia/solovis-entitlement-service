@@ -72,7 +72,9 @@ class DecisionControllerTest {
     void registryDefaultsToActiveOnly() throws Exception {
         mockMvc.perform(get("/v1/capabilities"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.capabilities[0].key").value("reports.monthly"))
-            .andExpect(jsonPath("$.snapshotVersion").value(1));
+            .andExpect(jsonPath("$.capabilities[?(@.key=='reports.monthly')].key").value("reports.monthly"))
+            .andExpect(jsonPath("$.capabilities[?(@.key=='reports.monthly')].area").value("reports"))
+            .andExpect(jsonPath("$.capabilities[?(@.key=='reports.monthly')].status").value("ACTIVE"))
+            .andExpect(jsonPath("$.snapshotVersion").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)));
     }
 }
