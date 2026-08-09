@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { listAuditEvents } from '../../api/audit'
 import { queryKeys } from '../../queries/keys'
-import { ValueBadge } from '../../components/ValueEditor'
+import { formatAuditValue } from '../../types/value'
 
 const ENTITY_TYPES = ['CAPABILITY', 'CAPABILITY_TIER', 'PLAN', 'PLAN_ENTITLEMENT', 'ACCOUNT', 'ACCOUNT_PLAN', 'DEFAULT_PLAN', 'OVERRIDE'] as const
 
@@ -64,8 +64,8 @@ export function HistoryRoute() {
                 {event.reason && ` — ${event.reason}`}
                 {event.affectedAccountCount !== null && ` — affected ${event.affectedAccountCount} accounts`}
               </td>
-              <td>{event.before ? <ValueBadge value={event.before} tiers={[]} /> : '—'}</td>
-              <td>{event.after ? <ValueBadge value={event.after} tiers={[]} /> : '—'}</td>
+              <td>{formatAuditValue(event.before)}</td>
+              <td>{formatAuditValue(event.after)}</td>
             </tr>
           ))}
         </tbody>

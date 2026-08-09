@@ -9,7 +9,7 @@ import { HistoryRoute } from './HistoryRoute'
 describe('HistoryRoute', () => {
   it('lists events newest first with who, what, before and after', async () => {
     renderWithProviders(<HistoryRoute />)
-    await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(4)) // header + 3 events
+    await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(5)) // header + 4 events
     const rows = screen.getAllByRole('row')
     expect(rows[1]).toHaveTextContent('a.reyes')
     expect(rows[1]).toHaveTextContent('person')
@@ -28,10 +28,21 @@ describe('HistoryRoute', () => {
     expect(removalRow).toHaveTextContent('REMOVE')
   })
 
+  it('renders a readable before/after for entity types that never log a bare value', async () => {
+    renderWithProviders(<HistoryRoute />)
+    // OVERRIDE CREATE logs the whole create request as `after`, not a bare value — the capability
+    // and kind it names should still be visible rather than the cell going blank.
+    await waitFor(() => expect(screen.getByText(/kind: HOLD/)).toBeInTheDocument())
+    // PLAN_ENTITLEMENT UPDATE logs a map of capability→value as `after`.
+    expect(screen.getByText(/reports\.monthly: 75/)).toBeInTheDocument()
+    // CAPABILITY CREATE logs the whole descriptor as `after`.
+    expect(screen.getByText(/displayName: Parquet export/)).toBeInTheDocument()
+  })
+
   it('filters by actor', async () => {
     const user = userEvent.setup()
     renderWithProviders(<HistoryRoute />)
-    await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(4))
+    await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(5))
     await user.type(screen.getByLabelText('Actor'), 'billing-bot')
     await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(2)) // header + 1 event
     expect(screen.getByText(/Suspended pending billing investigation/)).toBeInTheDocument()
@@ -39,7 +50,7 @@ describe('HistoryRoute', () => {
 
   it('offers no edit, delete, or export control', async () => {
     renderWithProviders(<HistoryRoute />)
-    await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(4))
+    await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(5))
     expect(screen.queryByRole('button', { name: /edit|delete|export/i })).not.toBeInTheDocument()
   })
 

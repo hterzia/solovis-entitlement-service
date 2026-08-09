@@ -79,22 +79,34 @@ export function makeAccount(): AccountDetail {
 export function makeAuditEvents(): AuditEvent[] {
   return [
     {
+      // OverrideAdminService.delete() records no before/after today — only the reason and actor.
       seq: 90114, occurredAt: '2026-08-09T15:10:00.000Z', actor: { id: 'a.reyes', kind: 'PERSON' }, source: 'UI',
       entityType: 'OVERRIDE', entityId: 'ovr_9002', action: 'REMOVE', planKey: null, account: 'acct_9931',
-      capability: 'reports.monthly', before: { type: 'QUANTITY', amount: 100 }, after: null,
+      capability: 'reports.monthly', before: null, after: null,
       reason: 'Investigation closed', affectedAccountCount: null,
     },
     {
+      // OverrideAdminService.create() logs the whole create request as `after`, not a bare value.
       seq: 90113, occurredAt: '2026-08-09T14:30:00.000Z', actor: { id: 'billing-bot', kind: 'SYSTEM' }, source: 'BILLING',
       entityType: 'OVERRIDE', entityId: 'ovr_7788', action: 'CREATE', planKey: null, account: 'acct_9931',
-      capability: 'reports.monthly', before: null, after: { type: 'QUANTITY', amount: 0 },
+      capability: 'reports.monthly', before: null,
+      after: { capability: 'reports.monthly', kind: 'HOLD', value: { type: 'QUANTITY', amount: 0 } },
       reason: 'Suspended pending billing investigation', affectedAccountCount: null,
     },
     {
+      // PlanAdminService.apply() logs no `before` and an `after` keyed by capability, not one bare value.
       seq: 90112, occurredAt: '2026-08-09T14:03:10.880Z', actor: { id: 'a.reyes', kind: 'PERSON' }, source: 'UI',
       entityType: 'PLAN_ENTITLEMENT', entityId: 'pro', action: 'UPDATE', planKey: 'pro', account: null,
-      capability: 'reports.monthly', before: { type: 'QUANTITY', amount: 50 }, after: { type: 'QUANTITY', amount: 75 },
+      capability: 'reports.monthly', before: null, after: { 'reports.monthly': { type: 'QUANTITY', amount: 75 } },
       reason: null, affectedAccountCount: 26890,
+    },
+    {
+      // CapabilityAdminService.create() logs the whole descriptor as `after`, never a bare value.
+      seq: 90111, occurredAt: '2026-08-09T13:00:00.000Z', actor: { id: 'a.reyes', kind: 'PERSON' }, source: 'UI',
+      entityType: 'CAPABILITY', entityId: 'export.parquet', action: 'CREATE', planKey: null, account: null,
+      capability: 'export.parquet', before: null,
+      after: { key: 'export.parquet', displayName: 'Parquet export', valueType: 'SWITCH', status: 'ACTIVE' },
+      reason: null, affectedAccountCount: null,
     },
   ]
 }

@@ -43,3 +43,28 @@ export function zeroValueFor(valueType: ValueType): EntitlementValue {
       return { type: 'TIER', tier: '' }
   }
 }
+
+function isEntitlementValue(value: unknown): value is EntitlementValue {
+  if (typeof value !== 'object' || value === null || !('type' in value)) return false
+  const type = (value as { type: unknown }).type
+  return type === 'SWITCH' || type === 'QUANTITY' || type === 'TIER'
+}
+
+/**
+ * The audit trail logs a different shape per entity type — a bare value for an override or
+ * plan-entitlement edit, a capability descriptor for a capability create/update, a `{planKey}`
+ * map for a plan reassignment, a map of capability→value for a plan-entitlement apply, and so on
+ * (see the write paths in `AccountAdminService`/`CapabilityAdminService`/`PlanAdminService`/
+ * `OverrideAdminService`). There is no single wire type for "the value of a change," so this
+ * renders whatever it's given rather than assuming it's always a bare `EntitlementValue`.
+ */
+export function formatAuditValue(value: unknown): string {
+  if (value === null || value === undefined) return '—'
+  if (isEntitlementValue(value)) return formatValue(value)
+  if (Array.isArray(value)) return value.length === 0 ? '—' : value.map((v) => formatAuditValue(v)).join('; ')
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+    return entries.length === 0 ? '—' : entries.map(([k, v]) => `${k}: ${formatAuditValue(v)}`).join(', ')
+  }
+  return String(value)
+}
