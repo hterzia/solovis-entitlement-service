@@ -589,7 +589,7 @@ git commit -m "frontend: value encoding and domain types"
 - Create: `management/frontend/management-ui/src/queries/keys.ts`
 
 **Interfaces:**
-- Produces: `server` (MSW `SetupServerApi`) and `resetDb()` from `mocks/server.ts`; `renderWithProviders(ui, { route? }) => RenderResult` from `testUtils.tsx`; `queryKeys` object from `queries/keys.ts`. Every later API and component test imports from these three files instead of building its own fixtures, so every screen's tests exercise the same account/plan/capability data the contracts document.
+- Produces: `server` (MSW `SetupServerApi`) and `resetDb()` from `mocks/server.ts`; `renderWithProviders(ui, options?: {initialPath?}) => RenderResult & {router}` from `testUtils.tsx` — mounts both `QueryClientProvider` and a minimal single-route `RouterProvider`, since every screen from Task 10 onward renders `<Link>`/calls `useParams` and needs router context or it crashes; `queryKeys` object from `queries/keys.ts`. Every later API and component test imports from these three files instead of building its own fixtures, so every screen's tests exercise the same account/plan/capability data the contracts document.
 
 - [ ] **Step 1: Write the fixture data, matching the contract examples exactly**
 
@@ -1042,22 +1042,37 @@ export const queryKeys = {
 
 - [ ] **Step 5: Write the render helper used by every component/screen test**
 
+Every screen from Task 10 onward renders `<Link>` and/or calls `useParams`/`useNavigate`/`useRouterState` — all of which throw when there is no `<RouterProvider>` ancestor (`useRouter()` returns `null` outside one, and the first hook that dereferences it crashes with `Cannot read properties of null`). So this helper mounts a real, minimal `RouterProvider` — a memory-history router with exactly one route, at `/`, whose component is the `ui` under test — rather than only wrapping in `QueryClientProvider`. This is the same `createRootRoute`/`createRoute`/`createMemoryHistory` shape the app's own `src/router.tsx` uses, just with a single throwaway route instead of the real tree, so it composes with every future task's `Link`/`useParams` usage with no per-test boilerplate.
+
 ```tsx
 // src/test/testUtils.tsx
-import type { ReactElement, ReactNode } from 'react'
+import type { ReactElement } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
+import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from '@tanstack/react-router'
 
-export function renderWithProviders(ui: ReactElement) {
+export function renderWithProviders(ui: ReactElement, options?: { initialPath?: string }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  function Wrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  }
-  return { queryClient, ...render(ui, { wrapper: Wrapper }) }
+
+  const rootRoute = createRootRoute()
+  const testRoute = createRoute({ getParentRoute: () => rootRoute, path: '/', component: () => ui })
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([testRoute]),
+    history: createMemoryHistory({ initialEntries: [options?.initialPath ?? '/'] }),
+  })
+
+  const result = render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  )
+  return { queryClient, router, ...result }
 }
 ```
+
+The `router` returned alongside the RTL render result lets a test assert on `router.state.location.pathname` after a simulated navigation, or pass `{ initialPath: '/accounts/acct_9931' }` if a future test needs the mounted location to be something other than `/` (no task in this plan currently needs that, but the option costs nothing to have).
 
 - [ ] **Step 6: Confirm the toolchain wires together**
 
