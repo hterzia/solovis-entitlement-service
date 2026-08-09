@@ -147,7 +147,7 @@ export function AccountDetailRoute({ external: externalProp }: { external?: stri
           {account.entitlements.map((row) => (
             <tr key={row.capability}>
               <td>{row.capability}</td>
-              <td><ValueBadge value={row.value} tiers={[]} /></td>
+              <td><ValueBadge value={row.value} tiers={capabilitiesQuery.data?.capabilities.find((c) => c.key === row.capability)?.tiers ?? []} /></td>
               <td>{row.source}{row.sourceDetail?.reason ? ` — ${row.sourceDetail.reason}` : ''}</td>
               <td><button type="button" className="sv-btn--secondary" onClick={() => setOpenTraceFor(row.capability)}>Why?</button></td>
             </tr>
@@ -169,7 +169,7 @@ export function AccountDetailRoute({ external: externalProp }: { external?: stri
       <ul>
         {account.overrides.map((o) => (
           <li key={o.id}>
-            {o.kind} <ValueBadge value={o.value} tiers={[]} /> — {o.reason} — {o.createdBy}, {o.createdAt} — {EFFECT_LABELS[o.effectNow]}
+            {o.kind} <ValueBadge value={o.value} tiers={capabilitiesQuery.data?.capabilities.find((c) => c.key === o.capability)?.tiers ?? []} /> — {o.reason} — {o.createdBy}, {o.createdAt} — {EFFECT_LABELS[o.effectNow]}
             {confirmingRemoveId === o.id ? (
               <span>
                 {o.kind === 'HOLD'

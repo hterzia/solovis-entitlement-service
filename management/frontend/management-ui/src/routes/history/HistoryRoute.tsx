@@ -62,7 +62,7 @@ export function HistoryRoute() {
               <td>
                 {event.action} {event.entityType} {event.capability ?? event.planKey ?? event.entityId}
                 {event.reason && ` — ${event.reason}`}
-                {event.affectedAccountCount !== null && ` — affected ${event.affectedAccountCount} accounts`}
+                {event.affectedAccountCount != null && ` — affected ${event.affectedAccountCount} accounts`}
               </td>
               <td>{formatAuditValue(event.before)}</td>
               <td>{formatAuditValue(event.after)}</td>

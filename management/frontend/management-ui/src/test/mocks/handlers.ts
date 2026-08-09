@@ -124,7 +124,7 @@ export const handlers = [
   http.get('/admin/v1/plans/:key', ({ params }) => {
     const plan = db.plans.find((p) => p.key === params.key)
     if (!plan) return problem(404, 'entitlement/unknown-capability', `No plan '${params.key}'.`)
-    return HttpResponse.json({ ...plan, entitlements: [{ capability: 'reports.monthly', value: { type: 'QUANTITY', amount: 50 } }] })
+    return HttpResponse.json({ ...plan, entitlements: { 'reports.monthly': { type: 'QUANTITY', amount: 50 } } })
   }),
 
   http.post('/admin/v1/plans/:key/entitlements/preview', async ({ params, request }) => {

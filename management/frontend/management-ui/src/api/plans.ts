@@ -11,7 +11,7 @@ export function createPlan(input: { key: string; name: string; description?: str
 }
 
 export function getPlan(key: string) {
-  return apiGet<Plan & { entitlements: { capability: string; value: EntitlementValue }[] }>(`/plans/${key}`)
+  return apiGet<Plan & { entitlements: Record<string, EntitlementValue> }>(`/plans/${key}`)
 }
 
 export interface PlanEntitlementEditInput {

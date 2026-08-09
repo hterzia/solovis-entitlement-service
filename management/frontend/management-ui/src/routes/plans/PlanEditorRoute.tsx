@@ -56,7 +56,7 @@ export function PlanEditorRoute({ planKey }: { planKey?: string } = {}) {
 
   if (!planQuery.data || !capabilitiesQuery.data) return <p>Loading…</p>
 
-  const originalByCapability = new Map(planQuery.data.entitlements.map((e) => [e.capability, e.value]))
+  const originalByCapability = new Map(Object.entries(planQuery.data.entitlements))
   const hasPendingChanges = Object.keys(pendingSet).length > 0 || pendingUnset.size > 0
 
   const rows: PlanEditorRow[] = capabilitiesQuery.data.capabilities.map((cap) => {
