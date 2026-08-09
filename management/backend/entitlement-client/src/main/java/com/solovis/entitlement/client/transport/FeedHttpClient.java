@@ -8,6 +8,7 @@ import com.solovis.entitlement.client.wire.ProblemDto;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -72,7 +73,11 @@ public final class FeedHttpClient implements AutoCloseable {
         if (response.statusCode() / 100 != 2) {
             throw failureFor(uri, response.statusCode(), readAll(uri, response.body()));
         }
-        try (var gzip = new GZIPInputStream(response.body())) {
+        // Two resources, not one: `body` is fully initialized before `gzip`'s constructor runs, so
+        // it is registered for close() even if that constructor throws on a malformed gzip header
+        // (e.g. a bad magic number) — otherwise the pooled connection behind it would leak on every
+        // resync against a service returning a broken envelope.
+        try (var body = response.body(); var gzip = new GZIPInputStream(body)) {
             return FullSnapshotReader.read(gzip);
         } catch (IOException e) {
             throw new FeedUnavailableException(
@@ -101,7 +106,7 @@ public final class FeedHttpClient implements AutoCloseable {
      * and nothing about the domain.
      */
     public String decisionJson(String account, String capability) {
-        var uri = resolve("/v1/accounts/" + account + "/capabilities/" + capability);
+        var uri = resolve("/v1/accounts/" + encodePathSegment(account) + "/capabilities/" + encodePathSegment(capability));
         var response = send(uri, BodyHandlers.ofString());
         requireSuccess(uri, response.statusCode(), response.body());
         return response.body();
@@ -177,5 +182,14 @@ public final class FeedHttpClient implements AutoCloseable {
 
     private URI resolve(String pathAndQuery) {
         return URI.create(baseUri.toString() + pathAndQuery);
+    }
+
+    /**
+     * Percent-encodes one path segment. {@link URLEncoder} is form encoding, not path encoding —
+     * it renders a space as {@code +}, which a path must not contain literally — so {@code +} is
+     * corrected to {@code %20} afterwards.
+     */
+    private static String encodePathSegment(String segment) {
+        return URLEncoder.encode(segment, StandardCharsets.UTF_8).replace("+", "%20");
     }
 }

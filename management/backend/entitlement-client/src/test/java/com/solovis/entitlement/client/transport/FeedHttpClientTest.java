@@ -74,6 +74,13 @@ class FeedHttpClientTest {
     }
 
     @Test
+    void aFullSnapshotBodyThatIsNotActuallyGzipIsAnUnavailableFeedNotAnUncaughtIoException() {
+        stub.respondFullWithInvalidGzip();
+
+        assertThatThrownBy(() -> client.full()).isInstanceOf(FeedUnavailableException.class);
+    }
+
+    @Test
     void aDeltaIsFetchedWithTheSinceParameterAndParsedFlatWithoutANestedChangeObject() {
         stub.respondDelta("""
             {"format":1,"fromVersion":48208,"toVersion":48209,\
@@ -126,6 +133,17 @@ class FeedHttpClientTest {
         stub.respondDelta("{ this is not json");
 
         assertThatThrownBy(() -> client.delta(1L)).isInstanceOf(FeedUnavailableException.class);
+    }
+
+    @Test
+    void decisionJsonPercentEncodesAccountAndCapabilityPathSegmentsRatherThanThrowing() {
+        stub.respondDecision("{\"allowed\":true}");
+
+        var body = client.decisionJson("acct 9931", "api access");
+
+        assertThat(body).isEqualTo("{\"allowed\":true}");
+        assertThat(stub.requestedPaths())
+            .anyMatch(p -> p.contains("/v1/accounts/acct%209931/capabilities/api%20access"));
     }
 
     @Test

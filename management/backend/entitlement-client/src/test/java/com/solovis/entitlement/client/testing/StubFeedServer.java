@@ -32,6 +32,7 @@ public final class StubFeedServer implements AutoCloseable {
     private final AtomicInteger deltaCalls = new AtomicInteger();
     private final List<String> paths = new CopyOnWriteArrayList<>();
     private volatile boolean truncateFull = false;
+    private volatile boolean invalidGzip = false;
 
     public StubFeedServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -73,6 +74,14 @@ public final class StubFeedServer implements AutoCloseable {
     /** Truncate the full-snapshot body before its footer, simulating a cut-off response. */
     public void truncateFullSnapshot() {
         truncateFull = true;
+    }
+
+    /**
+     * Answers {@code /v1/snapshot/full} with {@code Content-Encoding: gzip} and a 200, but a body
+     * that is not actually gzip — simulating a broken envelope rather than a broken payload.
+     */
+    public void respondFullWithInvalidGzip() {
+        invalidGzip = true;
     }
 
     public int versionCalls() {
@@ -117,6 +126,15 @@ public final class StubFeedServer implements AutoCloseable {
         fullCalls.incrementAndGet();
         paths.add(exchange.getRequestURI().toString());
         if (servedFailure(exchange)) {
+            return;
+        }
+        if (invalidGzip) {
+            var body = "not actually gzip".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/x-ndjson");
+            exchange.getResponseHeaders().add("Content-Encoding", "gzip");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
             return;
         }
         var text = fullBody.get();
