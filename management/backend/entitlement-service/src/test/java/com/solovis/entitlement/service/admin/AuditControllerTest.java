@@ -48,6 +48,19 @@ class AuditControllerTest {
     }
 
     @Test
+    void listByAccountIncludesTheAccountsOwnCreationEventWithItsDefaultPlanKey() throws Exception {
+        planService.create(new PlanCreateRequest("tacct.audit-default-plan", "Tacct Audit Default Plan", null));
+        planService.designateDefault("tacct.audit-default-plan");
+
+        accountService.create(new AccountCreateRequest("acct_tacct_2", null));
+
+        mockMvc.perform(get("/admin/v1/audit").param("account", "acct_tacct_2"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.events[?(@.entityType=='ACCOUNT' && @.action=='CREATE')].after.planKey")
+                .value(org.hamcrest.Matchers.hasItem("tacct.audit-default-plan")));
+    }
+
+    @Test
     void listByEntityTypeFiltersToJustThatEntityType() throws Exception {
         capabilityService.create(new CapabilityCreateRequest("t8.audit.filter-probe", "Audit filter probe", null, "SWITCH",
             new ValueDto("SWITCH", false, null, null, null, null), null, null));

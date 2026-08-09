@@ -73,12 +73,18 @@ public class AccountAdminService {
             .orElseThrow(() -> new EntitlementApiException(ErrorCode.DEFAULT_PLAN_REQUIRED, "No default plan is designated."));
         String now = Timestamps.iso(clock.instant());
         var actor = actorResolver.currentActor();
-        accountRepository.insert(new AccountRow(null, request.externalId(), request.name(), defaultPlan.id(), now,
+        long accountId = accountRepository.insert(new AccountRow(null, request.externalId(), request.name(), defaultPlan.id(), now,
             actor.kind().name(), actor.id(), "ACTIVE", now, now));
         var assignment = new AccountAssignment(request.externalId(), defaultPlan.key());
 
+        var afterState = new LinkedHashMap<String, Object>();
+        afterState.put("account", request.externalId());
+        afterState.put("name", request.name());
+        afterState.put("planKey", defaultPlan.key());
+        afterState.put("status", "ACTIVE");
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actor).source("UI").entityType("ACCOUNT")
-            .entityId(request.externalId()).action("CREATE").build());
+            .entityId(request.externalId()).action("CREATE").accountId(accountId).planId(defaultPlan.id())
+            .afterJson(auditJson.write(afterState)).build());
         snapshotPublisher.publish((base, v) -> SnapshotMutator.withAccount(base, v, assignment), auditSeq,
             new DeltaChange.AccountUpserted(request.externalId(), defaultPlan.key()));
 

@@ -8,6 +8,10 @@ import com.solovis.entitlement.service.admin.service.PlanAdminService;
 import com.solovis.entitlement.service.dto.ValueDto;
 import com.solovis.entitlement.service.error.EntitlementApiException;
 import com.solovis.entitlement.service.error.ErrorCode;
+import com.solovis.entitlement.service.store.AccountRepository;
+import com.solovis.entitlement.service.store.AuditEventFilter;
+import com.solovis.entitlement.service.store.AuditEventRepository;
+import com.solovis.entitlement.service.store.PlanRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -24,6 +28,9 @@ class AccountAdminServiceTest {
     @Autowired PlanAdminService planService;
     @Autowired CapabilityAdminService capabilityService;
     @Autowired OverrideAdminService overrideService;
+    @Autowired AccountRepository accountRepository;
+    @Autowired AuditEventRepository auditEventRepository;
+    @Autowired PlanRepository planRepository;
 
     @Test
     void createAssignsTheDesignatedDefaultPlan() {
@@ -117,6 +124,26 @@ class AccountAdminServiceTest {
         var detail = accountService.get("acct_grant_only");
         assertThat(detail.overrides()).extracting(AccountDetailDto.OverrideRow::effectNow)
             .containsExactly("NO_EFFECT_PLAN_MORE_GENEROUS");
+    }
+
+    @Test
+    void createRecordsAnAuditEventVisibleToTheAccountFilter() {
+        planService.create(new PlanCreateRequest("tacct.default-plan", "Tacct Default Plan", null));
+        planService.designateDefault("tacct.default-plan");
+
+        accountService.create(new AccountCreateRequest("acct_tacct_1", "Tacct One"));
+
+        var accountRow = accountRepository.findByExternalId("acct_tacct_1").orElseThrow();
+        var defaultPlan = planRepository.findByKey("tacct.default-plan").orElseThrow();
+
+        var events = auditEventRepository.find(
+            new AuditEventFilter(accountRow.id(), null, null, "ACCOUNT", null, null, null, 10));
+
+        assertThat(events).hasSize(1);
+        var event = events.get(0);
+        assertThat(event.action()).isEqualTo("CREATE");
+        assertThat(event.planId()).isEqualTo(defaultPlan.id());
+        assertThat(event.afterJson()).contains("tacct.default-plan");
     }
 
     @Test
