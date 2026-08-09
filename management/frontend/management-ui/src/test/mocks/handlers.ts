@@ -112,7 +112,7 @@ export const handlers = [
     return HttpResponse.json({ capability: cap, usage: { plans: ['pro'], liveOverrides: 1 } })
   }),
 
-  http.get('/admin/v1/plans', () => HttpResponse.json({ plans: db.plans, snapshotVersion: 48211 })),
+  http.get('/admin/v1/plans', () => HttpResponse.json({ plans: db.plans })),
 
   http.post('/admin/v1/plans', async ({ request }) => {
     const body = (await request.json()) as { key: string; name: string; description?: string }
@@ -215,7 +215,7 @@ export const handlers = [
     if (params.external !== db.account.account) return problem(404, 'entitlement/unknown-account', `No account '${params.external}'.`)
     const body = (await request.json()) as { planKey: string; source: 'PERSON' | 'SYSTEM'; actor: string }
     db.account.plan = { key: body.planKey, name: body.planKey, assignedAt: new Date(0).toISOString(), assignedBy: body.actor, source: body.source }
-    return HttpResponse.json({ ...db.account, retainedOverrideCount: db.account.overrides.length })
+    return HttpResponse.json({ account: db.account.account, planKey: body.planKey, retainedOverrideCount: db.account.overrides.length, snapshotVersion: db.account.snapshotVersion })
   }),
 
   http.post('/admin/v1/accounts/:external/overrides', async ({ params, request }) => {
@@ -233,13 +233,18 @@ export const handlers = [
       effectNow: 'WINNING' as const,
     }
     db.account.overrides.push(created)
-    return HttpResponse.json({ override: created, decision: { allowed: true, value: body.value, trace: RESULT_TRACE }, snapshotVersion: 48212, changeVisibleEverywhereWithinSeconds: 60 }, { status: 201 })
+    return HttpResponse.json({ overrideId: created.id, decision: { allowed: true, value: body.value, trace: RESULT_TRACE }, snapshotVersion: 48212, changeVisibleEverywhereWithinSeconds: 60 }, { status: 201 })
   }),
 
   http.delete('/admin/v1/accounts/:external/overrides/:id', ({ params }) => {
     if (params.external !== db.account.account) return problem(404, 'entitlement/unknown-account', `No account '${params.external}'.`)
     db.account.overrides = db.account.overrides.filter((o) => o.id !== params.id)
-    return HttpResponse.json({ decision: { allowed: true, value: { type: 'QUANTITY', amount: 50 }, trace: RESULT_TRACE }, snapshotVersion: 48212 })
+    return HttpResponse.json({
+      overrideId: String(params.id),
+      decision: { allowed: true, value: { type: 'QUANTITY', amount: 50 }, trace: RESULT_TRACE },
+      snapshotVersion: 48212,
+      changeVisibleEverywhereWithinSeconds: 60,
+    })
   }),
 
   http.get('/admin/v1/check', ({ request }) => {
