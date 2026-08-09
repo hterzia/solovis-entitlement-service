@@ -87,4 +87,25 @@ class SnapshotBuilderTest {
         assertThat(snapshot.capabilities()).containsExactlyInAnyOrder(active, retired);
         assertThat(snapshot.activeCapabilities()).containsExactly(active);
     }
+
+    @Test
+    void accountAssignmentsReturnsEveryAccountRegardlessOfPlan() {
+        var acme = new AccountAssignment("acct_acme", "pro");
+        var globex = new AccountAssignment("acct_globex", "free");
+        var snapshot = new SnapshotBuilder().account(acme).account(globex).build(1);
+
+        assertThat(snapshot.accountAssignments()).containsExactlyInAnyOrder(acme, globex);
+    }
+
+    @Test
+    void allLiveOverridesReturnsEveryOverrideAcrossAccountsAndCapabilities() {
+        var exportKey = new CapabilityKey("export.parquet");
+        var reportsOverride = new AccountOverride(OptionalLong.of(1), "acct_9931", REPORTS, OverrideKind.GRANT,
+            EntitlementValue.Quantity.of(200), Optional.of("goodwill"), Optional.of("s.patel"), Optional.empty());
+        var exportOverride = new AccountOverride(OptionalLong.of(2), "acct_1177", exportKey, OverrideKind.HOLD,
+            new EntitlementValue.Switch(false), Optional.of("suspended"), Optional.of("s.patel"), Optional.empty());
+        var snapshot = new SnapshotBuilder().override(reportsOverride).override(exportOverride).build(1);
+
+        assertThat(snapshot.allLiveOverrides()).containsExactlyInAnyOrder(reportsOverride, exportOverride);
+    }
 }
