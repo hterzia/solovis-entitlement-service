@@ -67,6 +67,13 @@ jobs:
       # --max-instances=1 is load-bearing, not a cost control: SQLite permits one
       # writer host, so this flag makes the constraint an infrastructure
       # guarantee. It must never be raised without first replacing SQLite.
+      #
+      # The Gemini key goes through --set-secrets, never --set-env-vars: env vars
+      # are stored as plaintext in the revision metadata and readable by anyone
+      # with run.viewer, whereas --set-secrets stores only a reference and
+      # resolves the value at container start. Only the runtime service account
+      # holds secretAccessor on it — the deploy account this workflow
+      # impersonates cannot read the key.
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy "$SERVICE" \
@@ -80,6 +87,7 @@ jobs:
             --port 8081 \
             --allow-unauthenticated \
             --set-env-vars "ENTITLEMENT_DB_PATH=/data/entitlement.db,LITESTREAM_BUCKET=${PROJECT_ID}-litestream" \
+            --set-secrets "GOOGLE_AI_GEMINI_API_KEY=gemini-api-key:latest" \
             --quiet
 
       - name: Show service URL
