@@ -150,4 +150,46 @@ class FullSnapshotReaderTest {
         assertThat(replica.vectors().get(0).expectedAllowed()).isFalse();
         assertThat(replica.vectors().get(0).accountExternalId()).isEqualTo("acct_c1");
     }
+
+    @Test
+    void anOverrideLineWithARefThatIsNotOvrIdIsWrappedAsAMalformedFeedExceptionRatherThanEscapingRaw() {
+        var badOverride = """
+            {"kind":"override","ref":"not-a-valid-ref","account":"acct_9931","capability":"api.access",\
+            "overrideKind":"HOLD","value":{"type":"SWITCH","enabled":false}}""";
+
+        assertThatThrownBy(() -> FullSnapshotReader.read(feed(HEADER, CAP_SWITCH, badOverride, FOOTER)))
+            .isInstanceOf(FullSnapshotReader.MalformedFeedException.class)
+            .hasMessageContaining("override");
+    }
+
+    @Test
+    void aCapabilityLineViolatingACoreModelInvariantIsWrappedAsAMalformedFeedExceptionRatherThanEscapingRaw() {
+        var invalidCapability = """
+            {"kind":"capability","key":"api.access","area":"api","valueType":"SWITCH",\
+            "default":{"type":"SWITCH","enabled":false},"offValue":{"type":"SWITCH","enabled":false},\
+            "status":"ACTIVE"}""";
+
+        assertThatThrownBy(() -> FullSnapshotReader.read(feed(HEADER, invalidCapability, FOOTER)))
+            .isInstanceOf(FullSnapshotReader.MalformedFeedException.class)
+            .hasMessageContaining("capability");
+    }
+
+    @Test
+    void aConformanceLineMissingOneOfItsModelKeysIsWrappedAsAMalformedFeedExceptionRatherThanEscapingRaw() {
+        var incompleteVector = """
+            {"kind":"conformance","id":"missing plans array",\
+            "model":{"account":"acct_c1","capability":"api.access",\
+            "capabilities":[],"accounts":[],"overrides":[]},\
+            "expect":{"allowed":false,"value":{"type":"SWITCH","enabled":false}}}""";
+
+        assertThatThrownBy(() -> FullSnapshotReader.read(feed(HEADER, CAP_SWITCH, incompleteVector, FOOTER)))
+            .isInstanceOf(FullSnapshotReader.MalformedFeedException.class)
+            .hasMessageContaining("conformance");
+    }
+
+    @Test
+    void aSyntacticallyInvalidJsonLineIsWrappedAsAMalformedFeedExceptionRatherThanEscapingRaw() {
+        assertThatThrownBy(() -> FullSnapshotReader.read(feed(HEADER, "{not valid json", FOOTER)))
+            .isInstanceOf(FullSnapshotReader.MalformedFeedException.class);
+    }
 }

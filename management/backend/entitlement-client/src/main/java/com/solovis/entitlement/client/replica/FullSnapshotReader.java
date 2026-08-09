@@ -68,6 +68,11 @@ public final class FullSnapshotReader {
                 "A snapshot feed must start with a header line; the body was discarded.");
         }
 
+        // Tracks what was being applied when a failure hit, so the wrapped exception below can
+        // name it — cheap to maintain, and it is the difference between "line 4 (kind
+        // 'capability') could not be applied" and an opaque stack trace.
+        String currentKind = "header";
+        int currentLine = 1;
         try {
             var header = ClientJson.MAPPER.treeToValue(nodes.get(0), FeedDtos.HeaderLine.class);
             var publishedAt = Instant.parse(header.publishedAt());
@@ -83,7 +88,9 @@ public final class FullSnapshotReader {
                         "A line was found after the footer; the feed must end at the footer.");
                 }
                 var node = nodes.get(i);
-                switch (kindOf(node)) {
+                currentLine = i + 1;
+                currentKind = kindOf(node);
+                switch (currentKind) {
                     case "footer" -> footer = ClientJson.MAPPER.treeToValue(node, FeedDtos.FooterLine.class);
                     case "capability" -> builder.capability(WireMapper.toCapability(
                         ClientJson.MAPPER.treeToValue(node, FeedDtos.CapabilityLine.class), publishedAt));
@@ -98,8 +105,7 @@ public final class FullSnapshotReader {
                     }
                     case "conformance" -> vectors.add(toVector(
                         ClientJson.MAPPER.treeToValue(node, FeedDtos.ConformanceLine.class), publishedAt));
-                    default -> LOG.warning(
-                        "Skipping unknown snapshot feed line kind '" + kindOf(node) + "'.");
+                    default -> LOG.warning("Skipping unknown snapshot feed line kind '" + currentKind + "'.");
                 }
             }
 
@@ -115,8 +121,17 @@ public final class FullSnapshotReader {
 
             return new Replica(builder.build(header.version()), overridesByRef, publishedAt, vectors,
                 header.format(), header.resolverContract());
-        } catch (JacksonException e) {
-            throw new MalformedFeedException("Could not parse a record in the snapshot feed.", e);
+        } catch (MalformedFeedException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            // Anything else escaping the parse/dispatch path — a JacksonException, a core model
+            // constructor rejecting an invalid value (e.g. a SWITCH capability declaring an
+            // off-value), WireMapper.refToId rejecting a malformed ref, a conformance line missing
+            // a model key — means this feed cannot be trusted. It must not surface as anything
+            // other than MalformedFeedException, or a caller's catch (MalformedFeedException)
+            // stops meaning "this feed is bad".
+            throw new MalformedFeedException(
+                "Line " + currentLine + " (kind '" + currentKind + "') could not be applied: " + e.getMessage(), e);
         }
     }
 
