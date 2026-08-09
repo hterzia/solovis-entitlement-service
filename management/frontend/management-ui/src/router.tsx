@@ -5,6 +5,7 @@ import { CapabilitiesListRoute } from './routes/capabilities/CapabilitiesListRou
 import { CapabilityDetailRoute } from './routes/capabilities/CapabilityDetailRoute'
 import { PlansListRoute } from './routes/plans/PlansListRoute'
 import { PlanEditorRoute } from './routes/plans/PlanEditorRoute'
+import { AccountsListRoute } from './routes/accounts/AccountsListRoute'
 
 const rootRoute = createRootRoute({ component: AppLayout })
 
@@ -13,13 +14,16 @@ const capabilitiesRoute = createRoute({ getParentRoute: () => rootRoute, path: '
 const capabilityDetailRoute = createRoute({ getParentRoute: () => rootRoute, path: '/capabilities/$key', component: () => <CapabilityDetailRoute /> })
 const plansRoute = createRoute({ getParentRoute: () => rootRoute, path: '/plans', component: PlansListRoute })
 const planEditorRoute = createRoute({ getParentRoute: () => rootRoute, path: '/plans/$key', component: () => <PlanEditorRoute /> })
+const accountsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/accounts', component: AccountsListRoute })
+// The list route's own row links to `/accounts/$external` (Task 17's detail route) — placeholder until then.
+const accountDetailRoute = createRoute({ getParentRoute: () => rootRoute, path: '/accounts/$external', component: () => <div>Account detail</div> })
 // Still placeholders — kept so AppLayout's typed nav links to the not-yet-built screens compile.
-const accountsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/accounts', component: () => <div>Accounts</div> })
 const checkerRoute = createRoute({ getParentRoute: () => rootRoute, path: '/checker', component: () => <div>Checker</div> })
 const historyRoute = createRoute({ getParentRoute: () => rootRoute, path: '/history', component: () => <div>History</div> })
 
 const routeTree = rootRoute.addChildren([
-  indexRoute, capabilitiesRoute, capabilityDetailRoute, plansRoute, planEditorRoute, accountsRoute, checkerRoute, historyRoute,
+  indexRoute, capabilitiesRoute, capabilityDetailRoute, plansRoute, planEditorRoute,
+  accountsRoute, accountDetailRoute, checkerRoute, historyRoute,
 ])
 
 export const router = createRouter({ routeTree })
