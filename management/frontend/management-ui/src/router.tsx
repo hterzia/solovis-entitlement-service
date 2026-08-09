@@ -7,6 +7,7 @@ import { PlansListRoute } from './routes/plans/PlansListRoute'
 import { PlanEditorRoute } from './routes/plans/PlanEditorRoute'
 import { AccountsListRoute } from './routes/accounts/AccountsListRoute'
 import { AccountDetailRoute } from './routes/accounts/AccountDetailRoute'
+import { CheckerRoute } from './routes/checker/CheckerRoute'
 
 const rootRoute = createRootRoute({ component: AppLayout })
 
@@ -17,8 +18,8 @@ const plansRoute = createRoute({ getParentRoute: () => rootRoute, path: '/plans'
 const planEditorRoute = createRoute({ getParentRoute: () => rootRoute, path: '/plans/$key', component: () => <PlanEditorRoute /> })
 const accountsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/accounts', component: AccountsListRoute })
 const accountDetailRoute = createRoute({ getParentRoute: () => rootRoute, path: '/accounts/$external', component: () => <AccountDetailRoute /> })
-// Still placeholders — kept so AppLayout's typed nav links to the not-yet-built screens compile.
-const checkerRoute = createRoute({ getParentRoute: () => rootRoute, path: '/checker', component: () => <div>Checker</div> })
+const checkerRoute = createRoute({ getParentRoute: () => rootRoute, path: '/checker', component: CheckerRoute })
+// Still a placeholder — kept so AppLayout's typed nav link to the not-yet-built History screen compiles.
 const historyRoute = createRoute({ getParentRoute: () => rootRoute, path: '/history', component: () => <div>History</div> })
 
 const routeTree = rootRoute.addChildren([
