@@ -1,0 +1,82 @@
+/* src/styles/app.css — application chrome, not marketing chrome. Uses --sv-app-* tokens. */
+@import './tokens.css';
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--sv-font);
+  font-size: var(--sv-type-14);
+  color: var(--sv-text);
+  background: var(--sv-app-canvas);
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.app-topbar {
+  background: var(--sv-app-topbar);
+  color: var(--sv-surface);
+  padding: var(--sv-space-12) var(--sv-space-24);
+  font-weight: var(--sv-weight-heading);
+  font-size: var(--sv-type-16);
+}
+
+.app-banner {
+  background: var(--sv-slate-800);
+  color: var(--sv-surface-alt);
+  padding: var(--sv-space-8) var(--sv-space-24);
+  font-size: var(--sv-type-12);
+}
+
+.app-navbar {
+  background: var(--sv-app-navbar);
+  display: flex;
+  gap: var(--sv-space-24);
+  padding: 0 var(--sv-space-24);
+}
+
+.app-navbar a {
+  display: inline-block;
+  padding: var(--sv-space-12) 0;
+  color: var(--sv-accent-pale);
+  text-decoration: none;
+  font-weight: var(--sv-weight-ui);
+  font-size: var(--sv-type-14);
+  border-bottom: 2px solid transparent;
+}
+
+.app-navbar a:hover,
+.app-navbar a.active {
+  color: var(--sv-surface);
+  border-bottom-color: var(--sv-accent);
+}
+
+.app-canvas {
+  flex: 1;
+  padding: var(--sv-space-32);
+  max-width: var(--sv-content-max);
+  width: 100%;
+  margin: 0 auto;
+}
+
+.app-panel {
+  background: var(--sv-app-surface);
+  border: 1px solid var(--sv-app-border);
+  border-radius: var(--sv-radius-card);
+  padding: var(--sv-space-24);
+}
+
+.app-panel + .app-panel {
+  margin-top: var(--sv-space-24);
+}
+
+.app-page-title {
+  font-size: var(--sv-type-28);
+  font-weight: var(--sv-weight-heading);
+  line-height: var(--sv-lh-28);
+  margin: 0 0 var(--sv-space-24);
+}
