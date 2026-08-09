@@ -3,6 +3,9 @@ package com.solovis.entitlement.service.api;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.solovis.entitlement.core.conformance.ResolverContract;
+import com.solovis.entitlement.service.admin.dto.CapabilityCreateRequest;
+import com.solovis.entitlement.service.admin.service.CapabilityAdminService;
+import com.solovis.entitlement.service.dto.ValueDto;
 import com.solovis.entitlement.service.snapshot.SnapshotHolder;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,8 +31,11 @@ class SnapshotFeedControllerTest {
 
     @Autowired MockMvc mockMvc;
     @Autowired SnapshotHolder snapshotHolder;
+    @Autowired CapabilityAdminService capabilityAdminService;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private static final String MILLIS_ISO_8601_PATTERN = "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z";
 
     @Test
     void versionReflectsTheHeldSnapshotAndDisablesCaching() throws Exception {
@@ -40,7 +46,25 @@ class SnapshotFeedControllerTest {
             .andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(jsonPath("$.version").value(current))
             .andExpect(jsonPath("$.format").value(1))
-            .andExpect(jsonPath("$.resolverContract").value(ResolverContract.VERSION));
+            .andExpect(jsonPath("$.resolverContract").value(ResolverContract.VERSION))
+            .andExpect(jsonPath("$.publishedAt", org.hamcrest.Matchers.matchesPattern(MILLIS_ISO_8601_PATTERN)));
+    }
+
+    @Test
+    void versionsPublishedAtIsStableAcrossRepeatedPollsOfAnUnchangedVersion() throws Exception {
+        // A real snapshot_version row must exist for the polled version — publish one first so the
+        // controller reads a stored publishedAt rather than falling back to a fresh clock read (which
+        // only happens pre-first-publish, and is the one case that's inherently not pollable-stable).
+        capabilityAdminService.create(new CapabilityCreateRequest("t9c.stability-probe.count", "Stability probe", null, "QUANTITY",
+            new ValueDto("QUANTITY", null, 0L, null, null, null), null, null));
+
+        String first = mockMvc.perform(get("/v1/snapshot/version")).andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        String second = mockMvc.perform(get("/v1/snapshot/version")).andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+
+        assertThat((String) com.jayway.jsonpath.JsonPath.read(first, "$.publishedAt"))
+            .isEqualTo(com.jayway.jsonpath.JsonPath.read(second, "$.publishedAt"));
     }
 
     @Test
@@ -98,6 +122,24 @@ class SnapshotFeedControllerTest {
             .andExpect(jsonPath("$.toVersion").value(current))
             .andExpect(jsonPath("$.changes").isArray())
             .andExpect(jsonPath("$.changes").isEmpty());
+    }
+
+    @Test
+    void deltaChangesAreFlatObjectsMatchingTheContractNotNestedUnderAChangeKey() throws Exception {
+        long before = snapshotHolder.current().snapshotVersion();
+        capabilityAdminService.create(new CapabilityCreateRequest("t9c.delta-shape.probe", "Delta shape probe", null, "SWITCH",
+            new ValueDto("SWITCH", false, null, null, null, null), null, null));
+
+        String response = mockMvc.perform(get("/v1/snapshot").param("since", String.valueOf(before)))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+
+        JsonNode changes = MAPPER.readTree(response).get("changes");
+        assertThat(changes).isNotEmpty();
+        JsonNode change = changes.get(0);
+        assertThat(change.has("version")).isTrue();
+        assertThat(change.has("kind")).isTrue();
+        assertThat(change.has("change")).isFalse();
     }
 
     @Test
