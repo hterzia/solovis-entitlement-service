@@ -7,27 +7,28 @@ import com.solovis.entitlement.service.store.AuditEventFilter;
 import com.solovis.entitlement.service.store.AuditEventRepository;
 import com.solovis.entitlement.service.store.CapabilityRepository;
 import com.solovis.entitlement.service.store.PlanRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.web.bind.annotation.*;
+import tools.jackson.databind.ObjectMapper;
 
 @RestController
 @RequestMapping("/admin/v1/audit")
 public class AuditController {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
     private static final int DEFAULT_LIMIT = 50;
 
     private final AuditEventRepository auditEventRepository;
     private final AccountRepository accountRepository;
     private final PlanRepository planRepository;
     private final CapabilityRepository capabilityRepository;
+    private final ObjectMapper json;
 
     public AuditController(AuditEventRepository auditEventRepository, AccountRepository accountRepository,
-            PlanRepository planRepository, CapabilityRepository capabilityRepository) {
+            PlanRepository planRepository, CapabilityRepository capabilityRepository, ObjectMapper json) {
         this.auditEventRepository = auditEventRepository;
         this.accountRepository = accountRepository;
         this.planRepository = planRepository;
         this.capabilityRepository = capabilityRepository;
+        this.json = json;
     }
 
     @GetMapping
@@ -56,8 +57,8 @@ public class AuditController {
         return new AuditListResponseDto(events, next);
     }
 
-    private static Object readTree(String json) {
-        if (json == null) return null;
-        try { return JSON.readTree(json); } catch (Exception e) { return json; }
+    private Object readTree(String value) {
+        if (value == null) return null;
+        try { return json.readTree(value); } catch (Exception e) { return value; }
     }
 }
