@@ -109,7 +109,7 @@ export const handlers = [
     if (!cap) return problem(404, 'entitlement/unknown-capability', `No capability '${params.key}'.`)
     if (cap.status === 'RETIRED') return problem(409, 'entitlement/validation-failed', 'Already retired.')
     cap.status = 'RETIRED'
-    return HttpResponse.json({ ...cap, usage: { plans: ['pro'], liveOverrides: 1 } })
+    return HttpResponse.json({ capability: cap, usage: { plans: ['pro'], liveOverrides: 1 } })
   }),
 
   http.get('/admin/v1/plans', () => HttpResponse.json({ plans: db.plans, snapshotVersion: 48211 })),
