@@ -50,12 +50,17 @@ public class AccountAdminService {
         this.clock = clock;
     }
 
-    public List<AccountSummaryDto> search(String q, String planKey, long afterId, int limit) {
+    public AccountSearchResponseDto search(String q, String planKey, long afterId, int limit) {
         Long planId = planKey == null ? null : planRepository.findByKey(planKey).map(PlanRow::id).orElse(-1L);
-        return accountRepository.search(q, planId, afterId, limit).stream()
+        var rows = accountRepository.search(q, planId, afterId, limit + 1);
+        boolean hasMore = rows.size() > limit;
+        var page = hasMore ? rows.subList(0, limit) : rows;
+        var accounts = page.stream()
             .map(row -> new AccountSummaryDto(row.externalId(), row.name(),
                 planRepository.findById(row.planId()).map(PlanRow::key).orElseThrow(), row.status()))
             .toList();
+        String nextCursor = hasMore ? "acct_" + page.get(page.size() - 1).id() : null;
+        return new AccountSearchResponseDto(accounts, nextCursor);
     }
 
     @Transactional

@@ -118,4 +118,22 @@ class AccountAdminServiceTest {
         assertThat(detail.overrides()).extracting(AccountDetailDto.OverrideRow::effectNow)
             .containsExactly("NO_EFFECT_PLAN_MORE_GENEROUS");
     }
+
+    @Test
+    void searchPagesByCursorWhenMoreAccountsExist() {
+        planService.create(new PlanCreateRequest("cursor-test-plan", "Cursor test plan", null));
+        planService.designateDefault("cursor-test-plan");
+        accountService.create(new AccountCreateRequest("acct_cursor_page_0", null));
+        accountService.create(new AccountCreateRequest("acct_cursor_page_1", null));
+        accountService.create(new AccountCreateRequest("acct_cursor_page_2", null));
+
+        var firstPage = accountService.search("acct_cursor_page", null, 0, 2);
+        assertThat(firstPage.accounts()).hasSize(2);
+        assertThat(firstPage.nextCursor()).isNotNull();
+
+        long afterId = com.solovis.entitlement.service.error.RefId.parse(firstPage.nextCursor(), "acct_");
+        var secondPage = accountService.search("acct_cursor_page", null, afterId, 2);
+        assertThat(secondPage.accounts()).hasSize(1);
+        assertThat(secondPage.nextCursor()).isNull();
+    }
 }
