@@ -70,6 +70,8 @@ class SnapshotMutatorTest {
         assertThat(updated.liveOverrides("acct_1", REPORTS)).containsExactly(override);
         assertThat(base.liveOverrides("acct_1", REPORTS)).isEmpty();
         assertThat(updated.planEntitlementsMap()).isSameAs(base.planEntitlementsMap());
+        assertThat(updated.capabilitiesMap()).isSameAs(base.capabilitiesMap());
+        assertThat(updated.accountsMap()).isSameAs(base.accountsMap());
     }
 
     @Test
@@ -82,6 +84,10 @@ class SnapshotMutatorTest {
 
         assertThat(updated.liveOverrides("acct_1", REPORTS)).isEmpty();
         assertThat(withOverride.liveOverrides("acct_1", REPORTS)).hasSize(1); // prior version untouched
+        assertThat(updated.capabilitiesMap()).isSameAs(withOverride.capabilitiesMap());
+        assertThat(updated.accountsMap()).isSameAs(withOverride.accountsMap());
+        assertThat(updated.planEntitlementsMap()).isSameAs(withOverride.planEntitlementsMap());
+        assertThat(updated.liveOverridesMap()).isNotSameAs(withOverride.liveOverridesMap());
     }
 
     @Test
@@ -91,6 +97,10 @@ class SnapshotMutatorTest {
 
         assertThat(updated.account("acct_1")).contains(new AccountAssignment("acct_1", "enterprise"));
         assertThat(base.account("acct_1")).contains(new AccountAssignment("acct_1", "pro"));
+        assertThat(updated.capabilitiesMap()).isSameAs(base.capabilitiesMap());
+        assertThat(updated.planEntitlementsMap()).isSameAs(base.planEntitlementsMap());
+        assertThat(updated.liveOverridesMap()).isSameAs(base.liveOverridesMap());
+        assertThat(updated.accountsMap()).isNotSameAs(base.accountsMap());
     }
 
     @Test
@@ -104,5 +114,9 @@ class SnapshotMutatorTest {
 
         assertThat(updated.capability(REPORTS)).get().extracting(Capability::isRetired).isEqualTo(true);
         assertThat(base.capability(REPORTS)).get().extracting(Capability::isRetired).isEqualTo(false);
+        assertThat(updated.accountsMap()).isSameAs(base.accountsMap());
+        assertThat(updated.planEntitlementsMap()).isSameAs(base.planEntitlementsMap());
+        assertThat(updated.liveOverridesMap()).isSameAs(base.liveOverridesMap());
+        assertThat(updated.capabilitiesMap()).isNotSameAs(base.capabilitiesMap());
     }
 }
