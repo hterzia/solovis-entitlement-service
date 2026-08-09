@@ -216,7 +216,7 @@ Additional guarantees:
 - **Targets hold while plans and overrides are being changed**, not only at rest. A system that is fast only when nothing is happening has not met this requirement.
 - **One coherent moment per decision.** A single evaluation reflects the state as of one moment. It can never mix a new plan with the old plan's overrides, or one capability's new value with another's stale one.
 - **Operators see their own changes at once.** An operator who saves a change and immediately re-checks in the UI sees their own change. This guarantee is scoped to the UI; everywhere else gets the 60-second bound.
-- **Answers may be reused only briefly.** Calling products must not reuse an answer for longer than 10 seconds. The 60-second guarantee is an end-to-end promise, so it holds only if callers are bound too — a product reusing hour-old answers makes it fiction.
+- **Answers may be reused only briefly.** Calling products must not reuse an answer for longer than 10 seconds. The 60-second guarantee is an end-to-end promise, so it holds only if callers are bound too — a product reusing hour-old answers makes it fiction. The one exception is stated in §11: while the service cannot answer at all, products carry on with the last answer they saw — holding onto it then, for as long as the outage lasts, is exactly what is required.
 - **The promise is stated where changes are made.** Wherever an operator saves a change, the UI says when it will be live everywhere — "active within 60 seconds" — so a working-as-designed delay is never mistaken for a fault, and never becomes a support ticket.
 
 ---
@@ -357,3 +357,4 @@ Accepted knowingly, each with its resolution in [`future-spec.md`](./future-spec
 | Denials carry no upgrade path | Products must map "what would grant this" themselves |
 | No bulk or segment overrides | An exception for forty acquired accounts is forty manual records |
 | Commercial reductions are HOLDs | "Contractually agreed lower limit" and "suspended for fraud" share one record type |
+| Capability default and off-value edits are ungated | Editing a capability's default or off-value reaches every account whose plan does not set that capability — potentially more accounts than any plan edit — with no affected-account warning or preview |

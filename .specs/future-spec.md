@@ -28,6 +28,7 @@ Two decisions remain with engineering because they are mechanism rather than bus
 | 14 | Unordered choice values | Only if a genuine non-set case appears | Speculative |
 | 15 | Usage-aware decisions | Would fold consumption into the answer | Speculative |
 | 16 | Customer-facing entitlement view | Self-service visibility | Speculative |
+| 17 | Affected-account warning for capability edits | Default and off-value edits reach every unset account with no warning | Medium |
 
 ---
 
@@ -253,3 +254,17 @@ Two decisions remain with engineering because they are mechanism rather than bus
 **Caution:** Explanations are written for internal operators and name internal reasons — "suspended pending investigation", "goodwill grant, renewal risk". Any customer-facing surface needs a separate, sanitised presentation. It must not render the internal trace.
 
 **Depends on:** Item 8 is a natural pairing — a customer-facing view is where the upgrade path is most valuable.
+
+---
+
+## 17. Affected-account warning for capability edits
+
+**What:** The affected-account count and single-account preview that guard plan edits, extended to two further edits with wide reach: changing a capability's default value, and changing its off-value. A default edit reaches every account whose plan does not set that capability; an off-value edit changes what counts as *not available* for every account already sitting at that value.
+
+**Why deferred:** Decided 2026-08-09 during plan review: v1 accepts the gap. Defaults and off-values are expected to be set when a capability is declared and rarely touched afterwards, and until operator sign-in arrives the operator population is one trusted person.
+
+**Why it matters:** A default edit is the only far-reaching change in the system that states nothing before saving — it can touch more accounts than any plan edit, precisely because it applies wherever no plan speaks. An off-value edit is subtler: it flips the yes/no answer for accounts whose value has not moved at all.
+
+**Trigger:** Before capability administration is opened to more than one operator — or the first time a default edit surprises anyone.
+
+**Depends on:** Nothing. The plan editor's preview machinery is the natural foundation.
