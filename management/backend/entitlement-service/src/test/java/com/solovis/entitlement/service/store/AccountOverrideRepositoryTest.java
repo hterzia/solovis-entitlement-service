@@ -89,4 +89,15 @@ class AccountOverrideRepositoryTest {
 
 		assertThat(repository.findLive(accountId, capabilityId)).hasSize(2);
 	}
+
+	@Test
+	void findAllLiveExcludesRemovedOverrides() {
+		long liveId = repository.insert(grant(200L, "Renewal concession"));
+		long removedId = repository.insert(grant(120L, "Migration goodwill"));
+		repository.remove(removedId, "2026-08-09T00:00:00.000Z", "j.okafor", "closed");
+
+		var live = repository.findAllLive();
+
+		assertThat(live).extracting(AccountOverrideRow::id).contains(liveId).doesNotContain(removedId);
+	}
 }

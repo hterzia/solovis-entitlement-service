@@ -81,4 +81,16 @@ class AccountRepositoryTest {
 		assertThat(saved.planAssignmentSource()).isEqualTo("PERSON");
 		assertThat(saved.planAssignmentActor()).isEqualTo("a.reyes");
 	}
+
+	@Test
+	void findAllActiveReturnsOnlyActiveAccounts() {
+		repository.insert(account("acct_active", planId));
+		repository.insert(new AccountRow(null, "acct_closed", "Northwind Capital", planId,
+				"2026-08-09T00:00:00.000Z", "SYSTEM", "billing-sync", "CLOSED",
+				"2026-08-09T00:00:00.000Z", "2026-08-09T00:00:00.000Z"));
+
+		var all = repository.findAllActive();
+
+		assertThat(all).extracting(AccountRow::externalId).contains("acct_active").doesNotContain("acct_closed");
+	}
 }
