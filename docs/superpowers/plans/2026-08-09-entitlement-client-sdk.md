@@ -4216,7 +4216,8 @@ Cover, each as its own test against a `StubFeedServer`:
 - [ ] **Step 3: Run both tests and confirm they fail**
 
 ```bash
-cd management/backend && ./mvnw -pl entitlement-client -am test -Dtest='ReadYourWritesTest+EntitlementClientBuilderTest'
+cd management/backend && ./mvnw -pl entitlement-client -am test \
+  -Dtest=ReadYourWritesTest,EntitlementClientBuilderTest -Dsurefire.failIfNoSpecifiedTests=false
 ```
 Expected: compilation failure / `UnsupportedOperationException`.
 
