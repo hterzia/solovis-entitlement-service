@@ -44,17 +44,19 @@ class AccountAdminServiceTest {
 
     @Test
     void createFailsWithoutADesignatedDefaultPlan() {
-        // relies on a fresh test datasource per JVM run with no default plan designated yet in this test class's ordering;
-        // if another test in this class already designated one, this assertion instead documents that create()
-        // always resolves *some* default rather than failing arbitrarily — adapt per actual execution order.
-        assertThatThrownBy(() -> {
-            if (planService.list().stream().noneMatch(PlanSummaryDto::isDefaultForNewAccounts)) {
-                accountService.create(new AccountCreateRequest("acct_should_fail", null));
-            } else {
-                throw new EntitlementApiException(ErrorCode.DEFAULT_PLAN_REQUIRED, "skip: a default already exists");
-            }
-        }).isInstanceOf(EntitlementApiException.class)
-          .extracting("errorCode").isEqualTo(ErrorCode.DEFAULT_PLAN_REQUIRED);
+        // Force the true no-default-plan state directly rather than relying on test ordering, then
+        // exercise the real create() call — this test class isn't @Transactional (see
+        // PlanAdminControllerTest's note on why), so restore whatever default plan was previously
+        // designated afterwards to avoid leaking state into other tests sharing this JVM fork's SQLite file.
+        var previousDefault = planRepository.findDefault();
+        planRepository.clearDefault("2026-08-09T00:00:00.000Z");
+        try {
+            assertThatThrownBy(() -> accountService.create(new AccountCreateRequest("acct_t26acct_1", "No Default Plan Co")))
+                .isInstanceOf(EntitlementApiException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.DEFAULT_PLAN_REQUIRED);
+        } finally {
+            previousDefault.ifPresent(row -> planRepository.setDefault(row.id(), "2026-08-09T00:00:00.000Z"));
+        }
     }
 
     @Test
