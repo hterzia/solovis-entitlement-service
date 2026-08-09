@@ -34,7 +34,7 @@ public class CapabilityAdminController {
     }
 
     @GetMapping("/{key}")
-    public com.solovis.entitlement.service.dto.CapabilityDescriptorDto get(@PathVariable String key) {
+    public CapabilityDetailResponseDto get(@PathVariable String key) {
         return service.get(key);
     }
 

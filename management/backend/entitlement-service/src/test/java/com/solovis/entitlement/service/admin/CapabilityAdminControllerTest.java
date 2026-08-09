@@ -8,6 +8,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -38,5 +39,22 @@ class CapabilityAdminControllerTest {
         mockMvc.perform(post("/admin/v1/capabilities").contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isUnprocessableEntity())
             .andExpect(jsonPath("$.type").value("entitlement/validation-failed"));
+    }
+
+    @Test
+    void getReturnsTheDescriptorFlatWithUsageAlongside() throws Exception {
+        String body = """
+            {"key":"t9.export.csv","displayName":"Export CSV","valueType":"SWITCH",
+             "default":{"type":"SWITCH","enabled":false}}
+            """;
+        mockMvc.perform(post("/admin/v1/capabilities").contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/admin/v1/capabilities/t9.export.csv"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.key").value("t9.export.csv"))
+            .andExpect(jsonPath("$.displayName").value("Export CSV"))
+            .andExpect(jsonPath("$.usage.plans").isArray())
+            .andExpect(jsonPath("$.usage.liveOverrides").value(0));
     }
 }

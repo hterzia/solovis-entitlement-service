@@ -58,8 +58,11 @@ public class CapabilityAdminService {
             .toList();
     }
 
-    public CapabilityDescriptorDto get(String key) {
-        return CapabilityDescriptorMapper.toDescriptor(loadDomain(key));
+    public CapabilityDetailResponseDto get(String key) {
+        var row = capabilityRepository.findByKey(key)
+            .orElseThrow(() -> new com.solovis.entitlement.core.error.UnknownCapabilityException(key));
+        var domain = com.solovis.entitlement.service.snapshot.RowMappers.toCapability(row, capabilityRepository.findTiers(row.id()));
+        return new CapabilityDetailResponseDto(CapabilityDescriptorMapper.toDescriptor(domain), usageOf(row));
     }
 
     @Transactional
@@ -187,9 +190,7 @@ public class CapabilityAdminService {
             current.valueType(), current.defaultValue(), current.offValue(), current.tierOrder(),
             Capability.Status.RETIRED, java.time.Instant.parse(now));
 
-        var planKeys = planEntitlementRepository.findPlanIdsUsingCapability(row.id()).stream()
-            .map(planId -> planRepository.findById(planId).orElseThrow().key()).toList();
-        long liveOverrides = accountOverrideRepository.countLiveForCapability(row.id());
+        var usage = usageOf(row);
 
         var descriptor = CapabilityDescriptorMapper.toDescriptor(updated);
         long auditSeq = auditRecorder.record(AuditEntry.builder()
@@ -200,13 +201,20 @@ public class CapabilityAdminService {
         snapshotPublisher.publish((base, v) -> SnapshotMutator.withCapability(base, v, updated), auditSeq,
             new DeltaChange.CapabilityRetired(key));
 
-        return new CapabilityRetireResponseDto(descriptor, new CapabilityRetireResponseDto.Usage(planKeys, liveOverrides));
+        return new CapabilityRetireResponseDto(descriptor, usage);
     }
 
     private Capability loadDomain(String key) {
         var row = capabilityRepository.findByKey(key)
             .orElseThrow(() -> new com.solovis.entitlement.core.error.UnknownCapabilityException(key));
         return com.solovis.entitlement.service.snapshot.RowMappers.toCapability(row, capabilityRepository.findTiers(row.id()));
+    }
+
+    private CapabilityRetireResponseDto.Usage usageOf(CapabilityRow row) {
+        var planKeys = planEntitlementRepository.findPlanIdsUsingCapability(row.id()).stream()
+            .map(planId -> planRepository.findById(planId).orElseThrow().key()).toList();
+        long liveOverrides = accountOverrideRepository.countLiveForCapability(row.id());
+        return new CapabilityRetireResponseDto.Usage(planKeys, liveOverrides);
     }
 
     private static ValueType parseValueType(String raw) {

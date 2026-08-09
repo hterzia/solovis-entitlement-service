@@ -96,7 +96,7 @@ class CapabilityAdminServiceTest {
         assertThat(updated.displayName()).isEqualTo("Invoices v2");
         assertThat(updated.description()).isEqualTo("new desc");
         assertThat(updated.defaultValue().amount()).isEqualTo(10L);
-        assertThat(service.get("billing.invoices").displayName()).isEqualTo("Invoices v2");
+        assertThat(service.get("billing.invoices").descriptor().displayName()).isEqualTo("Invoices v2");
         assertThat(snapshotHolder.current()
             .capability(new com.solovis.entitlement.core.model.CapabilityKey("billing.invoices"))
             .orElseThrow().displayName()).isEqualTo("Invoices v2");
@@ -122,7 +122,7 @@ class CapabilityAdminServiceTest {
             new ValueDto("SWITCH", true, null, null, null, null), null, null);
         var created = service.create(create);
 
-        assertThat(service.get("billing.plans")).isEqualTo(created);
+        assertThat(service.get("billing.plans").descriptor()).isEqualTo(created);
     }
 
     @Test
@@ -148,6 +148,19 @@ class CapabilityAdminServiceTest {
         var result = service.retire("export.parquet");
 
         assertThat(result.capability().status()).isEqualTo("RETIRED");
+        assertThat(result.usage().plans()).isEmpty();
+        assertThat(result.usage().liveOverrides()).isZero();
+    }
+
+    @Test
+    void getIncludesUsage() {
+        var create = new CapabilityCreateRequest("t8.export.csv", "Export CSV", null, "SWITCH",
+            new ValueDto("SWITCH", false, null, null, null, null), null, null);
+        service.create(create);
+
+        var result = service.get("t8.export.csv");
+
+        assertThat(result.descriptor().key()).isEqualTo("t8.export.csv");
         assertThat(result.usage().plans()).isEmpty();
         assertThat(result.usage().liveOverrides()).isZero();
     }
