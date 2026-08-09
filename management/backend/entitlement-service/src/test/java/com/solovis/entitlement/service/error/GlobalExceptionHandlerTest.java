@@ -46,4 +46,25 @@ class GlobalExceptionHandlerTest {
             .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
             .andExpect(jsonPath("$.type").value("entitlement/internal-error"));
     }
+
+    @Test
+    void queryParamTypeMismatchMapsTo400NotTheUnexpectedExceptionFallback() throws Exception {
+        mockMvc.perform(get("/test/typed-param").param("value", "not-a-number"))
+            .andExpect(status().isBadRequest())
+            .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+    }
+
+    @Test
+    void missingRequiredQueryParamMapsTo400NotTheUnexpectedExceptionFallback() throws Exception {
+        mockMvc.perform(get("/test/typed-param"))
+            .andExpect(status().isBadRequest())
+            .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+    }
+
+    @Test
+    void wrongHttpMethodMapsTo405NotTheUnexpectedExceptionFallback() throws Exception {
+        mockMvc.perform(post("/test/unknown-account"))
+            .andExpect(status().isMethodNotAllowed())
+            .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+    }
 }
