@@ -13,6 +13,7 @@ import com.solovis.entitlement.service.audit.AuditJson;
 import com.solovis.entitlement.service.audit.AuditRecorder;
 import com.solovis.entitlement.service.dto.ValueDto;
 import com.solovis.entitlement.service.dto.ValueMapper;
+import com.solovis.entitlement.service.dto.ValueText;
 import com.solovis.entitlement.service.error.EntitlementApiException;
 import com.solovis.entitlement.service.error.ErrorCode;
 import com.solovis.entitlement.service.snapshot.*;
@@ -73,7 +74,7 @@ public class PlanAdminService {
     @Transactional
     public PlanSummaryDto create(PlanCreateRequest request) {
         if (planRepository.findByKey(request.key()).isPresent()) {
-            throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "Plan key '" + request.key() + "' is already declared.");
+            throw new EntitlementApiException(ErrorCode.DUPLICATE_KEY, "Plan key '" + request.key() + "' is already declared.");
         }
         String now = Timestamps.iso(clock.instant());
         planRepository.insert(new PlanRow(null, request.key(), request.name(), request.description(), "ACTIVE", false, now, now));
@@ -97,9 +98,15 @@ public class PlanAdminService {
         planRepository.update(row.id(), name, description, now);
         var plan = new Plan(key, name, Plan.Status.valueOf(row.status()), row.defaultForNewAccounts());
 
+        var beforeFields = new LinkedHashMap<String, Object>();
+        beforeFields.put("name", row.name());
+        beforeFields.put("description", row.description());
+        var afterFields = new LinkedHashMap<String, Object>();
+        afterFields.put("name", name);
+        afterFields.put("description", description);
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
             .entityType("PLAN").entityId(key).action("UPDATE").planId(row.id())
-            .beforeJson(auditJson.write(Map.of("name", row.name()))).afterJson(auditJson.write(Map.of("name", name))).build());
+            .beforeJson(auditJson.write(beforeFields)).afterJson(auditJson.write(afterFields)).build());
         snapshotPublisher.publish((base, v) -> SnapshotMutator.withPlan(base, v, plan), auditSeq,
             new DeltaChange.PlanUpserted(key, name, row.status(), row.defaultForNewAccounts()));
 
@@ -114,6 +121,10 @@ public class PlanAdminService {
         Map<String, String> canonicalSet = new LinkedHashMap<>();
         for (var entry : request.set().entrySet()) {
             var capability = requireDomainCapability(entry.getKey());
+            if (capability.isRetired()) {
+                throw new EntitlementApiException(ErrorCode.CAPABILITY_RETIRED_FOR_WRITE,
+                    "Capability '" + entry.getKey() + "' is retired.");
+            }
             var newValue = ValueMapper.fromDto(entry.getValue(), capability);
             var before = snapshot.planEntitlement(key, capability.key()).map(pe -> ValueMapper.toDto(pe.value())).orElse(null);
             diffs.add(new PlanPreviewResponseDto.Diff(entry.getKey(), before, ValueMapper.toDto(newValue), null));
@@ -122,8 +133,8 @@ public class PlanAdminService {
         for (var capabilityKey : request.unset()) {
             var capability = requireDomainCapability(capabilityKey);
             var before = snapshot.planEntitlement(key, capability.key()).map(pe -> ValueMapper.toDto(pe.value())).orElse(null);
-            diffs.add(new PlanPreviewResponseDto.Diff(capabilityKey, before,
-                ValueMapper.toDto(capability.defaultValue()), "Falls back to the capability default."));
+            diffs.add(new PlanPreviewResponseDto.Diff(capabilityKey, before, null,
+                "Falls back to the capability default (" + ValueText.describe(capability.defaultValue()) + ")."));
         }
 
         PlanPreviewResponseDto.PreviewAccount previewAccount = null;
@@ -172,23 +183,54 @@ public class PlanAdminService {
         }
 
         String now = Timestamps.iso(clock.instant());
+        Map<String, Long> touchedCapabilityIds = new LinkedHashMap<>();
         for (var entry : request.set().entrySet()) {
-            var capRow = capabilityRepository.findByKey(entry.getKey()).orElseThrow();
+            var capRow = capabilityRepository.findByKey(entry.getKey())
+                .orElseThrow(() -> new com.solovis.entitlement.core.error.UnknownCapabilityException(entry.getKey()));
             var capability = requireDomainCapability(entry.getKey());
             var value = ValueMapper.fromDto(entry.getValue(), capability);
             var columns = ValueColumnCodec.toColumns(value);
             planEntitlementRepository.upsert(new PlanEntitlementRow(row.id(), capRow.id(), columns.boolValue(),
                 columns.qtyValue(), columns.qtyUnlimited(), columns.tierValue(), now));
+            touchedCapabilityIds.put(entry.getKey(), capRow.id());
         }
         for (var capabilityKey : request.unset()) {
-            var capRow = capabilityRepository.findByKey(capabilityKey).orElseThrow();
+            var capRow = capabilityRepository.findByKey(capabilityKey)
+                .orElseThrow(() -> new com.solovis.entitlement.core.error.UnknownCapabilityException(capabilityKey));
             planEntitlementRepository.delete(row.id(), capRow.id());
+            touchedCapabilityIds.put(capabilityKey, capRow.id());
         }
 
         long affected = planRepository.countAccounts(row.id());
-        long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
-            .entityType("PLAN_ENTITLEMENT").entityId(key).action("UPDATE").planId(row.id())
-            .afterJson(auditJson.write(setDtos)).affectedAccountCount(affected).build());
+
+        Long lastAuditSeq = null;
+        for (var entry : request.set().entrySet()) {
+            var capabilityKey = entry.getKey();
+            var beforeValue = before.planEntitlement(key, new CapabilityKey(capabilityKey))
+                .map(pe -> ValueMapper.toDto(pe.value())).orElse(null);
+            lastAuditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
+                .entityType("PLAN_ENTITLEMENT").entityId(key).action("UPDATE").planId(row.id())
+                .capabilityId(touchedCapabilityIds.get(capabilityKey))
+                .beforeJson(auditJson.write(beforeValue)).afterJson(auditJson.write(setDtos.get(capabilityKey)))
+                .affectedAccountCount(affected).build());
+        }
+        for (var capabilityKey : request.unset()) {
+            var beforeValue = before.planEntitlement(key, new CapabilityKey(capabilityKey))
+                .map(pe -> ValueMapper.toDto(pe.value())).orElse(null);
+            lastAuditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
+                .entityType("PLAN_ENTITLEMENT").entityId(key).action("UPDATE").planId(row.id())
+                .capabilityId(touchedCapabilityIds.get(capabilityKey))
+                .beforeJson(auditJson.write(beforeValue)).afterJson(null)
+                .affectedAccountCount(affected).build());
+        }
+        if (lastAuditSeq == null) {
+            // Neither set nor unset touched a capability; still record the (no-op) edit so
+            // snapshot_version.last_audit_seq always references a real row.
+            lastAuditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
+                .entityType("PLAN_ENTITLEMENT").entityId(key).action("UPDATE").planId(row.id())
+                .affectedAccountCount(affected).build());
+        }
+        long auditSeq = lastAuditSeq;
 
         long newVersion = snapshotPublisher.publish((base, v) -> {
             Snapshot next = base;
@@ -220,7 +262,9 @@ public class PlanAdminService {
         var plan = new Plan(key, row.name(), Plan.Status.ARCHIVED, false);
 
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
-            .entityType("PLAN").entityId(key).action("ARCHIVE").planId(row.id()).build());
+            .entityType("PLAN").entityId(key).action("ARCHIVE").planId(row.id())
+            .beforeJson(auditJson.write(Map.of("status", row.status())))
+            .afterJson(auditJson.write(Map.of("status", "ARCHIVED"))).build());
         snapshotPublisher.publish((base, v) -> SnapshotMutator.withPlan(base, v, plan), auditSeq, new DeltaChange.PlanArchived(key));
     }
 

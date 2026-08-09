@@ -2,6 +2,7 @@ package com.solovis.entitlement.service.admin;
 
 import com.solovis.entitlement.service.admin.dto.*;
 import com.solovis.entitlement.service.admin.service.PlanAdminService;
+import com.solovis.entitlement.service.snapshot.SnapshotHolder;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -12,12 +13,16 @@ import java.util.List;
 public class PlanAdminController {
 
     private final PlanAdminService service;
+    private final SnapshotHolder snapshotHolder;
 
-    public PlanAdminController(PlanAdminService service) { this.service = service; }
+    public PlanAdminController(PlanAdminService service, SnapshotHolder snapshotHolder) {
+        this.service = service;
+        this.snapshotHolder = snapshotHolder;
+    }
 
     @GetMapping
-    public java.util.Map<String, Object> list() {
-        return java.util.Map.of("plans", service.list());
+    public PlanListResponseDto list() {
+        return new PlanListResponseDto(service.list(), snapshotHolder.current().snapshotVersion());
     }
 
     @PostMapping
