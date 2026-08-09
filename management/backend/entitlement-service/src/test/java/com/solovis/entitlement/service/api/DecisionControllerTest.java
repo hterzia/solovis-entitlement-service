@@ -76,8 +76,8 @@ class DecisionControllerTest {
     void wholeAccountOmitsTraces() throws Exception {
         mockMvc.perform(get("/v1/accounts/acct_t4_1/entitlements"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.entitlements[0].capability").value("reports.t4.monthly"))
-            .andExpect(jsonPath("$.entitlements[0].trace").doesNotExist());
+            .andExpect(jsonPath("$.entitlements[?(@.capability=='reports.t4.monthly')].capability").value("reports.t4.monthly"))
+            .andExpect(jsonPath("$.entitlements[?(@.capability=='reports.t4.monthly')].trace").doesNotExist());
     }
 
     @Test
