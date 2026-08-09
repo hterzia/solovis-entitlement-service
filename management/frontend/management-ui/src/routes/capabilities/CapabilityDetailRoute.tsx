@@ -56,14 +56,14 @@ export function CapabilityDetailRoute({ capabilityKey }: { capabilityKey?: strin
       <p data-testid="value-type-readonly" title="A capability has one value type across every plan.">{cap.valueType}</p>
 
       <label className="sv-label">Display name
-        <input className="sv-field" value={displayName} onChange={(e) => setDisplayName(e.target.value)} aria-label="Display name" />
+        <input className="sv-field" value={displayName} onChange={(e) => { setDisplayName(e.target.value); saveMutation.reset() }} aria-label="Display name" />
       </label>
       <label className="sv-label">Description
-        <textarea className="sv-field" value={description} onChange={(e) => setDescription(e.target.value)} aria-label="Description" />
+        <textarea className="sv-field" value={description} onChange={(e) => { setDescription(e.target.value); saveMutation.reset() }} aria-label="Description" />
       </label>
       <fieldset>
         <legend>Default value</legend>
-        <ValueEditor valueType={cap.valueType} tiers={cap.tiers} value={defaultValue} onChange={setDefaultValue} />
+        <ValueEditor valueType={cap.valueType} tiers={cap.tiers} value={defaultValue} onChange={(v) => { setDefaultValue(v); saveMutation.reset() }} />
       </fieldset>
       <button type="button" className="sv-btn" onClick={() => saveMutation.mutate()}>Save changes</button>
       {saveMutation.isSuccess && meta.data && <SaveConfirmation seconds={meta.data.changeVisibleEverywhereWithinSeconds} />}
@@ -91,6 +91,7 @@ export function CapabilityDetailRoute({ capabilityKey }: { capabilityKey?: strin
           <button type="button" className="sv-btn--secondary" onClick={() => setConfirmingRetire(false)}>Cancel</button>
         </div>
       )}
+      {retireMutation.isSuccess && meta.data && <SaveConfirmation seconds={meta.data.changeVisibleEverywhereWithinSeconds} />}
     </div>
   )
 }

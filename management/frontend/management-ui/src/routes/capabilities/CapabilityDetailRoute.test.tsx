@@ -65,5 +65,16 @@ describe('CapabilityDetailRoute', () => {
     expect(screen.getByText(/permanent/i)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Confirm retirement' }))
     await waitFor(() => expect(getCapability('reports.monthly')).resolves.toMatchObject({ status: 'RETIRED' }))
+    expect(screen.getByText('Saved. Active everywhere within 60 seconds.')).toBeInTheDocument()
+  })
+
+  it('drops the save confirmation as soon as a further, unsaved edit is made', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<CapabilityDetailRoute capabilityKey="api.access" />)
+    await waitFor(() => expect(screen.getByLabelText('Display name')).toHaveValue('API access'))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(screen.getByText('Saved. Active everywhere within 60 seconds.')).toBeInTheDocument())
+    await user.type(screen.getByLabelText('Description'), ' and more')
+    expect(screen.queryByText('Saved. Active everywhere within 60 seconds.')).not.toBeInTheDocument()
   })
 })
