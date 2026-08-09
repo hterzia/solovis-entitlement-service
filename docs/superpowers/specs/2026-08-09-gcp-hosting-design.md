@@ -283,7 +283,59 @@ The deployment is not done until these pass. The third is the one that matters m
 | SQLite file consumes instance memory | Low | Demo-sized data; raise to 2 GiB if it OOMs. |
 | Litestream v0.5 is a recent rewrite | Low | Pin the exact image tag; do not track `latest`. |
 
-## 12. If this ever needs to be real
+## 12. Deployment pipeline (as built)
+
+Deployment is automated: push to `main` runs the reactor tests, builds the image, and deploys. No manual `gcloud` step exists.
+
+**Source:** `github.com/hterzia/solovis-entitlement-service`, public, so reviewers can read the code alongside the running demo.
+
+### Authentication: Workload Identity Federation, not a key
+
+`iam.disableServiceAccountKeyCreation` blocks the path every GitHub-Actions-to-GCP tutorial takes — create a service account, download the JSON key, paste it into a repo secret. That key cannot be created, so federation is the only route. It is also the better one: GitHub mints a short-lived OIDC token that GCP exchanges for temporary credentials, and no long-lived secret exists to leak from a public repository.
+
+| Component | Value |
+|---|---|
+| Pool | `github` (global) |
+| Provider | `projects/773463992355/locations/global/workloadIdentityPools/github/providers/github` |
+| Attribute condition | `assertion.repository_owner == 'hterzia'` |
+| Impersonation binding | `principalSet://…/attribute.repository/hterzia/solovis-entitlement-service` |
+
+Two independent constraints: the provider only accepts tokens from that owner, and only that one repository may impersonate the deploy account.
+
+**The workflow triggers on `push` to `main` and `workflow_dispatch` only — never `pull_request`.** On a public repository this matters more than it looks: a `pull_request` trigger with `id-token: write` would let anyone open a fork PR whose workflow mints GCP credentials.
+
+### Service accounts
+
+| Account | Holds | Scope |
+|---|---|---|
+| `entitlement-run@` | `roles/storage.objectAdmin` | the Litestream bucket **only** |
+| `entitlement-deploy@` | `roles/artifactregistry.writer` | the `entitlement` repository **only** |
+| `entitlement-deploy@` | `roles/run.admin` | project |
+| `entitlement-deploy@` | `roles/iam.serviceAccountUser` | on `entitlement-run@` only |
+
+**`run.admin` is wider than this needs and is a deliberate trade-off.** `run.developer` cannot set an IAM policy, and `--allow-unauthenticated` *is* a `setIamPolicy` call, so a narrower role would make the pipeline fail on first deploy and require a manual grant afterwards. The project holds nothing but this service, and the account is reachable only from one repository through federation. If authentication ever lands and the service stops being public, this should drop back to `run.developer`.
+
+### Verified locally before first push
+
+The image builds through all three stages; the container boots in **~4 seconds** with health `UP`; and `GET /` serves the SPA from inside the jar with hashed assets — confirming the one-deployable, no-CORS arrangement works end to end. The 4-second figure is a local measurement and will be somewhat slower on Cloud Run, but it is far better than the 8–15 seconds assumed when weighing cold starts in §3.
+
+### Secrets
+
+The Gemini key for the natural-language checker is held in Secret Manager as `gemini-api-key` and mounted with `--set-secrets`, so the revision stores a reference and resolves the value at container start.
+
+**Not `--set-env-vars`.** Cloud Run environment variables are configuration, not secrets: they are stored as plaintext in revision metadata, readable by anyone holding `run.viewer`, and they persist in every revision ever deployed. Routing a GitHub Actions secret into `--set-env-vars` fails the same way — masked in CI logs, plaintext in GCP.
+
+`roles/secretmanager.secretAccessor` is held by `entitlement-run@` alone. The deploy account that mounts the secret cannot read it, so compromising the pipeline does not disclose the key.
+
+**Secret Manager protects the key, not the spending.** The service is public and unauthenticated, so once the ask feature reaches `main`, an endpoint that calls a paid model per request is exposed to the internet — a routinely scanned-for target. Confidentiality of the credential and control of its use are different problems, and only the first is solved here. Before that feature merges: a project budget alert, and quota caps on the key in Google AI Studio. Neither requires code. Per-route rate limiting or gating that one route behind IAP are the next steps if the demo runs long.
+
+### Known gap
+
+The public repository currently carries **committed history only**, by explicit decision. `spec.md`, `CLAUDE.md`, `README.md`, specs 002 and 003 and `frontend-plan.md` are uncommitted and therefore absent, while the superseded `init-spec.md` and `homepage.html` are still present in the pushed history. A reviewer cloning today reads the wrong specification. This is recorded so it is not later mistaken for the repository's intended state.
+
+---
+
+## 13. If this ever needs to be real
 
 Recorded so the demo's shortcuts are not mistaken for architecture:
 
