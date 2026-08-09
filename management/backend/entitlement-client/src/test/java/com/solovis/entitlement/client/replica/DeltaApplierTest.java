@@ -102,6 +102,47 @@ class DeltaApplierTest {
 
         assertThat(applied.snapshot().liveOverrides("acct_9931", new CapabilityKey("reports.monthly")))
             .hasSize(1);
+        assertThat(applied.version()).isEqualTo(101L);
+    }
+
+    @Test
+    void retiringACapabilityThisReplicaDoesNotHoldStillAdvancesTheVersion() {
+        var applied = DeltaApplier.apply(base, delta(100, 101, """
+            {"version":101,"kind":"capability.retired","key":"seats.limit"}"""));
+
+        assertThat(applied.version()).isEqualTo(101L);
+        assertThat(applied.snapshot().capability(new CapabilityKey("seats.limit"))).isEmpty();
+        // The capability this replica does hold is untouched by a retirement it wasn't naming.
+        assertThat(applied.snapshot().capability(new CapabilityKey("reports.monthly")))
+            .get().extracting(Capability::status).isEqualTo(Capability.Status.ACTIVE);
+    }
+
+    @Test
+    void archivingAPlanThisReplicaDoesNotHoldStillAdvancesTheVersion() {
+        var applied = DeltaApplier.apply(base, delta(100, 101, """
+            {"version":101,"kind":"plan.archived","key":"enterprise"}"""));
+
+        assertThat(applied.version()).isEqualTo(101L);
+        assertThat(applied.snapshot().plan("enterprise")).isEmpty();
+        // Plans this replica does hold are untouched by an archival it wasn't naming.
+        assertThat(applied.snapshot().plan("pro")).get()
+            .extracting(com.solovis.entitlement.core.model.Plan::status)
+            .isEqualTo(com.solovis.entitlement.core.model.Plan.Status.ACTIVE);
+    }
+
+    @Test
+    void movingTheDefaultToAPlanThisReplicaDoesNotHoldStillAdvancesTheVersionAndClearsThePreviousHolder() {
+        var applied = DeltaApplier.apply(base, delta(100, 101, """
+            {"version":101,"kind":"plan.defaultChanged","key":"enterprise"}"""));
+
+        assertThat(applied.version()).isEqualTo(101L);
+        assertThat(applied.snapshot().plan("enterprise")).isEmpty();
+        // The code clears the previous holder before discovering the target is absent, so this
+        // replica is left with no default plan until the next full resync or plan.upserted catches
+        // it up — pinned deliberately rather than left as an accident (see task-6-report.md).
+        assertThat(applied.snapshot().plan("pro").orElseThrow().defaultForNewAccounts()).isFalse();
+        assertThat(applied.snapshot().plans().stream().filter(p -> p.defaultForNewAccounts()).count())
+            .isEqualTo(0L);
     }
 
     @Test
