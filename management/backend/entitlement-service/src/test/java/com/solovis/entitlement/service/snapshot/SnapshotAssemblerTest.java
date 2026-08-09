@@ -25,7 +25,7 @@ class SnapshotAssemblerTest {
         long capId = capabilityRepository.insert(new CapabilityRow(null, "seats.count", "seats", "Seats", null,
             "QUANTITY", null, 0L, false, null, false, null, null, "ACTIVE", null,
             "2026-08-09T00:00:00.000Z", "2026-08-09T00:00:00.000Z"));
-        long planId = planRepository.insert(new PlanRow(null, "free", "Free", null, "ACTIVE", true,
+        long planId = planRepository.insert(new PlanRow(null, "free", "Free", null, "ACTIVE", false,
             "2026-08-09T00:00:00.000Z", "2026-08-09T00:00:00.000Z"));
         accountRepository.insert(new AccountRow(null, "acct_1", null, planId, "2026-08-09T00:00:00.000Z",
             "PERSON", "dev-operator", "ACTIVE", "2026-08-09T00:00:00.000Z", "2026-08-09T00:00:00.000Z"));
