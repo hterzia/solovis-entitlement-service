@@ -11,6 +11,7 @@ import com.solovis.entitlement.service.audit.ActorResolver;
 import com.solovis.entitlement.service.audit.AuditEntry;
 import com.solovis.entitlement.service.audit.AuditJson;
 import com.solovis.entitlement.service.audit.AuditRecorder;
+import com.solovis.entitlement.service.audit.AuditSource;
 import com.solovis.entitlement.service.dto.ValueMapper;
 import com.solovis.entitlement.service.error.EntitlementApiException;
 import com.solovis.entitlement.service.error.ErrorCode;
@@ -32,13 +33,15 @@ public class AccountAdminService {
     private final AuditRecorder auditRecorder;
     private final AuditJson auditJson;
     private final ActorResolver actorResolver;
+    private final AuditSource auditSource;
     private final SnapshotPublisher snapshotPublisher;
     private final SnapshotHolder snapshotHolder;
     private final Clock clock;
 
     public AccountAdminService(AccountRepository accountRepository, AccountOverrideRepository accountOverrideRepository,
             PlanRepository planRepository, CapabilityRepository capabilityRepository, AuditRecorder auditRecorder,
-            AuditJson auditJson, ActorResolver actorResolver, SnapshotPublisher snapshotPublisher, SnapshotHolder snapshotHolder, Clock clock) {
+            AuditJson auditJson, ActorResolver actorResolver, AuditSource auditSource, SnapshotPublisher snapshotPublisher,
+            SnapshotHolder snapshotHolder, Clock clock) {
         this.accountRepository = accountRepository;
         this.accountOverrideRepository = accountOverrideRepository;
         this.planRepository = planRepository;
@@ -46,6 +49,7 @@ public class AccountAdminService {
         this.auditRecorder = auditRecorder;
         this.auditJson = auditJson;
         this.actorResolver = actorResolver;
+        this.auditSource = auditSource;
         this.snapshotPublisher = snapshotPublisher;
         this.snapshotHolder = snapshotHolder;
         this.clock = clock;
@@ -82,7 +86,7 @@ public class AccountAdminService {
         afterState.put("name", request.name());
         afterState.put("planKey", defaultPlan.key());
         afterState.put("status", "ACTIVE");
-        long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actor).source("UI").entityType("ACCOUNT")
+        long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actor).source(auditSource.current()).entityType("ACCOUNT")
             .entityId(request.externalId()).action("CREATE").accountId(accountId).planId(defaultPlan.id())
             .afterJson(auditJson.write(afterState)).build());
         snapshotPublisher.publish((base, v) -> SnapshotMutator.withAccount(base, v, assignment), auditSeq,
@@ -199,7 +203,7 @@ public class AccountAdminService {
 
         long auditSeq = auditRecorder.record(AuditEntry.builder()
             .actor(new com.solovis.entitlement.service.audit.Actor(actorId, sourceKind))
-            .source("UI").entityType("ACCOUNT_PLAN").entityId(external).action("ASSIGN").accountId(row.id())
+            .source(auditSource.current()).entityType("ACCOUNT_PLAN").entityId(external).action("ASSIGN").accountId(row.id())
             .planId(targetPlan.id()).reason(request.reason())
             .beforeJson(auditJson.write(Map.of("planKey", planRepository.findById(row.planId()).map(PlanRow::key).orElse(null))))
             .afterJson(auditJson.write(Map.of("planKey", targetPlan.key()))).build());

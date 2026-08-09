@@ -11,6 +11,7 @@ import com.solovis.entitlement.service.audit.ActorResolver;
 import com.solovis.entitlement.service.audit.AuditEntry;
 import com.solovis.entitlement.service.audit.AuditJson;
 import com.solovis.entitlement.service.audit.AuditRecorder;
+import com.solovis.entitlement.service.audit.AuditSource;
 import com.solovis.entitlement.service.dto.ValueDto;
 import com.solovis.entitlement.service.dto.ValueMapper;
 import com.solovis.entitlement.service.dto.ValueText;
@@ -33,19 +34,21 @@ public class PlanAdminService {
     private final AuditRecorder auditRecorder;
     private final AuditJson auditJson;
     private final ActorResolver actorResolver;
+    private final AuditSource auditSource;
     private final SnapshotPublisher snapshotPublisher;
     private final SnapshotHolder snapshotHolder;
     private final Clock clock;
 
     public PlanAdminService(PlanRepository planRepository, CapabilityRepository capabilityRepository,
             PlanEntitlementRepository planEntitlementRepository, AuditRecorder auditRecorder, AuditJson auditJson, ActorResolver actorResolver,
-            SnapshotPublisher snapshotPublisher, SnapshotHolder snapshotHolder, Clock clock) {
+            AuditSource auditSource, SnapshotPublisher snapshotPublisher, SnapshotHolder snapshotHolder, Clock clock) {
         this.planRepository = planRepository;
         this.capabilityRepository = capabilityRepository;
         this.planEntitlementRepository = planEntitlementRepository;
         this.auditRecorder = auditRecorder;
         this.auditJson = auditJson;
         this.actorResolver = actorResolver;
+        this.auditSource = auditSource;
         this.snapshotPublisher = snapshotPublisher;
         this.snapshotHolder = snapshotHolder;
         this.clock = clock;
@@ -80,7 +83,7 @@ public class PlanAdminService {
         planRepository.insert(new PlanRow(null, request.key(), request.name(), request.description(), "ACTIVE", false, now, now));
         var plan = new Plan(request.key(), request.name(), Plan.Status.ACTIVE, false);
 
-        long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
+        long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source(auditSource.current())
             .entityType("PLAN").entityId(request.key()).action("CREATE").planId(requireRow(request.key()).id())
             .afterJson(auditJson.write(request)).build());
         snapshotPublisher.publish((base, v) -> SnapshotMutator.withPlan(base, v, plan), auditSeq,
@@ -104,7 +107,7 @@ public class PlanAdminService {
         var afterFields = new LinkedHashMap<String, Object>();
         afterFields.put("name", name);
         afterFields.put("description", description);
-        long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
+        long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source(auditSource.current())
             .entityType("PLAN").entityId(key).action("UPDATE").planId(row.id())
             .beforeJson(auditJson.write(beforeFields)).afterJson(auditJson.write(afterFields)).build());
         snapshotPublisher.publish((base, v) -> SnapshotMutator.withPlan(base, v, plan), auditSeq,
@@ -208,7 +211,7 @@ public class PlanAdminService {
             var capabilityKey = entry.getKey();
             var beforeValue = before.planEntitlement(key, new CapabilityKey(capabilityKey))
                 .map(pe -> ValueMapper.toDto(pe.value())).orElse(null);
-            lastAuditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
+            lastAuditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source(auditSource.current())
                 .entityType("PLAN_ENTITLEMENT").entityId(key).action("UPDATE").planId(row.id())
                 .capabilityId(touchedCapabilityIds.get(capabilityKey))
                 .beforeJson(auditJson.write(beforeValue)).afterJson(auditJson.write(setDtos.get(capabilityKey)))
@@ -217,7 +220,7 @@ public class PlanAdminService {
         for (var capabilityKey : request.unset()) {
             var beforeValue = before.planEntitlement(key, new CapabilityKey(capabilityKey))
                 .map(pe -> ValueMapper.toDto(pe.value())).orElse(null);
-            lastAuditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
+            lastAuditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source(auditSource.current())
                 .entityType("PLAN_ENTITLEMENT").entityId(key).action("UPDATE").planId(row.id())
                 .capabilityId(touchedCapabilityIds.get(capabilityKey))
                 .beforeJson(auditJson.write(beforeValue)).afterJson(null)
@@ -226,7 +229,7 @@ public class PlanAdminService {
         if (lastAuditSeq == null) {
             // Neither set nor unset touched a capability; still record the (no-op) edit so
             // snapshot_version.last_audit_seq always references a real row.
-            lastAuditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
+            lastAuditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source(auditSource.current())
                 .entityType("PLAN_ENTITLEMENT").entityId(key).action("UPDATE").planId(row.id())
                 .affectedAccountCount(affected).build());
         }
@@ -261,7 +264,7 @@ public class PlanAdminService {
         planRepository.archive(row.id(), now);
         var plan = new Plan(key, row.name(), Plan.Status.ARCHIVED, false);
 
-        long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
+        long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source(auditSource.current())
             .entityType("PLAN").entityId(key).action("ARCHIVE").planId(row.id())
             .beforeJson(auditJson.write(Map.of("status", row.status())))
             .afterJson(auditJson.write(Map.of("status", "ARCHIVED"))).build());
@@ -280,7 +283,7 @@ public class PlanAdminService {
         planRepository.setDefault(row.id(), now);
         var newDefaultPlan = new Plan(key, row.name(), Plan.Status.ACTIVE, true);
 
-        long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
+        long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source(auditSource.current())
             .entityType("DEFAULT_PLAN").entityId(key).action("DESIGNATE").planId(row.id()).build());
 
         snapshotPublisher.publish((base, v) -> {

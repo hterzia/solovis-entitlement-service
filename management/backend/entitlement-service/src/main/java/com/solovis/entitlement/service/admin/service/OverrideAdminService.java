@@ -10,6 +10,7 @@ import com.solovis.entitlement.service.audit.ActorResolver;
 import com.solovis.entitlement.service.audit.AuditEntry;
 import com.solovis.entitlement.service.audit.AuditJson;
 import com.solovis.entitlement.service.audit.AuditRecorder;
+import com.solovis.entitlement.service.audit.AuditSource;
 import com.solovis.entitlement.service.dto.ValueMapper;
 import com.solovis.entitlement.service.error.EntitlementApiException;
 import com.solovis.entitlement.service.error.ErrorCode;
@@ -32,19 +33,21 @@ public class OverrideAdminService {
     private final AuditRecorder auditRecorder;
     private final AuditJson auditJson;
     private final ActorResolver actorResolver;
+    private final AuditSource auditSource;
     private final SnapshotPublisher snapshotPublisher;
     private final SnapshotHolder snapshotHolder;
     private final Clock clock;
 
     public OverrideAdminService(AccountRepository accountRepository, AccountOverrideRepository accountOverrideRepository,
             CapabilityRepository capabilityRepository, AuditRecorder auditRecorder, AuditJson auditJson, ActorResolver actorResolver,
-            SnapshotPublisher snapshotPublisher, SnapshotHolder snapshotHolder, Clock clock) {
+            AuditSource auditSource, SnapshotPublisher snapshotPublisher, SnapshotHolder snapshotHolder, Clock clock) {
         this.accountRepository = accountRepository;
         this.accountOverrideRepository = accountOverrideRepository;
         this.capabilityRepository = capabilityRepository;
         this.auditRecorder = auditRecorder;
         this.auditJson = auditJson;
         this.actorResolver = actorResolver;
+        this.auditSource = auditSource;
         this.snapshotPublisher = snapshotPublisher;
         this.snapshotHolder = snapshotHolder;
         this.clock = clock;
@@ -78,7 +81,7 @@ public class OverrideAdminService {
         var override = new AccountOverride(java.util.OptionalLong.of(id), external, capability.key(), kind, value,
             Optional.of(request.reason()), Optional.of(actor.id()), Optional.of(java.time.Instant.parse(now)));
 
-        long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actor).source("UI").entityType("OVERRIDE")
+        long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actor).source(auditSource.current()).entityType("OVERRIDE")
             .entityId("ovr_" + id).action("CREATE").accountId(accountRow.id()).capabilityId(capRow.id())
             .reason(request.reason()).afterJson(auditJson.write(request)).build());
         var base = snapshotHolder.current();
@@ -124,7 +127,7 @@ public class OverrideAdminService {
             throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "Override '" + overrideRef + "' is already removed.");
         }
 
-        long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actor).source("UI").entityType("OVERRIDE")
+        long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actor).source(auditSource.current()).entityType("OVERRIDE")
             .entityId(canonicalRef).action("REMOVE").accountId(accountRow.id()).capabilityId(capRow.id())
             .reason(removeReason).beforeJson(auditJson.write(beforeMap)).build());
         var base = snapshotHolder.current();

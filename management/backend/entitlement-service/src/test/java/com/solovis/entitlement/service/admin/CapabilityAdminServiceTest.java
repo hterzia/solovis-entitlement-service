@@ -2,10 +2,13 @@ package com.solovis.entitlement.service.admin;
 
 import com.solovis.entitlement.service.admin.dto.CapabilityCreateRequest;
 import com.solovis.entitlement.service.admin.service.CapabilityAdminService;
+import com.solovis.entitlement.service.audit.AuditSource;
 import com.solovis.entitlement.service.dto.ValueDto;
 import com.solovis.entitlement.service.error.EntitlementApiException;
 import com.solovis.entitlement.service.error.ErrorCode;
 import com.solovis.entitlement.service.snapshot.SnapshotHolder;
+import com.solovis.entitlement.service.store.AuditEventFilter;
+import com.solovis.entitlement.service.store.AuditEventRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -29,6 +32,22 @@ class CapabilityAdminServiceTest {
 
     @Autowired CapabilityAdminService service;
     @Autowired SnapshotHolder snapshotHolder;
+    @Autowired AuditSource auditSource;
+    @Autowired AuditEventRepository auditEventRepository;
+
+    @Test
+    void createInsideRunAsSeedRecordsASeedSourcedAuditEvent() {
+        var request = new CapabilityCreateRequest("taudit.probe", "Audit source probe", null, "SWITCH",
+            new ValueDto("SWITCH", false, null, null, null, null), null, null);
+
+        auditSource.runAs("SEED", () -> service.create(request));
+
+        var events = auditEventRepository.find(
+            new AuditEventFilter(null, null, null, "CAPABILITY", null, null, null, 50));
+        var created = events.stream().filter(e -> e.entityId().equals("taudit.probe")).findFirst();
+        assertThat(created).isPresent();
+        assertThat(created.get().source()).isEqualTo("SEED");
+    }
 
     @Test
     void createPublishesTheCapabilityIntoTheLiveSnapshot() {
