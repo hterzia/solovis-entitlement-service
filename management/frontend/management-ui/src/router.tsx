@@ -6,6 +6,7 @@ import { CapabilityDetailRoute } from './routes/capabilities/CapabilityDetailRou
 import { PlansListRoute } from './routes/plans/PlansListRoute'
 import { PlanEditorRoute } from './routes/plans/PlanEditorRoute'
 import { AccountsListRoute } from './routes/accounts/AccountsListRoute'
+import { AccountDetailRoute } from './routes/accounts/AccountDetailRoute'
 
 const rootRoute = createRootRoute({ component: AppLayout })
 
@@ -15,8 +16,7 @@ const capabilityDetailRoute = createRoute({ getParentRoute: () => rootRoute, pat
 const plansRoute = createRoute({ getParentRoute: () => rootRoute, path: '/plans', component: PlansListRoute })
 const planEditorRoute = createRoute({ getParentRoute: () => rootRoute, path: '/plans/$key', component: () => <PlanEditorRoute /> })
 const accountsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/accounts', component: AccountsListRoute })
-// The list route's own row links to `/accounts/$external` (Task 17's detail route) — placeholder until then.
-const accountDetailRoute = createRoute({ getParentRoute: () => rootRoute, path: '/accounts/$external', component: () => <div>Account detail</div> })
+const accountDetailRoute = createRoute({ getParentRoute: () => rootRoute, path: '/accounts/$external', component: () => <AccountDetailRoute /> })
 // Still placeholders — kept so AppLayout's typed nav links to the not-yet-built screens compile.
 const checkerRoute = createRoute({ getParentRoute: () => rootRoute, path: '/checker', component: () => <div>Checker</div> })
 const historyRoute = createRoute({ getParentRoute: () => rootRoute, path: '/history', component: () => <div>History</div> })
