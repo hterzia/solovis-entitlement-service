@@ -50,7 +50,7 @@ class CapabilityAdminServiceTest {
 
         assertThatThrownBy(() -> service.create(request))
             .isInstanceOf(EntitlementApiException.class)
-            .extracting("errorCode").isEqualTo(ErrorCode.VALIDATION_FAILED);
+            .extracting("errorCode").isEqualTo(ErrorCode.DUPLICATE_KEY);
     }
 
     @Test
@@ -90,7 +90,7 @@ class CapabilityAdminServiceTest {
             new ValueDto("QUANTITY", null, 10L, null, null, null), null, null);
         service.create(create);
 
-        var patch = new com.solovis.entitlement.service.admin.dto.CapabilityPatchRequest("Invoices v2", "new desc", null, null);
+        var patch = new com.solovis.entitlement.service.admin.dto.CapabilityPatchRequest("Invoices v2", "new desc", null, null, null);
         var updated = service.patch("billing.invoices", patch);
 
         assertThat(updated.displayName()).isEqualTo("Invoices v2");
@@ -109,7 +109,7 @@ class CapabilityAdminServiceTest {
         service.create(create);
 
         var patch = new com.solovis.entitlement.service.admin.dto.CapabilityPatchRequest(null, null,
-            new ValueDto("QUANTITY", null, 50L, null, null, null), new ValueDto("QUANTITY", null, 0L, null, null, null));
+            new ValueDto("QUANTITY", null, 50L, null, null, null), new ValueDto("QUANTITY", null, 0L, null, null, null), null);
         var updated = service.patch("billing.seats", patch);
 
         assertThat(updated.defaultValue().amount()).isEqualTo(50L);

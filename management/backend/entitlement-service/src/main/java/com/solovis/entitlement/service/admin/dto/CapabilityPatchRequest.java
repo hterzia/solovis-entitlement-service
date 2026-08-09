@@ -9,5 +9,9 @@ public record CapabilityPatchRequest(
     String displayName,
     String description,
     @JsonProperty("default") ValueDto defaultValue,
-    ValueDto offValue
+    ValueDto offValue,
+    // Present only so a caller's attempt to change it can be DETECTED (and refused with 409
+    // entitlement/immutable-field) rather than silently dropped by Jackson's lenient unknown-
+    // property binding. A capability's declared type is immutable after creation (c1).
+    String valueType
 ) {}

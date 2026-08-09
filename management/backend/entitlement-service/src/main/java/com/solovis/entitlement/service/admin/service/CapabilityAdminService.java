@@ -22,6 +22,7 @@ import java.time.Clock;
 import com.solovis.entitlement.service.time.Timestamps;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -69,8 +70,20 @@ public class CapabilityAdminService {
     @Transactional
     public CapabilityDescriptorDto create(CapabilityCreateRequest request) {
         if (capabilityRepository.existsByKey(request.key())) {
-            throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED,
+            throw new EntitlementApiException(ErrorCode.DUPLICATE_KEY,
                 "Capability key '" + request.key() + "' is already declared.");
+        }
+        if (request.valueType() == null) {
+            throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "valueType is required.",
+                Map.of("violations", List.of("valueType is required.")));
+        }
+        if (request.defaultValue() == null) {
+            throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "default is required.",
+                Map.of("violations", List.of("default is required.")));
+        }
+        if (request.defaultValue().type() == null) {
+            throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "default.type is required.",
+                Map.of("violations", List.of("default.type is required.")));
         }
         ValueType valueType = parseValueType(request.valueType());
         if (!request.defaultValue().type().equals(valueType.name())) {
@@ -112,6 +125,10 @@ public class CapabilityAdminService {
 
     @Transactional
     public CapabilityDescriptorDto patch(String key, CapabilityPatchRequest request) {
+        if (request.valueType() != null) {
+            throw new EntitlementApiException(ErrorCode.IMMUTABLE_FIELD,
+                "A capability's valueType is immutable (c1); create a new capability instead.");
+        }
         Capability current = loadDomain(key);
         var row = capabilityRepository.findByKey(key).orElseThrow();
 
