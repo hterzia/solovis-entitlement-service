@@ -3638,7 +3638,11 @@ export function PlanEditorRoute({ planKey }: { planKey?: string } = {}) {
         )}
       />
 
-      {hasPendingChanges && (
+      {/* applyResult, not just hasPendingChanges: saveMutation's onSuccess clears pendingSet/
+          pendingUnset, so gating on hasPendingChanges alone would unmount this panel — and the
+          SaveConfirmation inside it — the instant a save succeeds, before the operator ever sees
+          the liveness promise it exists to show. */}
+      {(hasPendingChanges || applyResult) && (
         <div className="app-panel">
           <h2>Review and save</h2>
           <label className="sv-label">Preview account
