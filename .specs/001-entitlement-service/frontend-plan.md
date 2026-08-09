@@ -3712,6 +3712,9 @@ describe('AccountsListRoute', () => {
   it('creates a new account, assigned to the default plan', async () => {
     const user = userEvent.setup()
     renderWithProviders(<AccountsListRoute />)
+    // The form renders immediately (it isn't gated behind the accounts list query), but
+    // RouterProvider's initial route match is still async — wait for it before interacting.
+    await waitFor(() => expect(screen.getByLabelText('New account external id')).toBeInTheDocument())
     await user.type(screen.getByLabelText('New account external id'), 'acct_5001')
     await user.click(screen.getByRole('button', { name: 'Create account' }))
     await waitFor(() => expect(screen.getByRole('link', { name: /acct_5001/i })).toBeInTheDocument())
@@ -4083,6 +4086,9 @@ describe('AccountDetailRoute', () => {
   it('blocks override submission until a reason is given', async () => {
     const user = userEvent.setup()
     renderWithProviders(<AccountDetailRoute external="acct_9931" />)
+    // AccountDetailRoute renders "Loading…" until both the router's initial match and the
+    // account query settle, so the first interaction must wait for real content, not assume it.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add override' })).toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: 'Add override' }))
     await waitFor(() => expect(screen.getByLabelText('Capability')).toBeInTheDocument())
     await user.selectOptions(screen.getByLabelText('Capability'), 'reports.monthly')
@@ -4095,6 +4101,7 @@ describe('AccountDetailRoute', () => {
   it('creates an override and immediately shows the resulting trace', async () => {
     const user = userEvent.setup()
     renderWithProviders(<AccountDetailRoute external="acct_9931" />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add override' })).toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: 'Add override' }))
     await waitFor(() => expect(screen.getByLabelText('Capability')).toBeInTheDocument())
     await user.selectOptions(screen.getByLabelText('Capability'), 'reports.monthly')
@@ -4118,6 +4125,7 @@ describe('AccountDetailRoute', () => {
   it('reassigns the plan and confirms how many overrides are retained', async () => {
     const user = userEvent.setup()
     renderWithProviders(<AccountDetailRoute external="acct_9931" />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Change plan' })).toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: 'Change plan' }))
     await user.selectOptions(screen.getByLabelText('New plan'), 'free')
     await user.click(screen.getByLabelText('A person'))
@@ -4398,6 +4406,7 @@ describe('CheckerRoute', () => {
   it('checks an account and capability and renders the trace', async () => {
     const user = userEvent.setup()
     renderWithProviders(<CheckerRoute />)
+    await waitFor(() => expect(screen.getByLabelText('Account')).toBeInTheDocument())
     await user.type(screen.getByLabelText('Account'), 'acct_9931')
     await user.type(screen.getByLabelText('Capability'), 'reports.monthly')
     await user.click(screen.getByRole('button', { name: 'Check' }))
@@ -4408,6 +4417,7 @@ describe('CheckerRoute', () => {
   it('resolves an override reference to its account and capability', async () => {
     const user = userEvent.setup()
     renderWithProviders(<CheckerRoute />)
+    await waitFor(() => expect(screen.getByLabelText('Account')).toBeInTheDocument())
     await user.type(screen.getByLabelText('Account'), 'acct_9931')
     await user.type(screen.getByLabelText('Override reference'), 'ovr_7788')
     await user.click(screen.getByRole('button', { name: 'Check' }))
@@ -4417,6 +4427,7 @@ describe('CheckerRoute', () => {
   it('renders "No such account" as an error, never a denial', async () => {
     const user = userEvent.setup()
     renderWithProviders(<CheckerRoute />)
+    await waitFor(() => expect(screen.getByLabelText('Account')).toBeInTheDocument())
     await user.type(screen.getByLabelText('Account'), 'acct_does_not_exist')
     await user.type(screen.getByLabelText('Capability'), 'reports.monthly')
     await user.click(screen.getByRole('button', { name: 'Check' }))
@@ -4428,6 +4439,7 @@ describe('CheckerRoute', () => {
     db.capabilities.find((c) => c.key === 'reports.monthly')!.status = 'RETIRED'
     const user = userEvent.setup()
     renderWithProviders(<CheckerRoute />)
+    await waitFor(() => expect(screen.getByLabelText('Account')).toBeInTheDocument())
     await user.type(screen.getByLabelText('Account'), 'acct_9931')
     await user.type(screen.getByLabelText('Capability'), 'reports.monthly')
     await user.click(screen.getByRole('button', { name: 'Check' }))
@@ -4438,6 +4450,7 @@ describe('CheckerRoute', () => {
     const user = userEvent.setup()
     Object.assign(navigator, { clipboard: { writeText: vi.fn() } })
     renderWithProviders(<CheckerRoute />)
+    await waitFor(() => expect(screen.getByLabelText('Account')).toBeInTheDocument())
     await user.type(screen.getByLabelText('Account'), 'acct_9931')
     await user.type(screen.getByLabelText('Capability'), 'reports.monthly')
     await user.click(screen.getByRole('button', { name: 'Check' }))
