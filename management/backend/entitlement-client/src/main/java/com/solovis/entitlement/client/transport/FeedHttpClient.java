@@ -80,8 +80,8 @@ public final class FeedHttpClient implements AutoCloseable {
         } catch (RuntimeException e) {
             // Covers FullSnapshotReader.MalformedFeedException and an UncheckedIOException from a
             // connection that dropped mid-stream — both mean "this feed body cannot be trusted",
-            // which is exactly what FeedUnavailableException means to a caller. The poller's single
-            // catch for transport failure must see this, not a class it has never heard of.
+            // which is exactly what FeedUnavailableException means to a caller. A caller that
+            // catches only transport failure must see this, not a class it has never heard of.
             throw new FeedUnavailableException(
                 "Entitlement feed at " + uri + " returned a snapshot that could not be applied.", e);
         }
@@ -97,8 +97,8 @@ public final class FeedHttpClient implements AutoCloseable {
 
     /**
      * {@code GET /v1/accounts/{account}/capabilities/{capability}} — the raw response body, kept
-     * unparsed because only the caller (task 12) knows the trace shape this transport package must
-     * not.
+     * unparsed because only the caller knows the trace shape; this package understands the network
+     * and nothing about the domain.
      */
     public String decisionJson(String account, String capability) {
         var uri = resolve("/v1/accounts/" + account + "/capabilities/" + capability);
