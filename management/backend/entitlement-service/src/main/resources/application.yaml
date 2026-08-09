@@ -19,6 +19,8 @@ entitlement:
     busy-timeout-millis: 5000
   actor:
     id: "${ENTITLEMENT_DEV_ACTOR:dev-operator}"
+  seed:
+    enabled: "${ENTITLEMENT_SEED_ENABLED:true}"
 
 management:
   endpoints:
