@@ -36,8 +36,13 @@ export function addCapabilityTier(key: string, tier: { tier: string; displayName
   return apiPost<Capability>(`/capabilities/${key}/tiers`, tier)
 }
 
+export interface CapabilityRetireResult {
+  capability: Capability
+  usage: { plans: string[]; liveOverrides: number }
+}
+
 export function retireCapability(key: string) {
-  return apiPost<Capability & { usage: { plans: string[]; liveOverrides: number } }>(`/capabilities/${key}/retire`)
+  return apiPost<CapabilityRetireResult>(`/capabilities/${key}/retire`)
 }
 
 export type { CapabilityTier }

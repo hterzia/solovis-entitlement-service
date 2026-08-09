@@ -37,8 +37,8 @@ describe('AccountsListRoute', () => {
       http.get('/admin/v1/accounts', ({ request }) => {
         const cursor = new URL(request.url).searchParams.get('cursor')
         return cursor
-          ? HttpResponse.json({ accounts: [{ external: 'acct_page_two', name: null, planKey: 'pro' }], nextCursor: null })
-          : HttpResponse.json({ accounts: [{ external: 'acct_page_one', name: null, planKey: 'pro' }], nextCursor: 'acct_next_page' })
+          ? HttpResponse.json({ accounts: [{ account: 'acct_page_two', name: null, planKey: 'pro' }], nextCursor: null })
+          : HttpResponse.json({ accounts: [{ account: 'acct_page_one', name: null, planKey: 'pro' }], nextCursor: 'acct_next_page' })
       }),
     )
 
@@ -57,11 +57,11 @@ describe('AccountsListRoute', () => {
         const url = new URL(request.url)
         const cursor = url.searchParams.get('cursor')
         if (url.searchParams.get('q')) {
-          return HttpResponse.json({ accounts: [{ external: 'acct_searched', name: null, planKey: 'pro' }], nextCursor: null })
+          return HttpResponse.json({ accounts: [{ account: 'acct_searched', name: null, planKey: 'pro' }], nextCursor: null })
         }
         return cursor
-          ? HttpResponse.json({ accounts: [{ external: 'acct_page_two', name: null, planKey: 'pro' }], nextCursor: null })
-          : HttpResponse.json({ accounts: [{ external: 'acct_page_one', name: null, planKey: 'pro' }], nextCursor: 'acct_next_page' })
+          ? HttpResponse.json({ accounts: [{ account: 'acct_page_two', name: null, planKey: 'pro' }], nextCursor: null })
+          : HttpResponse.json({ accounts: [{ account: 'acct_page_one', name: null, planKey: 'pro' }], nextCursor: 'acct_next_page' })
       }),
     )
 

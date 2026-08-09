@@ -3,7 +3,7 @@ import type { EntitlementValue } from '../types/value'
 import type { Plan, PlanEntitlementDiffEntry, Trace } from '../types/domain'
 
 export function listPlans() {
-  return apiGet<{ plans: Plan[]; snapshotVersion: number }>('/plans')
+  return apiGet<{ plans: Plan[] }>('/plans')
 }
 
 export function createPlan(input: { key: string; name: string; description?: string }) {

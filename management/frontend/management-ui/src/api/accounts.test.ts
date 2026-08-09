@@ -24,7 +24,7 @@ describe('accounts API', () => {
     const created = await addOverride('acct_9931', {
       capability: 'reports.monthly', kind: 'GRANT', value: { type: 'QUANTITY', amount: 10 }, reason: 'Test grant',
     })
-    await expect(removeOverride('acct_9931', created.override.id)).resolves.toMatchObject({ snapshotVersion: 48212 })
+    await expect(removeOverride('acct_9931', created.overrideId)).resolves.toMatchObject({ snapshotVersion: 48212 })
   })
 
   it('reassigns the plan and reports retained overrides', async () => {

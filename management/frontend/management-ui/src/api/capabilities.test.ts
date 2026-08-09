@@ -29,7 +29,7 @@ describe('capabilities API', () => {
 
   it('retires a capability and reports usage', async () => {
     const retired = await retireCapability('reports.monthly')
-    expect(retired.status).toBe('RETIRED')
+    expect(retired.capability.status).toBe('RETIRED')
     expect(retired.usage.liveOverrides).toBe(1)
   })
 })

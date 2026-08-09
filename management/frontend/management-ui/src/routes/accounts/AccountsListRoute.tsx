@@ -14,7 +14,7 @@ export function AccountsListRoute() {
   })
   const queryClient = useQueryClient()
   const createMutation = useMutation({
-    mutationFn: () => createAccount({ external: newExternal }),
+    mutationFn: () => createAccount({ externalId: newExternal }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['accounts'] }); setNewExternal('') },
   })
 
@@ -24,9 +24,9 @@ export function AccountsListRoute() {
       <input className="sv-field" aria-label="Search accounts" value={q} onChange={(e) => { setQ(e.target.value); setCursor(undefined) }} placeholder="Search by account or name" />
       <ul>
         {query.data?.accounts.map((a) => (
-          <li key={a.external}>
-            <Link to="/accounts/$external" params={{ external: a.external }} className="sv-link">
-              {a.name ? `${a.name} (${a.external})` : a.external}
+          <li key={a.account}>
+            <Link to="/accounts/$external" params={{ external: a.account }} className="sv-link">
+              {a.name ? `${a.name} (${a.account})` : a.account}
             </Link>
           </li>
         ))}

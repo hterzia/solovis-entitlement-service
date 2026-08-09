@@ -95,9 +95,10 @@ export interface AccountDetail {
 }
 
 export interface AccountSummary {
-  external: string
+  account: string
   name: string | null
   planKey: string
+  status: 'ACTIVE' | 'CLOSED'
 }
 
 export type TraceBaselineSource = 'PLAN' | 'CAPABILITY_DEFAULT'

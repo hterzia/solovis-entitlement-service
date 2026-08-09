@@ -184,11 +184,11 @@ export function AccountDetailRoute({ external: externalProp }: { external?: stri
           </li>
         ))}
       </ul>
-      {removedDecision && (
+      {removedDecision && removeMutation.data && (
         <div className="app-panel">
           <h3>Restored value</h3>
           <TraceView trace={removedDecision.trace} />
-          {meta.data && <SaveConfirmation seconds={meta.data.changeVisibleEverywhereWithinSeconds} />}
+          <SaveConfirmation seconds={removeMutation.data.changeVisibleEverywhereWithinSeconds} />
         </div>
       )}
 
