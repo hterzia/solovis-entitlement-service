@@ -1,0 +1,108 @@
+package com.solovis.entitlement.core.view;
+
+import com.solovis.entitlement.core.model.AccountAssignment;
+import com.solovis.entitlement.core.model.Capability;
+import com.solovis.entitlement.core.model.CapabilityKey;
+import com.solovis.entitlement.core.model.EntitlementValue;
+import com.solovis.entitlement.core.model.AccountOverride;
+import com.solovis.entitlement.core.model.OverrideKind;
+import com.solovis.entitlement.core.model.Plan;
+import com.solovis.entitlement.core.model.PlanEntitlement;
+import com.solovis.entitlement.core.model.TierOrder;
+import com.solovis.entitlement.core.model.ValueType;
+import java.util.Optional;
+import java.util.OptionalLong;
+import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+
+class SnapshotMutatorTest {
+
+    private static final CapabilityKey REPORTS = new CapabilityKey("reports.monthly");
+
+    private static Capability reportsCapability() {
+        return new Capability(REPORTS, "Monthly reports", null, ValueType.QUANTITY,
+            EntitlementValue.Quantity.of(0), Optional.empty(), TierOrder.NONE, Capability.Status.ACTIVE, null);
+    }
+
+    private Snapshot baseSnapshot() {
+        return new SnapshotBuilder()
+            .capability(reportsCapability())
+            .plan(new Plan("pro", "Pro", Plan.Status.ACTIVE, false))
+            .planEntitlement(new PlanEntitlement("pro", REPORTS, EntitlementValue.Quantity.of(50)))
+            .account(new AccountAssignment("acct_1", "pro"))
+            .build(1);
+    }
+
+    @Test
+    void withPlanEntitlementReplacesOnlyTheChangedValueAndBumpsTheVersion() {
+        var base = baseSnapshot();
+        var updated = SnapshotMutator.withPlanEntitlement(
+            base, 2, new PlanEntitlement("pro", REPORTS, EntitlementValue.Quantity.of(999)));
+
+        assertThat(updated.snapshotVersion()).isEqualTo(2);
+        assertThat(updated.planEntitlement("pro", REPORTS)).contains(
+            new PlanEntitlement("pro", REPORTS, EntitlementValue.Quantity.of(999)));
+        // The base snapshot is untouched — readers holding it never see the change (c31).
+        assertThat(base.planEntitlement("pro", REPORTS)).contains(
+            new PlanEntitlement("pro", REPORTS, EntitlementValue.Quantity.of(50)));
+    }
+
+    @Test
+    void withPlanEntitlementReusesUnrelatedMapsByReference() {
+        var base = baseSnapshot();
+        var updated = SnapshotMutator.withPlanEntitlement(
+            base, 2, new PlanEntitlement("pro", REPORTS, EntitlementValue.Quantity.of(999)));
+
+        assertThat(updated.capabilitiesMap()).isSameAs(base.capabilitiesMap());
+        assertThat(updated.accountsMap()).isSameAs(base.accountsMap());
+        assertThat(updated.liveOverridesMap()).isSameAs(base.liveOverridesMap());
+        assertThat(updated.planEntitlementsMap()).isNotSameAs(base.planEntitlementsMap());
+    }
+
+    @Test
+    void withOverrideAddedAppendsToTheAccountCapabilityBucketOnly() {
+        var base = baseSnapshot();
+        var override = new AccountOverride(OptionalLong.of(1), "acct_1", REPORTS, OverrideKind.GRANT,
+            EntitlementValue.Quantity.of(200), Optional.of("goodwill"), Optional.of("actor"), Optional.empty());
+
+        var updated = SnapshotMutator.withOverrideAdded(base, 2, override);
+
+        assertThat(updated.liveOverrides("acct_1", REPORTS)).containsExactly(override);
+        assertThat(base.liveOverrides("acct_1", REPORTS)).isEmpty();
+        assertThat(updated.planEntitlementsMap()).isSameAs(base.planEntitlementsMap());
+    }
+
+    @Test
+    void withOverrideRemovedDropsOnlyTheNamedOverride() {
+        var withOverride = SnapshotMutator.withOverrideAdded(baseSnapshot(), 2, new AccountOverride(
+            OptionalLong.of(1), "acct_1", REPORTS, OverrideKind.GRANT, EntitlementValue.Quantity.of(200),
+            Optional.of("goodwill"), Optional.of("actor"), Optional.empty()));
+
+        var updated = SnapshotMutator.withOverrideRemoved(withOverride, 3, "acct_1", REPORTS, 1);
+
+        assertThat(updated.liveOverrides("acct_1", REPORTS)).isEmpty();
+        assertThat(withOverride.liveOverrides("acct_1", REPORTS)).hasSize(1); // prior version untouched
+    }
+
+    @Test
+    void withAccountReplacesThePlanAssignment() {
+        var base = baseSnapshot();
+        var updated = SnapshotMutator.withAccount(base, 2, new AccountAssignment("acct_1", "enterprise"));
+
+        assertThat(updated.account("acct_1")).contains(new AccountAssignment("acct_1", "enterprise"));
+        assertThat(base.account("acct_1")).contains(new AccountAssignment("acct_1", "pro"));
+    }
+
+    @Test
+    void withCapabilityReplacesTheRegistryEntry() {
+        var base = baseSnapshot();
+        var retired = new Capability(REPORTS, "Monthly reports", null, ValueType.QUANTITY,
+            EntitlementValue.Quantity.of(0), Optional.empty(), TierOrder.NONE, Capability.Status.RETIRED,
+            java.time.Instant.now());
+
+        var updated = SnapshotMutator.withCapability(base, 2, retired);
+
+        assertThat(updated.capability(REPORTS)).get().extracting(Capability::isRetired).isEqualTo(true);
+        assertThat(base.capability(REPORTS)).get().extracting(Capability::isRetired).isEqualTo(false);
+    }
+}
