@@ -65,6 +65,57 @@ class CapabilityAdminServiceTest {
     }
 
     @Test
+    void createRejectsEmptyTierList() {
+        var request = new CapabilityCreateRequest("support.plan", "Support", null, "TIER",
+            new ValueDto("TIER", null, null, null, "community", null), null, List.of());
+
+        assertThatThrownBy(() -> service.create(request))
+            .isInstanceOf(EntitlementApiException.class)
+            .extracting("errorCode").isEqualTo(ErrorCode.VALIDATION_FAILED);
+    }
+
+    @Test
+    void patchUpdatesDisplayNameAndDescriptionLeavingValuesUnchanged() {
+        var create = new CapabilityCreateRequest("billing.invoices", "Invoices", "old desc", "QUANTITY",
+            new ValueDto("QUANTITY", null, 10L, null, null, null), null, null);
+        service.create(create);
+
+        var patch = new com.solovis.entitlement.service.admin.dto.CapabilityPatchRequest("Invoices v2", "new desc", null, null);
+        var updated = service.patch("billing.invoices", patch);
+
+        assertThat(updated.displayName()).isEqualTo("Invoices v2");
+        assertThat(updated.description()).isEqualTo("new desc");
+        assertThat(updated.defaultValue().amount()).isEqualTo(10L);
+        assertThat(service.get("billing.invoices").displayName()).isEqualTo("Invoices v2");
+        assertThat(snapshotHolder.current()
+            .capability(new com.solovis.entitlement.core.model.CapabilityKey("billing.invoices"))
+            .orElseThrow().displayName()).isEqualTo("Invoices v2");
+    }
+
+    @Test
+    void patchUpdatesDefaultAndOffValueThroughValueMapper() {
+        var create = new CapabilityCreateRequest("billing.seats", "Seats", null, "QUANTITY",
+            new ValueDto("QUANTITY", null, 10L, null, null, null), null, null);
+        service.create(create);
+
+        var patch = new com.solovis.entitlement.service.admin.dto.CapabilityPatchRequest(null, null,
+            new ValueDto("QUANTITY", null, 50L, null, null, null), new ValueDto("QUANTITY", null, 0L, null, null, null));
+        var updated = service.patch("billing.seats", patch);
+
+        assertThat(updated.defaultValue().amount()).isEqualTo(50L);
+        assertThat(updated.offValue().amount()).isEqualTo(0L);
+    }
+
+    @Test
+    void getReturnsWhatCreateReturned() {
+        var create = new CapabilityCreateRequest("billing.plans", "Plans", null, "SWITCH",
+            new ValueDto("SWITCH", true, null, null, null, null), null, null);
+        var created = service.create(create);
+
+        assertThat(service.get("billing.plans")).isEqualTo(created);
+    }
+
+    @Test
     void appendTierAddsAboveTheCurrentMaximumOrdinal() {
         var create = new CapabilityCreateRequest("support.level", "Support", null, "TIER",
             new ValueDto("TIER", null, null, null, "community", null), null,

@@ -231,6 +231,12 @@ public class CapabilityAdminService {
     }
 
     private static EntitlementValue decode(com.solovis.entitlement.service.dto.ValueDto dto, ValueType valueType, TierOrder tierOrder) {
+        if (valueType == ValueType.TIER && tierOrder.tiers().isEmpty()) {
+            // Guarded ahead of the shell build below: an empty tier list would otherwise reach
+            // tierOrder.tiers().get(0) and throw IndexOutOfBoundsException, which isn't caught by
+            // the IllegalArgumentException handler that Capability's own validation raises.
+            throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "A TIER capability must declare at least two tiers.");
+        }
         // A minimal capability shell is enough for ValueMapper.fromDto — it only reads valueType() and tierOrder().
         // Building it still runs Capability's own invariants (e.g. "a TIER capability must declare at least two
         // tiers"), so a malformed tierOrder surfaces here as the same domain error the real capability would raise.
