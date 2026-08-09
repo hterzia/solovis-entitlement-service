@@ -141,6 +141,32 @@ class SnapshotMutatorTest {
     }
 
     @Test
+    void withVersionAdvancesTheVersionAndPreservesEveryMapByReference() {
+        var override = new AccountOverride(OptionalLong.of(1), "acct_1", REPORTS, OverrideKind.GRANT,
+            EntitlementValue.Quantity.of(200), Optional.of("goodwill"), Optional.of("actor"), Optional.empty());
+        var base = SnapshotMutator.withOverrideAdded(baseSnapshot(), 2, override);
+
+        var updated = SnapshotMutator.withVersion(base, 3);
+
+        assertThat(updated.snapshotVersion()).isEqualTo(3);
+        // Every reader-visible view is byte-for-byte identical to the base — only the version moved.
+        assertThat(updated.capability(REPORTS)).isEqualTo(base.capability(REPORTS));
+        assertThat(updated.plan("pro")).isEqualTo(base.plan("pro"));
+        assertThat(updated.planEntitlement("pro", REPORTS)).isEqualTo(base.planEntitlement("pro", REPORTS));
+        assertThat(updated.account("acct_1")).isEqualTo(base.account("acct_1"));
+        assertThat(updated.liveOverrides("acct_1", REPORTS)).isEqualTo(base.liveOverrides("acct_1", REPORTS));
+        // A no-op change shares every map by reference — cheaper than any real mutation, and proof
+        // that nothing was rebuilt.
+        assertThat(updated.capabilitiesMap()).isSameAs(base.capabilitiesMap());
+        assertThat(updated.plansMap()).isSameAs(base.plansMap());
+        assertThat(updated.planEntitlementsMap()).isSameAs(base.planEntitlementsMap());
+        assertThat(updated.accountsMap()).isSameAs(base.accountsMap());
+        assertThat(updated.liveOverridesMap()).isSameAs(base.liveOverridesMap());
+        // The prior version is untouched — readers holding it never observe the bump (c31).
+        assertThat(base.snapshotVersion()).isEqualTo(2);
+    }
+
+    @Test
     void withCapabilityReplacesTheRegistryEntry() {
         var base = baseSnapshot();
         var retired = new Capability(REPORTS, "Monthly reports", null, ValueType.QUANTITY,
