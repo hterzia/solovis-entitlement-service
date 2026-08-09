@@ -64,4 +64,17 @@ describe('PlanEditorRoute', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(screen.getByText('Saved. Active everywhere within 60 seconds.')).toBeInTheDocument())
   })
+
+  it('clears the previous save confirmation when a new edit is made', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<PlanEditorRoute planKey="pro" />)
+    await makeAChange(user)
+    await user.type(screen.getByLabelText('Preview account'), 'acct_9931')
+    await user.click(screen.getByRole('button', { name: 'Review changes' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(screen.getByText('Saved. Active everywhere within 60 seconds.')).toBeInTheDocument())
+    await makeAChange(user)
+    expect(screen.queryByText('Saved. Active everywhere within 60 seconds.')).not.toBeInTheDocument()
+  })
 })

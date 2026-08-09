@@ -69,6 +69,7 @@ export function PlanEditorRoute({ planKey }: { planKey?: string } = {}) {
     setPendingSet((prev) => ({ ...prev, [cap.key]: value }))
     setPendingUnset((prev) => { const next = new Set(prev); next.delete(cap.key); return next })
     setPreview(null)
+    setApplyResult(null)
   }
 
   function clearCapabilityValue(cap: Capability) {
@@ -76,6 +77,7 @@ export function PlanEditorRoute({ planKey }: { planKey?: string } = {}) {
     setPendingSet((prev) => { const next = { ...prev }; delete next[cap.key]; return next })
     setEditing(null)
     setPreview(null)
+    setApplyResult(null)
   }
 
   const canSave = preview !== null && Boolean(preview.previewAccount)
