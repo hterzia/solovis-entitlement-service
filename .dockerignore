@@ -1,0 +1,20 @@
+# The build context is the repository root, so these exclusions are not cosmetic.
+# refs/ is a vendored LangChain4j reference checkout and .claude/worktrees/ holds
+# complete additional copies of this repository — without these lines every build
+# uploads hundreds of megabytes that no stage consumes.
+
+.git/
+.github/
+.claude/
+refs/
+docs/
+.specs/
+
+**/target/
+**/node_modules/
+**/dist/
+
+.env
+*.db
+*.db-shm
+*.db-wal

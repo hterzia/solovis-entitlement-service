@@ -1,0 +1,88 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# id-token is what makes Workload Identity Federation work: GitHub mints an OIDC
+# token that GCP exchanges for short-lived credentials. The org policy
+# iam.disableServiceAccountKeyCreation blocks the long-lived-JSON-key
+# alternative, so this is the only available path — and the better one, since no
+# credential exists to leak.
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: entitlement-505004
+  REGION: us-central1
+  SERVICE: entitlement-service
+  AR_REPO: entitlement
+  RUNTIME_SA: entitlement-run@entitlement-505004.iam.gserviceaccount.com
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # The whole reactor. The image build skips tests, so this is the gate.
+      - name: Run reactor tests
+        working-directory: management/backend
+        run: ./mvnw -B test
+
+  deploy:
+    name: Build and deploy
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/773463992355/locations/global/workloadIdentityPools/github/providers/github
+          service_account: entitlement-deploy@entitlement-505004.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and push image
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE}:${GITHUB_SHA}"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      # --max-instances=1 is load-bearing, not a cost control: SQLite permits one
+      # writer host, so this flag makes the constraint an infrastructure
+      # guarantee. It must never be raised without first replacing SQLite.
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --image "$IMAGE" \
+            --region "$REGION" \
+            --service-account "$RUNTIME_SA" \
+            --min-instances 1 \
+            --max-instances 1 \
+            --cpu 1 \
+            --memory 1Gi \
+            --port 8081 \
+            --allow-unauthenticated \
+            --set-env-vars "ENTITLEMENT_DB_PATH=/data/entitlement.db,LITESTREAM_BUCKET=${PROJECT_ID}-litestream" \
+            --quiet
+
+      - name: Show service URL
+        run: |
+          gcloud run services describe "$SERVICE" --region "$REGION" \
+            --format 'value(status.url)' >> "$GITHUB_STEP_SUMMARY"

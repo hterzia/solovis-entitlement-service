@@ -1,0 +1,24 @@
+# Litestream v0.5.x configuration.
+#
+# Note the v0.5 syntax, which differs from the widely-circulated 0.3.x examples:
+# the replica type is `gs` (not `gcs`), and `replica:` is singular rather than a
+# `replicas:` list. Copying a 0.3.x snippet here will fail to parse.
+#
+# Credentials come from the instance metadata server — on Cloud Run, Litestream
+# picks up the runtime service account automatically. This is not merely the
+# preferred path: the org policy `iam.disableServiceAccountKeyCreation` makes
+# the key-file alternative impossible.
+#
+# $LITESTREAM_BUCKET is expanded from the environment at startup.
+#
+# Retention is deliberately left to Litestream. Do NOT add a GCS lifecycle rule
+# to this bucket: the replica is a base snapshot plus the segments layered on it,
+# and an age-based deletion rule will happily remove a base that current segments
+# still depend on, so the restore fails exactly when it is needed.
+
+dbs:
+  - path: /data/entitlement.db
+    replica:
+      type: gs
+      bucket: $LITESTREAM_BUCKET
+      path: entitlement
