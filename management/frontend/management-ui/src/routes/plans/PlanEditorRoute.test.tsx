@@ -44,6 +44,16 @@ describe('PlanEditorRoute', () => {
     expect(screen.queryByRole('button', { name: /dismiss/i })).not.toBeInTheDocument()
   })
 
+  it('explains why Save stays disabled when the review carried no preview account', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<PlanEditorRoute planKey="pro" />)
+    await makeAChange(user)
+    await user.click(screen.getByRole('button', { name: 'Review changes' }))
+    await waitFor(() => expect(screen.getByText('This change affects 26890 accounts.')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByText('Provide a preview account above to enable Save.')).toBeInTheDocument()
+  })
+
   it('previews the change on one named account and calls out "no change"', async () => {
     const user = userEvent.setup()
     renderWithProviders(<PlanEditorRoute planKey="pro" />)

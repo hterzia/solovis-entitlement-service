@@ -82,6 +82,9 @@ export function PlanEditorRoute({ planKey }: { planKey?: string } = {}) {
 
   const canSave = preview !== null && Boolean(preview.previewAccount)
 
+  const capabilities = capabilitiesQuery.data.capabilities
+  const tiersFor = (capabilityKey: string) => capabilities.find((c) => c.key === capabilityKey)?.tiers ?? []
+
   return (
     <div className="app-panel">
       <h1 className="app-page-title">{planQuery.data.name}</h1>
@@ -147,11 +150,11 @@ export function PlanEditorRoute({ planKey }: { planKey?: string } = {}) {
                       {!effect.changed && <p>{effect.note ?? 'No change for this account.'}</p>}
                       <div>
                         <strong>Before</strong>
-                        <TraceView trace={effect.before.trace} />
+                        <TraceView trace={effect.before.trace} tiers={tiersFor(effect.capability)} />
                       </div>
                       <div>
                         <strong>After</strong>
-                        <TraceView trace={effect.after.trace} />
+                        <TraceView trace={effect.after.trace} tiers={tiersFor(effect.capability)} />
                       </div>
                     </div>
                   ))}
@@ -160,6 +163,9 @@ export function PlanEditorRoute({ planKey }: { planKey?: string } = {}) {
             </div>
           )}
 
+          {preview && !preview.previewAccount && (
+            <p className="sv-tag">Provide a preview account above to enable Save.</p>
+          )}
           <button type="button" className="sv-btn" disabled={!canSave} onClick={() => saveMutation.mutate()}>Save</button>
           {applyResult && <SaveConfirmation seconds={applyResult.changeVisibleEverywhereWithinSeconds} />}
         </div>
