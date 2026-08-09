@@ -1,5 +1,6 @@
 package com.solovis.entitlement.core.model;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -69,6 +70,15 @@ class CapabilityTest {
     }
 
     @Test
+    void quantityOffValueOfZeroIsAccepted() {
+        var capability = new Capability(
+            new CapabilityKey("reports.monthly"), "Monthly reports", null, ValueType.QUANTITY,
+            EntitlementValue.Quantity.of(50), Optional.of(new OffValue(EntitlementValue.Quantity.of(0))),
+            TierOrder.NONE, Capability.Status.ACTIVE, null);
+        assertThat(capability.effectiveOffValue()).contains(EntitlementValue.Quantity.of(0));
+    }
+
+    @Test
     void tierCapabilityRequiresAtLeastTwoTiers() {
         assertThatThrownBy(() -> new Capability(
             new CapabilityKey("support.level"), "Support", null, ValueType.TIER,
@@ -89,6 +99,16 @@ class CapabilityTest {
 
     @Test
     void tierOffValueMustBeADeclaredTier() {
+        assertThatThrownBy(() -> new Capability(
+            new CapabilityKey("support.level"), "Support", null, ValueType.TIER,
+            new EntitlementValue.Tier("community", 0),
+            Optional.of(new OffValue(new EntitlementValue.Tier("platinum", 9))),
+            SUPPORT_TIERS, Capability.Status.ACTIVE, null))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void tierOffValueThatIsDeclaredIsAccepted() {
         var capability = new Capability(
             new CapabilityKey("support.level"), "Support", null, ValueType.TIER,
             new EntitlementValue.Tier("community", 0),
@@ -103,6 +123,24 @@ class CapabilityTest {
             new CapabilityKey("api.access"), "API access", null, ValueType.SWITCH,
             new EntitlementValue.Switch(false), Optional.empty(), TierOrder.NONE,
             Capability.Status.RETIRED, null))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void retiredCapabilityWithATimestampIsAccepted() {
+        var capability = new Capability(
+            new CapabilityKey("api.access"), "API access", null, ValueType.SWITCH,
+            new EntitlementValue.Switch(false), Optional.empty(), TierOrder.NONE,
+            Capability.Status.RETIRED, Instant.parse("2026-08-09T00:00:00Z"));
+        assertThat(capability.isRetired()).isTrue();
+    }
+
+    @Test
+    void activeCapabilityMustNotCarryARetiredAtTimestamp() {
+        assertThatThrownBy(() -> new Capability(
+            new CapabilityKey("api.access"), "API access", null, ValueType.SWITCH,
+            new EntitlementValue.Switch(false), Optional.empty(), TierOrder.NONE,
+            Capability.Status.ACTIVE, Instant.parse("2026-08-09T00:00:00Z")))
             .isInstanceOf(IllegalArgumentException.class);
     }
 
