@@ -7,11 +7,11 @@ import com.solovis.entitlement.service.api.dto.DecisionResponseDto;
 import com.solovis.entitlement.service.dto.ValueMapper;
 import java.time.Instant;
 
-final class DecisionMapper {
+public final class DecisionMapper {
 
     private DecisionMapper() {}
 
-    static DecisionResponseDto toResponse(Explanation explanation, Capability capability) {
+    public static DecisionResponseDto toResponse(Explanation explanation, Capability capability) {
         var decision = explanation.decision();
         return new DecisionResponseDto(
             decision.accountExternalId(), decision.capabilityKey(), decision.allowed(),

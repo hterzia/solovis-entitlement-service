@@ -123,6 +123,24 @@ class SnapshotMutatorTest {
     }
 
     @Test
+    void withPlanEntitlementRemovedFallsBackToCapabilityDefault() {
+        var key = new CapabilityKey("export.parquet");
+        var capability = new Capability(key, "Export", null, ValueType.SWITCH,
+            new EntitlementValue.Switch(false), Optional.empty(), TierOrder.NONE, Capability.Status.ACTIVE, null);
+        var base = new SnapshotBuilder().capability(capability)
+            .plan(new Plan("pro", "Pro", Plan.Status.ACTIVE, false))
+            .planEntitlement(new PlanEntitlement("pro", key, new EntitlementValue.Switch(true)))
+            .account(new AccountAssignment("acct_1", "pro"))
+            .build(1);
+
+        var next = SnapshotMutator.withPlanEntitlementRemoved(base, 2, "pro", key);
+
+        assertThat(next.planEntitlement("pro", key)).isEmpty();
+        var decision = com.solovis.entitlement.core.engine.Resolver.resolve(next, "acct_1", key, java.time.Instant.now());
+        assertThat(decision.value()).isEqualTo(new EntitlementValue.Switch(false)); // capability default, not the removed plan value
+    }
+
+    @Test
     void withCapabilityReplacesTheRegistryEntry() {
         var base = baseSnapshot();
         var retired = new Capability(REPORTS, "Monthly reports", null, ValueType.QUANTITY,
