@@ -13,6 +13,11 @@ public record EntitlementDatabaseProperties(
 		if (writePoolSize <= 0) {
 			throw new IllegalArgumentException("entitlement.database.write-pool-size must be positive");
 		}
+		if (writePoolSize != 1) {
+			throw new IllegalArgumentException(
+					"entitlement.database.write-pool-size must be exactly 1: SnapshotPublisher's "
+							+ "read-modify-write of the in-memory snapshot depends on write serialization");
+		}
 		if (readPoolSize <= 0) {
 			throw new IllegalArgumentException("entitlement.database.read-pool-size must be positive");
 		}

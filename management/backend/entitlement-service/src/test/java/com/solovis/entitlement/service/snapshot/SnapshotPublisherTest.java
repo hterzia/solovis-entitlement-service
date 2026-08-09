@@ -4,6 +4,7 @@ import com.solovis.entitlement.core.model.*;
 import com.solovis.entitlement.core.view.SnapshotBuilder;
 import com.solovis.entitlement.service.store.AuditEventRepository;
 import com.solovis.entitlement.service.store.AuditEventRow;
+import com.solovis.entitlement.service.store.SnapshotVersionRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +14,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 // snapshot_version.last_audit_seq carries a hard FK to audit_event(seq) (V1__baseline.sql) — every
 // publish() call here must reference a real row, so each test seeds one via AuditEventRepository
@@ -35,6 +37,7 @@ class SnapshotPublisherTest {
     @Autowired SnapshotAssembler assembler;
     @Autowired PlatformTransactionManager entitlementTransactionManager;
     @Autowired AuditEventRepository auditEventRepository;
+    @Autowired SnapshotVersionRepository snapshotVersionRepository;
 
     @AfterEach
     void restoreHolderFromDatabase() {
@@ -67,6 +70,25 @@ class SnapshotPublisherTest {
         // transaction has committed: the swap has now happened
         assertThat(holder.current().capability(new CapabilityKey("api.access"))).isPresent();
         assertThat(holder.current().snapshotVersion()).isEqualTo(1L);
+    }
+
+    @Test
+    void publishOutsideATransactionThrowsAndWritesNothing() {
+        var seed = new SnapshotBuilder().build(0);
+        holder.set(seed);
+        long auditSeq = seedAuditEvent();
+        int rowsBefore = snapshotVersionRepository.findSince(0, Integer.MAX_VALUE).size();
+
+        // No TransactionTemplate here, and this test class is not @Transactional: publish() is
+        // invoked with no active transaction, which is exactly the case the guard exists for.
+        assertThatThrownBy(() -> publisher.publish((base, v) -> base, auditSeq,
+                new DeltaChange.PlanArchived("does-not-exist")))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("active transaction");
+
+        int rowsAfter = snapshotVersionRepository.findSince(0, Integer.MAX_VALUE).size();
+        assertThat(rowsAfter).isEqualTo(rowsBefore);
+        assertThat(holder.current().snapshotVersion()).isEqualTo(0L);
     }
 
     @Test

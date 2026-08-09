@@ -15,8 +15,10 @@ import com.solovis.entitlement.service.time.Timestamps;
  * the same connection (admin-api.md, "Write semantics common to every mutating route"; c30). The
  * snapshot_version row commits with everything else; the in-memory swap is deferred to
  * {@code afterCommit()} so a rolled-back write can never leave {@link SnapshotHolder} ahead of the
- * database — registerSynchronization throws if no transaction is active, which is the intended
- * guard against calling this outside one.
+ * database. An explicit check at the top of {@link #publish} rejects calls made outside an active
+ * transaction before any database write happens; {@code registerSynchronization} would also throw in
+ * that situation, but only after the {@code snapshot_version} insert had already gone to the database
+ * (and autocommitted), so it cannot serve as the guard on its own.
  */
 @Component
 public class SnapshotPublisher {
@@ -37,6 +39,11 @@ public class SnapshotPublisher {
     }
 
     public long publish(Mutation mutation, long lastAuditSeq, DeltaChange delta) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            throw new IllegalStateException(
+                "SnapshotPublisher.publish must be called from within an active transaction.");
+        }
+
         Snapshot current = snapshotHolder.current();
         long newVersion = current.snapshotVersion() + 1;
         Snapshot next = mutation.apply(current, newVersion);
