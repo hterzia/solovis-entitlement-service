@@ -4521,7 +4521,13 @@ describe('CheckerRoute', () => {
     await user.click(screen.getByRole('button', { name: 'Check' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Copy explanation' })).toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: 'Copy explanation' }))
+    // Asserts on more than the step-notes: the copied text must include a grant candidate's
+    // authorship/reason — the exact detail a hand-composed summary (rather than the actually
+    // rendered chain) would drop. This is what makes the action useful for pasting into a
+    // ticket per ui-screens.md's "who did it, and when."
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('Most restrictive HOLD'))
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('j.okafor'))
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('Renewal concession'))
   })
 })
 ```
@@ -4536,7 +4542,7 @@ cd management/frontend/management-ui && npx vitest run src/routes/checker/Checke
 
 ```tsx
 // src/routes/checker/CheckerRoute.tsx
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { checkDecision } from '../../api/checker'
 import { ApiError } from '../../api/http'
@@ -4556,6 +4562,7 @@ export function CheckerRoute() {
   const [capability, setCapability] = useState('')
   const [overrideRef, setOverrideRef] = useState('')
   const [submitted, setSubmitted] = useState<CheckParams | null>(null)
+  const explanationRef = useRef<HTMLDivElement>(null)
 
   const query = useQuery({
     queryKey: queryKeys.check(submitted ?? { account: '' }),
@@ -4570,18 +4577,14 @@ export function CheckerRoute() {
   }
 
   function copyExplanation() {
-    if (!query.data) return
-    const { trace } = query.data
-    const lines = [
-      `Account: ${query.data.account}`,
-      `Capability: ${query.data.capability}`,
-      `Allowed: ${query.data.allowed}`,
-      trace.baseline.note,
-      trace.grantStep.note ?? '',
-      trace.holdStep.note ?? '',
-      `Result: allowed=${trace.result.allowed}`,
-    ].filter(Boolean)
-    navigator.clipboard.writeText(lines.join('\n'))
+    // Reads the rendered DOM, not a hand-composed summary: ui-screens.md is explicit that this
+    // action "copies what is on screen; it does not compose a second, prettier explanation."
+    // A parallel string built from trace.baseline/grantStep/holdStep notes would omit exactly
+    // the grant/hold candidate details (override id, reason, author, timestamp) TraceView
+    // renders per-row — the very "who did it, and when" this action exists to carry into a
+    // ticket. textContent (not innerText, which jsdom doesn't lay out) captures all of it.
+    if (!explanationRef.current) return
+    navigator.clipboard.writeText(explanationRef.current.textContent ?? '')
   }
 
   const errorType = query.error instanceof ApiError ? query.error.problem.type : null
@@ -4606,8 +4609,13 @@ export function CheckerRoute() {
 
       {query.data && (
         <div>
-          <p>Allowed: {String(query.data.allowed)} · Snapshot v{query.data.snapshotVersion} · Evaluated {query.data.evaluatedAt}</p>
-          <TraceView trace={query.data.trace} />
+          <div ref={explanationRef}>
+            <p>
+              Account: {query.data.account} · Capability: {query.data.capability} · Allowed: {String(query.data.allowed)} ·
+              {' '}Snapshot v{query.data.snapshotVersion} · Evaluated {query.data.evaluatedAt}
+            </p>
+            <TraceView trace={query.data.trace} />
+          </div>
           <button type="button" className="sv-btn--secondary" onClick={copyExplanation}>Copy explanation</button>
         </div>
       )}
