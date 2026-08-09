@@ -11,7 +11,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   'entitlement/retired-capability': 'That capability is retired and is no longer evaluated.',
 }
 
-interface CheckParams { account: string; capability?: string; override?: string }
+interface CheckParams { account?: string; capability?: string; override?: string }
 
 export function CheckerRoute() {
   const [account, setAccount] = useState('')
@@ -29,7 +29,9 @@ export function CheckerRoute() {
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    setSubmitted(overrideRef ? { account, override: overrideRef } : { account, capability })
+    // An override reference resolves to its own account, so sending one would only be a
+    // second, redundant constraint the operator may not know.
+    setSubmitted(overrideRef ? { override: overrideRef } : { account, capability })
   }
 
   function copyExplanation() {
@@ -52,7 +54,7 @@ export function CheckerRoute() {
         <label className="sv-label">Override reference
           <input className="sv-field" aria-label="Override reference" value={overrideRef} disabled={capability !== ''} onChange={(e) => setOverrideRef(e.target.value)} />
         </label>
-        <button type="submit" className="sv-btn" disabled={!account || (!capability && !overrideRef)}>Check</button>
+        <button type="submit" className="sv-btn" disabled={!(account && capability) && !overrideRef}>Check</button>
       </form>
 
       {errorType && <p role="alert">{ERROR_MESSAGES[errorType] ?? 'An error occurred.'}</p>}

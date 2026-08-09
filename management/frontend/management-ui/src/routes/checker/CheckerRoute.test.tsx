@@ -27,6 +27,28 @@ describe('CheckerRoute', () => {
     await waitFor(() => expect(screen.getByText(/Most restrictive HOLD/)).toBeInTheDocument())
   })
 
+  it('resolves an override reference with no account given at all', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<CheckerRoute />)
+    await waitFor(() => expect(screen.getByLabelText('Override reference')).toBeInTheDocument())
+    await user.type(screen.getByLabelText('Override reference'), 'ovr_7788')
+    expect(screen.getByRole('button', { name: 'Check' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Check' }))
+    await waitFor(() => expect(screen.getByText(/Account: acct_9931/)).toBeInTheDocument())
+    expect(screen.getByText(/Capability: reports\.monthly/)).toBeInTheDocument()
+  })
+
+  it('keeps Check disabled until either an account with a capability, or an override reference, is given', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<CheckerRoute />)
+    await waitFor(() => expect(screen.getByLabelText('Account')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Check' })).toBeDisabled()
+    await user.type(screen.getByLabelText('Account'), 'acct_9931')
+    expect(screen.getByRole('button', { name: 'Check' })).toBeDisabled()
+    await user.type(screen.getByLabelText('Capability'), 'reports.monthly')
+    expect(screen.getByRole('button', { name: 'Check' })).toBeEnabled()
+  })
+
   it('renders "No such account" as an error, never a denial', async () => {
     const user = userEvent.setup()
     renderWithProviders(<CheckerRoute />)
