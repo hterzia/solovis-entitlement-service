@@ -110,6 +110,13 @@ public class AccountOverrideRepository {
 				.single();
 	}
 
+	/** Every LIVE override across all accounts — snapshot assembly only (c.f. findLiveForAccount for a single account). */
+	public List<AccountOverrideRow> findAllLive() {
+		return jdbcClient.sql("SELECT * FROM account_override WHERE removed_at IS NULL")
+				.query(ROW_MAPPER)
+				.list();
+	}
+
 	public boolean remove(long id, String removedAt, String removedBy, String removedReason) {
 		int rows = jdbcClient.sql("""
 				UPDATE account_override SET removed_at = :removedAt, removed_by = :removedBy, removed_reason = :removedReason

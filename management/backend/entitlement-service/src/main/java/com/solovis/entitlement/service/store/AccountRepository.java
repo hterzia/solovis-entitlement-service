@@ -98,6 +98,13 @@ public class AccountRepository {
 		return spec.query(ROW_MAPPER).list();
 	}
 
+	/** Every ACTIVE account — used only by SnapshotAssembler at startup and full-resync; no cursor because a full assembly needs all rows regardless. */
+	public List<AccountRow> findAllActive() {
+		return jdbcClient.sql("SELECT * FROM account WHERE status = 'ACTIVE'")
+				.query(ROW_MAPPER)
+				.list();
+	}
+
 	public int updatePlanAssignment(long accountId, long planId, String assignedAt, String source, String actor,
 			String updatedAt) {
 		return jdbcClient.sql("""
