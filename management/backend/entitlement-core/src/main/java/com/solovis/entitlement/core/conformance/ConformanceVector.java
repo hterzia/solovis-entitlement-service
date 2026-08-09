@@ -64,6 +64,20 @@ public record ConformanceVector(
             Optional.of(150L), List.of(grant("reports.monthly", 1, EntitlementValue.Quantity.of(100))),
             true, EntitlementValue.Quantity.of(150)));
 
+        // A hold above the post-grant running value must not raise it — a hold only ever caps,
+        // it never replaces (spec §4.3). A "hold replaces the result" engine would wrongly answer
+        // 100 here; every other HOLD vector in this table has the hold sitting below the running
+        // value, so none of them catch that bug.
+        vectors.add(quantityVector("reports.monthly: plan 50, hold 100 -> 50 (hold cannot raise)",
+            Optional.of(50L), List.of(hold("reports.monthly", 1, EntitlementValue.Quantity.of(100))),
+            true, EntitlementValue.Quantity.of(50)));
+
+        // A GRANT must be able to raise a capability the plan is silent on (the CAPABILITY_DEFAULT
+        // baseline, c17) — not just raise a plan-declared value.
+        vectors.add(quantityVector("reports.monthly: unmentioned, grant 200 -> 200 (grant raises capability default)",
+            Optional.empty(), List.of(grant("reports.monthly", 1, EntitlementValue.Quantity.of(200))),
+            true, EntitlementValue.Quantity.of(200)));
+
         vectors.add(seatsVector("seats: plan unlimited, hold 100 -> 100"));
 
         vectors.add(supportTierVector("support: tier community, no off-value -> allowed"));

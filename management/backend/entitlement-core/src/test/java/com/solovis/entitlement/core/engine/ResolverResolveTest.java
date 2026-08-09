@@ -221,6 +221,20 @@ class ResolverResolveTest {
         assertThat(Resolver.resolve(withoutGrant, "acct_1", REPORTS, NOW).value()).isEqualTo(EntitlementValue.Quantity.of(50));
     }
 
+    @Test
+    void removingAHoldRestoresTheGrantValueWithNoFurtherAction() {
+        var withHold = reportsSnapshotWithPlanValue(50)
+            .override(grant(REPORTS, 1, EntitlementValue.Quantity.of(200)))
+            .override(hold(REPORTS, 2, EntitlementValue.Quantity.of(0)))
+            .build(1);
+        var withoutHold = reportsSnapshotWithPlanValue(50)
+            .override(grant(REPORTS, 1, EntitlementValue.Quantity.of(200)))
+            .build(2);
+
+        assertThat(Resolver.resolve(withHold, "acct_1", REPORTS, NOW).value()).isEqualTo(EntitlementValue.Quantity.of(0));
+        assertThat(Resolver.resolve(withoutHold, "acct_1", REPORTS, NOW).value()).isEqualTo(EntitlementValue.Quantity.of(200));
+    }
+
     private static SnapshotBuilder reportsSnapshotWithPlanValue(long amount) {
         return new SnapshotBuilder()
             .capability(quantityCapability(REPORTS, EntitlementValue.Quantity.of(0)))
