@@ -1,3 +1,6 @@
-spring:
-  datasource:
-    url: "jdbc:sqlite:${java.io.tmpdir}/entitlement-test-${random.uuid}.db?journal_mode=WAL&synchronous=NORMAL&foreign_keys=on&busy_timeout=5000&temp_store=MEMORY"
+entitlement:
+  database:
+    path: "${java.io.tmpdir}/entitlement-test-${random.uuid}.db"
+    write-pool-size: 1
+    read-pool-size: 4
+    busy-timeout-millis: 5000
