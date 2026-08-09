@@ -11,8 +11,8 @@ export function listAccounts(params?: { q?: string; planKey?: string; cursor?: s
   return apiGet<{ accounts: AccountSummary[]; nextCursor: string | null }>(`/accounts${qs ? `?${qs}` : ''}`)
 }
 
-export function createAccount(input: { external: string; name?: string }) {
-  return apiPost<AccountDetail>('/accounts', input)
+export function createAccount(input: { externalId: string; name?: string }) {
+  return apiPost<AccountSummary>('/accounts', input)
 }
 
 export function getAccount(external: string) {

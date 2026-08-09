@@ -14,7 +14,7 @@ export function AccountsListRoute() {
   })
   const queryClient = useQueryClient()
   const createMutation = useMutation({
-    mutationFn: () => createAccount({ external: newExternal }),
+    mutationFn: () => createAccount({ externalId: newExternal }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['accounts'] }); setNewExternal('') },
   })
 

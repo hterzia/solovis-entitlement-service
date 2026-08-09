@@ -189,11 +189,11 @@ export const handlers = [
   }),
 
   http.post('/admin/v1/accounts', async ({ request }) => {
-    const body = (await request.json()) as { external: string; name?: string }
+    const body = (await request.json()) as { externalId: string; name?: string }
     const defaultPlan = db.plans.find((p) => p.isDefaultForNewAccounts)
     if (!defaultPlan) return problem(422, 'entitlement/default-plan-required', 'No default plan is designated.')
-    const created: AccountDetail = {
-      account: body.external,
+    const detail: AccountDetail = {
+      account: body.externalId,
       name: body.name ?? null,
       status: 'ACTIVE',
       plan: { key: defaultPlan.key, name: defaultPlan.name, assignedAt: new Date(0).toISOString(), assignedBy: 'dev-operator', source: 'PERSON' },
@@ -201,8 +201,8 @@ export const handlers = [
       entitlements: [],
       overrides: [],
     }
-    db.createdAccounts.push(created)
-    return HttpResponse.json(created, { status: 201 })
+    db.createdAccounts.push(detail)
+    return HttpResponse.json({ account: detail.account, name: detail.name, planKey: defaultPlan.key, status: detail.status }, { status: 201 })
   }),
 
   http.get('/admin/v1/accounts/:external', ({ params }) => {
