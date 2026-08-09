@@ -2812,7 +2812,7 @@ git commit -m "frontend: capability create form — off-value and tier rules mad
 ```tsx
 // src/routes/capabilities/CapabilityDetailRoute.test.tsx
 import { describe, expect, it } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithProviders } from '../../test/testUtils'
 import { CapabilityDetailRoute } from './CapabilityDetailRoute'
@@ -2841,12 +2841,18 @@ describe('CapabilityDetailRoute', () => {
   it('appends a tier above the current maximum ordinal, with no reordering control offered', async () => {
     const user = userEvent.setup()
     renderWithProviders(<CapabilityDetailRoute capabilityKey="support" />)
-    await waitFor(() => expect(screen.getByText('Gold')).toBeInTheDocument())
+    // Scoped to the tier <ul>, not a bare screen.getByText: "support"'s own value-type is TIER,
+    // so the "Default value" ValueEditor renders a <select> whose <option>s repeat every tier
+    // name ("Gold" included) — a bare getByText('Gold') matches both that <option> and the tier
+    // list's <li>, and throws on the ambiguity. The tier list is the page's only <ul>; wait for
+    // it to exist (data load + router match) before reading from it.
+    const tierList = await waitFor(() => screen.getByRole('list'))
+    expect(within(tierList).getByText('Gold')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /reorder/i })).not.toBeInTheDocument()
     await user.type(screen.getByLabelText('New tier key'), 'platinum')
     await user.type(screen.getByLabelText('New tier display name'), 'Platinum')
     await user.click(screen.getByRole('button', { name: 'Append tier' }))
-    await waitFor(() => expect(screen.getByText('Platinum')).toBeInTheDocument())
+    await waitFor(() => expect(within(tierList).getByText('Platinum')).toBeInTheDocument())
     await expect(getCapability('support')).resolves.toMatchObject({
       tiers: [
         { tier: 'community', ordinal: 0 }, { tier: 'standard', ordinal: 1 },
