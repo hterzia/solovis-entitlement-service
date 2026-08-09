@@ -3,8 +3,12 @@ package com.solovis.entitlement.client.transport;
 import com.solovis.entitlement.client.replica.FullSnapshotReader;
 import com.solovis.entitlement.client.replica.Replica;
 import com.solovis.entitlement.client.wire.ClientJson;
+import com.solovis.entitlement.client.wire.DecisionDtos;
 import com.solovis.entitlement.client.wire.DeltaDtos;
 import com.solovis.entitlement.client.wire.ProblemDto;
+import com.solovis.entitlement.core.error.RetiredCapabilityException;
+import com.solovis.entitlement.core.error.UnknownAccountException;
+import com.solovis.entitlement.core.error.UnknownCapabilityException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -110,6 +114,49 @@ public final class FeedHttpClient implements AutoCloseable {
         var response = send(uri, BodyHandlers.ofString());
         requireSuccess(uri, response.statusCode(), response.body());
         return response.body();
+    }
+
+    /**
+     * As {@link #decisionJson}, but parsed into the trace-carrying wire shape and with the three
+     * §6.3 domain errors surfaced as themselves rather than folded into {@link
+     * FeedUnavailableException} — the caller (the diagnostic {@code explain()} path and the
+     * read-through inside {@code check()}) needs to tell "the service does not know this account"
+     * from "the service could not be reached" apart.
+     */
+    public DecisionDtos.DecisionResponse decision(String account, String capability) {
+        var uri = resolve("/v1/accounts/" + encodePathSegment(account) + "/capabilities/" + encodePathSegment(capability));
+        var response = send(uri, BodyHandlers.ofString());
+        if (response.statusCode() / 100 != 2) {
+            throw decisionFailureFor(uri, response.statusCode(), response.body(), account, capability);
+        }
+        try {
+            return ClientJson.MAPPER.readValue(response.body(), DecisionDtos.DecisionResponse.class);
+        } catch (RuntimeException e) {
+            throw new FeedUnavailableException(
+                "Entitlement feed at " + uri + " answered 200 with a decision body that could not be parsed.", e);
+        }
+    }
+
+    private RuntimeException decisionFailureFor(URI uri, int status, String body, String account, String capability) {
+        ProblemDto problem;
+        try {
+            problem = ClientJson.MAPPER.readValue(body, ProblemDto.class);
+        } catch (RuntimeException e) {
+            return new FeedUnavailableException(
+                "Entitlement feed at " + uri + " answered HTTP " + status + " with a body that was not a problem.",
+                e);
+        }
+        if ("entitlement/unknown-account".equals(problem.type())) {
+            return new UnknownAccountException(account);
+        }
+        if ("entitlement/unknown-capability".equals(problem.type())) {
+            return new UnknownCapabilityException(capability);
+        }
+        if ("entitlement/retired-capability".equals(problem.type())) {
+            return new RetiredCapabilityException(capability);
+        }
+        return new FeedUnavailableException("Entitlement feed at " + uri + " answered HTTP " + status
+            + (problem.detail() != null ? ": " + problem.detail() : "."));
     }
 
     @Override

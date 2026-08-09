@@ -74,6 +74,24 @@ final class SnapshotPoller implements AutoCloseable {
         t.start();
     }
 
+    /**
+     * Wakes a sleeping poller so a pending sync runs now instead of waiting out {@code
+     * pollInterval} — the out-of-band half of the read-through: a caller just proved to the
+     * service that an account exists, so there is no reason for this replica to wait its usual
+     * interval to find out. A no-op if replication has permanently halted ({@link #stopped}) or
+     * the poller was never started; {@code DefaultEntitlementClient} additionally guards the case
+     * where no poller exists at all (a client built via {@code forTesting}).
+     */
+    void nudge() {
+        if (stopped) {
+            return;
+        }
+        var t = thread;
+        if (t != null) {
+            t.interrupt();
+        }
+    }
+
     private void loop() {
         while (!closed) {
             Duration wait;
@@ -88,8 +106,13 @@ final class SnapshotPoller implements AutoCloseable {
             try {
                 Thread.sleep(wait.toMillis());
             } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
+                if (closed) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                // Not a close: this was nudge() cutting the sleep short. closed is volatile and
+                // close() sets it before interrupting, so seeing it false here means the interrupt
+                // really was a nudge — loop back around and sync immediately instead of exiting.
             }
         }
     }

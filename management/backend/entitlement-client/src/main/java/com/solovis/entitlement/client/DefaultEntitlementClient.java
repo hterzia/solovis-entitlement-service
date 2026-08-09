@@ -1,11 +1,15 @@
 package com.solovis.entitlement.client;
 
+import com.solovis.entitlement.client.error.ExplanationUnavailableException;
+import com.solovis.entitlement.client.error.ReplicaUnknownAccountException;
 import com.solovis.entitlement.client.metrics.ClientMetrics;
 import com.solovis.entitlement.client.replica.Replica;
 import com.solovis.entitlement.client.transport.FeedHttpClient;
+import com.solovis.entitlement.client.wire.DecisionDtos;
 import com.solovis.entitlement.core.engine.Decision;
 import com.solovis.entitlement.core.engine.Explanation;
 import com.solovis.entitlement.core.engine.Resolver;
+import com.solovis.entitlement.core.error.RetiredCapabilityException;
 import com.solovis.entitlement.core.error.UnknownAccountException;
 import com.solovis.entitlement.core.error.UnknownCapabilityException;
 import com.solovis.entitlement.core.model.Capability;
@@ -48,10 +52,48 @@ final class DefaultEntitlementClient implements EntitlementClient {
     @Override
     public Decision check(String accountExternalId, String capabilityKey) {
         var replica = holder.get();            // one read; a sync mid-call cannot be observed half-applied
-        var decision = Resolver.resolve(
-            replica.snapshot(), accountExternalId, parseKey(capabilityKey), clock.instant());
-        metrics.decision(capabilityKey, decision.allowed());
-        return decision;
+        try {
+            var decision = Resolver.resolve(
+                replica.snapshot(), accountExternalId, parseKey(capabilityKey), clock.instant());
+            metrics.decision(capabilityKey, decision.allowed());
+            return decision;
+        } catch (UnknownAccountException absent) {
+            return readThrough(accountExternalId, capabilityKey, replica);
+        }
+    }
+
+    /**
+     * A replica's "unknown account" is ambiguous: the account may truly not exist, or it may have
+     * been created moments ago and this replica has not synced since. Throwing on the second case
+     * would fail at signup — the worst possible moment — so one bounded call confirms the account
+     * with the service before this method commits to an answer. A confirmed account is served
+     * from the service's answer directly (the replica converges on its own after the {@link
+     * SnapshotPoller#nudge() nudge} below); anything else — a genuine 404, or the service being
+     * unreachable — becomes {@link ReplicaUnknownAccountException}, never an invented entitlement.
+     */
+    private Decision readThrough(String accountExternalId, String capabilityKey, Replica replica) {
+        metrics.readThrough();
+        var snapshotAge = Duration.between(replica.publishedAt(), clock.instant());
+        if (feed == null) {   // forTesting(): no transport to read through with
+            throw new ReplicaUnknownAccountException(accountExternalId, snapshotAge, false);
+        }
+        DecisionDtos.DecisionResponse response;
+        try {
+            response = feed.decision(accountExternalId, capabilityKey);
+        } catch (UnknownAccountException confirmed) {
+            // The service itself has no such account: a genuine 404, not a replica lag.
+            throw new ReplicaUnknownAccountException(accountExternalId, snapshotAge, true);
+        } catch (UnknownCapabilityException | RetiredCapabilityException domainAnswer) {
+            // The service answered — just not about the account. Whatever this replica's account
+            // gap is, it is not the caller's problem here; the capability error is the real one.
+            throw domainAnswer;
+        } catch (RuntimeException unreachable) {
+            throw new ReplicaUnknownAccountException(accountExternalId, snapshotAge, false);
+        }
+        if (poller != null) {
+            poller.nudge();
+        }
+        return DecisionDtos.toDecision(response);
     }
 
     @Override
@@ -75,9 +117,24 @@ final class DefaultEntitlementClient implements EntitlementClient {
         throw new UnsupportedOperationException("Task 12/13");
     }
 
+    /**
+     * Diagnostic only. Unlike {@link #check}, this always calls the service and never resolves
+     * locally: a replica carries no trace data — override reason text ("suspended pending
+     * investigation") is commercially sensitive and deliberately never replicated — so there is no
+     * local answer to fall back to. That is also why this fails during an outage when {@link
+     * #check} would not: there is nothing to serve from the last known state.
+     */
     @Override
     public Explanation explain(String accountExternalId, String capabilityKey) {
-        throw new UnsupportedOperationException("Task 12/13");
+        try {
+            return DecisionDtos.toExplanation(feed.decision(accountExternalId, capabilityKey));
+        } catch (UnknownAccountException | UnknownCapabilityException | RetiredCapabilityException e) {
+            throw e;   // the three distinctions survive the diagnostic path unchanged
+        } catch (RuntimeException e) {
+            throw new ExplanationUnavailableException(
+                "Could not fetch an explanation for " + accountExternalId + "/" + capabilityKey
+                    + ". This is a diagnostic path and it fails during an outage — check() does not.", e);
+        }
     }
 
     @Override
