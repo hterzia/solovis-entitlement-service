@@ -1540,7 +1540,24 @@ git commit -m "feat(entitlement-client): gate every candidate replica on the fee
 **Files:**
 - Create: `entitlement-client/src/main/java/com/solovis/entitlement/client/wire/DeltaDtos.java`
 - Create: `entitlement-client/src/main/java/com/solovis/entitlement/client/replica/DeltaApplier.java`
+- Modify: `entitlement-core/src/main/java/com/solovis/entitlement/core/view/SnapshotMutator.java` — add `withVersion`
 - Test: `entitlement-client/src/test/java/com/solovis/entitlement/client/replica/DeltaApplierTest.java`
+- Test: `entitlement-core/src/test/java/com/solovis/entitlement/core/view/SnapshotMutatorTest.java` — cover `withVersion`
+
+The core addition, purely additive and sharing all five maps by reference:
+
+```java
+    /**
+     * The same model at a new version. A delta change that turns out to be a no-op on this replica —
+     * a removal it never saw, a redelivered creation — still advances the version, because the
+     * replica has genuinely caught up to it. Without this the version stalls and the replica
+     * re-requests the same change forever.
+     */
+    public static Snapshot withVersion(Snapshot base, long newVersion) {
+        return new Snapshot(newVersion, base.capabilitiesMap(), base.plansMap(),
+            base.planEntitlementsMap(), base.accountsMap(), base.liveOverridesMap());
+    }
+```
 
 **Interfaces:**
 - Consumes: `Replica` (Task 4), `WireMapper`/`FeedDtos`/`ValueDto` (Task 3); core `SnapshotMutator`.
@@ -1566,9 +1583,10 @@ git commit -m "feat(entitlement-client): gate every candidate replica on the fee
 | `override.created` | `withOverrideAdded`, and index the new override by ref |
 | `override.removed` | look the ref up in `overridesByRef` to recover `(account, capability, id)`, then `withOverrideRemoved`, and drop the index entry |
 
-**Two traps.**
+**Three traps.**
 - `withOverrideAdded` appends blindly with no dedupe by id. A redelivered `override.created` would double-count. Guard: if `overridesByRef` already holds the ref, skip the change — it is already applied.
 - `override.removed` for a ref the index does not hold is a no-op, not an error. A replica that full-resynced past the removal never saw the override.
+- **A no-op change must still advance the version.** Five branches can be no-ops — a removal for an unknown ref, a redelivered creation, and a retire/archive/default-change naming a target this replica does not hold. Returning the snapshot unchanged leaves the version behind, and because `Replica.version()` reads `snapshot.snapshotVersion()` the replica then re-requests the same change forever, never advancing and never resyncing. Every decision would also report a stale `snapshotVersion`, and `check(..., minSnapshotVersion)` would throw `SnapshotBehindException` permanently. Core has no version-only mutation, so **Task 6 adds `SnapshotMutator.withVersion(base, newVersion)`** — purely additive, sharing all five maps by reference — and the no-op branches yield that.
 
 **Ordering is mandatory.** Changes must be applied in ascending `version`. Reject a batch whose first change is not `current.version() + 1`, or whose versions are not strictly ascending — that is a gap, and the caller must full-resync rather than guess.
 
@@ -1920,12 +1938,12 @@ public final class DeltaApplier {
                 var key = new CapabilityKey(change.get("key").asString());
                 var existing = snapshot.capability(key).orElse(null);
                 yield existing == null
-                    ? snapshot
+                    ? SnapshotMutator.withVersion(snapshot, version)
                     : SnapshotMutator.withCapability(snapshot, version, retire(existing, publishedAt));
             }
             case "plan.upserted" -> SnapshotMutator.withPlan(snapshot, version, new Plan(
                 change.get("key").asString(),
-                change.get("key").asString(),
+                change.get("name").asString(),
                 Plan.Status.valueOf(change.get("status").asString()),
                 change.get("isDefaultForNewAccounts").asBoolean()));
             case "plan.entitlements" -> {
@@ -1953,7 +1971,7 @@ public final class DeltaApplier {
                 var key = change.get("key").asString();
                 var existing = snapshot.plan(key).orElse(null);
                 yield existing == null
-                    ? snapshot
+                    ? SnapshotMutator.withVersion(snapshot, version)
                     : SnapshotMutator.withPlan(snapshot, version,
                         new Plan(existing.key(), existing.name(), Plan.Status.ARCHIVED, false));
             }
@@ -1968,7 +1986,7 @@ public final class DeltaApplier {
                 }
                 var target = next.plan(key).orElse(null);
                 yield target == null
-                    ? next
+                    ? SnapshotMutator.withVersion(next, version)
                     : SnapshotMutator.withPlan(next, version,
                         new Plan(target.key(), target.name(), target.status(), true));
             }
@@ -1977,7 +1995,9 @@ public final class DeltaApplier {
             case "override.created" -> {
                 long id = WireMapper.refToId(change.get("ref").asString());
                 if (byRef.containsKey(id)) {
-                    yield snapshot;   // already applied; the core mutator appends without dedupe
+                    // already applied; the core mutator appends without dedupe. Still advance the
+                    // version — the replica has genuinely caught up to this change.
+                    yield SnapshotMutator.withVersion(snapshot, version);
                 }
                 var override = new AccountOverride(
                     OptionalLong.of(id),
@@ -1993,7 +2013,7 @@ public final class DeltaApplier {
                 long id = WireMapper.refToId(change.get("ref").asString());
                 var known = byRef.remove(id);
                 yield known == null
-                    ? snapshot   // never seen here; a full resync may already have passed the removal
+                    ? SnapshotMutator.withVersion(snapshot, version)   // never seen here; a full resync may have passed it
                     : SnapshotMutator.withOverrideRemoved(
                         snapshot, version, known.accountExternalId(), known.capabilityKey(), id);
             }
