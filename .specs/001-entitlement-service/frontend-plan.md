@@ -1722,9 +1722,12 @@ import { renderWithProviders } from '../test/testUtils'
 import { SaveConfirmation } from './SaveConfirmation'
 
 describe('SaveConfirmation', () => {
-  it('states the exact liveness promise with the given second count', () => {
+  it('states the exact liveness promise with the given second count', async () => {
+    // renderWithProviders (fixed in Task 3, after Task 6 originally landed) now mounts a real
+    // RouterProvider, whose initial route match is not synchronous — so the assertion must
+    // await it rather than read the DOM immediately after render().
     renderWithProviders(<SaveConfirmation seconds={60} />)
-    expect(screen.getByText('Saved. Active everywhere within 60 seconds.')).toBeInTheDocument()
+    expect(await screen.findByText('Saved. Active everywhere within 60 seconds.')).toBeInTheDocument()
   })
 })
 ```
@@ -2252,9 +2255,13 @@ describe('TraceView', () => {
 
   it('shows every GRANT, winners and losers alike, with reason/author/date', () => {
     render(<TraceView trace={RESULT_TRACE} />)
-    expect(screen.getByText('Renewal concession — Q3 pilot')).toBeInTheDocument()
-    expect(screen.getByText('Migration goodwill')).toBeInTheDocument()
-    expect(screen.getByText('j.okafor')).toBeInTheDocument()
+    // Regex, not exact strings: CandidateRow renders the reason/author as part of one run of
+    // sibling text nodes alongside the overrideId and date (no element isolates just the reason
+    // or just the author), so no element's full text content ever equals just "Renewal
+    // concession — Q3 pilot" or just "j.okafor" — only a substring/regex match can succeed here.
+    expect(screen.getByText(/Renewal concession.*Q3 pilot/)).toBeInTheDocument()
+    expect(screen.getByText(/Migration goodwill/)).toBeInTheDocument()
+    expect(screen.getByText(/j\.okafor/)).toBeInTheDocument()
   })
 
   it('marks the winning grant and the losing grant distinctly', () => {
@@ -2466,7 +2473,12 @@ export function CapabilitiesListRoute() {
           emptyMessage="No capabilities found."
           renderRow={(cap) => (
             <Link to="/capabilities/$key" params={{ key: cap.key }} className="sv-link" style={cap.status === 'RETIRED' ? { opacity: 0.5 } : undefined}>
-              {cap.displayName} <ValueBadge value={cap.default} tiers={cap.tiers} /> {cap.status === 'RETIRED' && '(retired)'}
+              {/* the retired marker is wrapped in its own element, not a bare text node, so it
+                  doesn't get concatenated onto displayName in the anchor's direct child text —
+                  Testing Library's default getByText only reads an element's own text nodes,
+                  skipping nested elements, and a bare '(retired)' string would break that for
+                  every retired row's exact-text lookup */}
+              {cap.displayName} <ValueBadge value={cap.default} tiers={cap.tiers} /> {cap.status === 'RETIRED' && <span> (retired)</span>}
             </Link>
           )}
         />
