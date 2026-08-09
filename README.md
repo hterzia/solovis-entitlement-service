@@ -1,4 +1,4 @@
-reqs not read
+reqs not read -- not sure if this is really necessary since i did read the requirements :P
 
 # Solovis Entitlement Service
 
