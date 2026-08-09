@@ -4709,7 +4709,9 @@ git commit -m "frontend: checker — decision, trace, named errors, copy explana
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { renderWithProviders } from '../../test/testUtils'
+import { server } from '../../test/mocks/server'
 import { HistoryRoute } from './HistoryRoute'
 
 describe('HistoryRoute', () => {
@@ -4747,6 +4749,69 @@ describe('HistoryRoute', () => {
     renderWithProviders(<HistoryRoute />)
     expect(screen.queryByRole('button', { name: /edit|delete|export/i })).not.toBeInTheDocument()
   })
+
+  it('loads the next page via cursor when more events exist', async () => {
+    // Overrides the shared /admin/v1/audit handler for this test only (server.resetHandlers()
+    // in afterEach restores the default) — the shared fixture data has no second page, and
+    // giving it one just to exercise this wouldn't help any other test, so it's scoped here.
+    const user = userEvent.setup()
+    const baseEvent = {
+      occurredAt: '2026-08-09T16:00:00.000Z', actor: { id: 'a.reyes', kind: 'PERSON' as const },
+      source: 'UI' as const, entityType: 'ACCOUNT' as const, action: 'CREATE' as const,
+      planKey: null, account: null, capability: null, before: null, after: null,
+      reason: null, affectedAccountCount: null,
+    }
+    const page1Event = { ...baseEvent, seq: 500, entityId: 'page-one-event' }
+    const page2Event = { ...baseEvent, seq: 400, entityId: 'page-two-event' }
+
+    server.use(
+      http.get('/admin/v1/audit', ({ request }) => {
+        const cursor = new URL(request.url).searchParams.get('cursor')
+        return cursor
+          ? HttpResponse.json({ events: [page2Event], nextCursor: null })
+          : HttpResponse.json({ events: [page1Event], nextCursor: 'aud_next_page' })
+      }),
+    )
+
+    renderWithProviders(<HistoryRoute />)
+    await waitFor(() => expect(screen.getByText(/page-one-event/)).toBeInTheDocument())
+    expect(screen.queryByText(/page-two-event/)).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Load more' }))
+    await waitFor(() => expect(screen.getByText(/page-two-event/)).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument()
+  })
+
+  it('resets to the first page when a filter changes', async () => {
+    const user = userEvent.setup()
+    const baseEvent = {
+      occurredAt: '2026-08-09T16:00:00.000Z', actor: { id: 'a.reyes', kind: 'PERSON' as const },
+      source: 'UI' as const, entityType: 'ACCOUNT' as const, action: 'CREATE' as const,
+      planKey: null, account: null, capability: null, before: null, after: null,
+      reason: null, affectedAccountCount: null,
+    }
+    server.use(
+      http.get('/admin/v1/audit', ({ request }) => {
+        const url = new URL(request.url)
+        const cursor = url.searchParams.get('cursor')
+        const actorFilter = url.searchParams.get('actor')
+        if (actorFilter) return HttpResponse.json({ events: [{ ...baseEvent, seq: 700, entityId: 'filtered-event' }], nextCursor: null })
+        return cursor
+          ? HttpResponse.json({ events: [{ ...baseEvent, seq: 400, entityId: 'page-two-event' }], nextCursor: null })
+          : HttpResponse.json({ events: [{ ...baseEvent, seq: 500, entityId: 'page-one-event' }], nextCursor: 'aud_next_page' })
+      }),
+    )
+
+    renderWithProviders(<HistoryRoute />)
+    await waitFor(() => expect(screen.getByText(/page-one-event/)).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'Load more' }))
+    await waitFor(() => expect(screen.getByText(/page-two-event/)).toBeInTheDocument())
+    // Changing a filter while on page 2 must start over at page 1 of the NEW filtered set, not
+    // resume the old cursor against it — a stale cursor from an unrelated filter combination
+    // could otherwise skip or misalign results.
+    await user.type(screen.getByLabelText('Actor'), 'a.reyes')
+    await waitFor(() => expect(screen.getByText(/filtered-event/)).toBeInTheDocument())
+    expect(screen.queryByText(/page-two-event/)).not.toBeInTheDocument()
+  })
 })
 ```
 
@@ -4775,10 +4840,18 @@ export function HistoryRoute() {
   const [entityType, setEntityType] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+  const [cursor, setCursor] = useState<string | undefined>(undefined)
+
+  // Any filter change resets to the first page — a stale cursor from a different filter set
+  // would silently resume pagination through the WRONG result set otherwise (§8 requires the
+  // three filters to compose; the cursor is scoped to whatever set produced it).
+  function updateFilter(setter: (value: string) => void) {
+    return (value: string) => { setter(value); setCursor(undefined) }
+  }
 
   const params = {
     account: account || undefined, planKey: planKey || undefined, actor: actor || undefined,
-    entityType: entityType || undefined, from: from || undefined, to: to || undefined,
+    entityType: entityType || undefined, from: from || undefined, to: to || undefined, cursor,
   }
   const query = useQuery({ queryKey: queryKeys.audit(params), queryFn: () => listAuditEvents(params) })
 
@@ -4787,25 +4860,25 @@ export function HistoryRoute() {
       <h1 className="app-page-title">Change history</h1>
       <form onSubmit={(e) => e.preventDefault()}>
         <label className="sv-label">Account
-          <input className="sv-field" aria-label="Account" value={account} onChange={(e) => setAccount(e.target.value)} />
+          <input className="sv-field" aria-label="Account" value={account} onChange={(e) => updateFilter(setAccount)(e.target.value)} />
         </label>
         <label className="sv-label">Plan
-          <input className="sv-field" aria-label="Plan" value={planKey} onChange={(e) => setPlanKey(e.target.value)} />
+          <input className="sv-field" aria-label="Plan" value={planKey} onChange={(e) => updateFilter(setPlanKey)(e.target.value)} />
         </label>
         <label className="sv-label">Actor
-          <input className="sv-field" aria-label="Actor" value={actor} onChange={(e) => setActor(e.target.value)} />
+          <input className="sv-field" aria-label="Actor" value={actor} onChange={(e) => updateFilter(setActor)(e.target.value)} />
         </label>
         <label className="sv-label">Entity type
-          <select className="sv-field" aria-label="Entity type" value={entityType} onChange={(e) => setEntityType(e.target.value)}>
+          <select className="sv-field" aria-label="Entity type" value={entityType} onChange={(e) => updateFilter(setEntityType)(e.target.value)}>
             <option value="">All</option>
             {ENTITY_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </label>
         <label className="sv-label">From
-          <input className="sv-field" type="date" aria-label="From" value={from} onChange={(e) => setFrom(e.target.value)} />
+          <input className="sv-field" type="date" aria-label="From" value={from} onChange={(e) => updateFilter(setFrom)(e.target.value)} />
         </label>
         <label className="sv-label">To
-          <input className="sv-field" type="date" aria-label="To" value={to} onChange={(e) => setTo(e.target.value)} />
+          <input className="sv-field" type="date" aria-label="To" value={to} onChange={(e) => updateFilter(setTo)(e.target.value)} />
         </label>
       </form>
 
@@ -4827,6 +4900,11 @@ export function HistoryRoute() {
           ))}
         </tbody>
       </table>
+      {query.data?.nextCursor && (
+        <button type="button" className="sv-btn--secondary" onClick={() => setCursor(query.data!.nextCursor!)}>
+          Load more
+        </button>
+      )}
     </div>
   )
 }
