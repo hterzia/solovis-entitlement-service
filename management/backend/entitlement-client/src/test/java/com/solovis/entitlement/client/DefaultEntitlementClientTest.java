@@ -90,6 +90,18 @@ class DefaultEntitlementClientTest {
     }
 
     @Test
+    void aMalformedCapabilityKeyIsAnUnknownCapabilityRatherThanALeakedValidationError() {
+        assertThatThrownBy(() -> client.check("acct_9931", "seats"))
+            .isInstanceOf(UnknownCapabilityException.class);
+    }
+
+    @Test
+    void checkOnAnUnknownAccountIsAnError() {
+        assertThatThrownBy(() -> client.check("acct_nope", "api.access"))
+            .isInstanceOf(com.solovis.entitlement.core.error.UnknownAccountException.class);
+    }
+
+    @Test
     void checkAllCoversEveryNonRetiredCapabilityAtOneSnapshotVersion() {
         var all = client.checkAll("acct_9931");
 

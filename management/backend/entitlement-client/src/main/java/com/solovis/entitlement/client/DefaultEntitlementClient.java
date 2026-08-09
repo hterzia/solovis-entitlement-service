@@ -7,6 +7,7 @@ import com.solovis.entitlement.core.engine.Decision;
 import com.solovis.entitlement.core.engine.Explanation;
 import com.solovis.entitlement.core.engine.Resolver;
 import com.solovis.entitlement.core.error.UnknownAccountException;
+import com.solovis.entitlement.core.error.UnknownCapabilityException;
 import com.solovis.entitlement.core.model.Capability;
 import com.solovis.entitlement.core.model.CapabilityKey;
 import java.time.Clock;
@@ -48,7 +49,7 @@ final class DefaultEntitlementClient implements EntitlementClient {
     public Decision check(String accountExternalId, String capabilityKey) {
         var replica = holder.get();            // one read; a sync mid-call cannot be observed half-applied
         var decision = Resolver.resolve(
-            replica.snapshot(), accountExternalId, new CapabilityKey(capabilityKey), clock.instant());
+            replica.snapshot(), accountExternalId, parseKey(capabilityKey), clock.instant());
         metrics.decision(capabilityKey, decision.allowed());
         return decision;
     }
@@ -120,6 +121,20 @@ final class DefaultEntitlementClient implements EntitlementClient {
         }
         if (feed != null) {
             feed.close();
+        }
+    }
+
+    /**
+     * A malformed key and an unknown key are the same answer on the decision path: {@code
+     * CapabilityKey}'s constructor throws {@link IllegalArgumentException} for anything not
+     * matching its pattern, which is not one of the three domain errors this method promises.
+     * Re-thrown as {@link UnknownCapabilityException} so callers only ever see the three.
+     */
+    private static CapabilityKey parseKey(String capabilityKey) {
+        try {
+            return new CapabilityKey(capabilityKey);
+        } catch (IllegalArgumentException e) {
+            throw new UnknownCapabilityException(capabilityKey);
         }
     }
 }
