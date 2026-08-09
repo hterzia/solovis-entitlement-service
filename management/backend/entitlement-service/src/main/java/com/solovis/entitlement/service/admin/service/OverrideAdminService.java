@@ -92,6 +92,9 @@ public class OverrideAdminService {
             .orElseThrow(() -> new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "No override '" + overrideRef + "'."));
         var accountRow = accountRepository.findByExternalId(external)
             .orElseThrow(() -> new com.solovis.entitlement.core.error.UnknownAccountException(external));
+        if (overrideRow.accountId() != accountRow.id()) {
+            throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "No override '" + overrideRef + "'.");
+        }
         var capRow = capabilityRepository.findById(overrideRow.capabilityId()).orElseThrow();
 
         String now = clock.instant().toString();

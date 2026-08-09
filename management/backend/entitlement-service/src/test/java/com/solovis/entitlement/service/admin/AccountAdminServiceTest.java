@@ -11,6 +11,8 @@ import com.solovis.entitlement.service.error.ErrorCode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -66,8 +68,42 @@ class AccountAdminServiceTest {
         assertThat(detail.overrides()).extracting(AccountDetailDto.OverrideRow::effectNow).containsExactly("WINNING");
 
         planService.create(new PlanCreateRequest("enterprise3", "Enterprise 3", null));
+        var richerEdit = new PlanEntitlementEditRequest(
+            Map.of("t7.reports.monthly", new ValueDto("QUANTITY", null, 500L, null, null, null)), List.of(), null, null);
+        var richerPreview = planService.preview("enterprise3", richerEdit);
+        planService.apply("enterprise3", new PlanEntitlementEditRequest(richerEdit.set(), richerEdit.unset(), null, richerPreview.previewToken()));
+
         var reassign = accountService.reassignPlan("acct_view",
             new PlanReassignRequest("enterprise3", "SYSTEM", "billing-sync", "Subscription upgraded"));
         assertThat(reassign.retainedOverrideCount()).isEqualTo(1);
+
+        // the retained GRANT (200) now loses to the richer plan baseline (500) — the exact trigger for
+        // effectNow's Critical bug: it was mislabeled SUPERSEDED_BY_GRANT (implying a competing grant
+        // that doesn't exist) instead of NO_EFFECT_PLAN_MORE_GENEROUS.
+        var afterUpgrade = accountService.get("acct_view");
+        assertThat(afterUpgrade.overrides()).extracting(AccountDetailDto.OverrideRow::effectNow)
+            .containsExactly("NO_EFFECT_PLAN_MORE_GENEROUS");
+    }
+
+    @Test
+    void effectNowLabelsALoneGrantThatDoesNotBeatThePlanBaseline() {
+        planService.create(new PlanCreateRequest("t7-baseline-plan", "T7 Baseline Plan", null));
+        planService.designateDefault("t7-baseline-plan");
+        capabilityService.create(new CapabilityCreateRequest("t7.grant.only", "Grant only test", null, "QUANTITY",
+            new ValueDto("QUANTITY", null, 0L, null, null, null), null, null));
+        var edit = new PlanEntitlementEditRequest(
+            Map.of("t7.grant.only", new ValueDto("QUANTITY", null, 100L, null, null, null)), List.of(), null, null);
+        var preview = planService.preview("t7-baseline-plan", edit);
+        planService.apply("t7-baseline-plan", new PlanEntitlementEditRequest(edit.set(), edit.unset(), null, preview.previewToken()));
+        accountService.create(new AccountCreateRequest("acct_grant_only", null));
+
+        // the only override on this capability — no competing GRANT, no HOLD — so a plan-beats-grant
+        // outcome must never be reported as SUPERSEDED_BY_GRANT.
+        overrideService.create("acct_grant_only", new OverrideCreateRequest("t7.grant.only", "GRANT",
+            new ValueDto("QUANTITY", null, 50L, null, null, null), "grant that loses to the plan baseline"));
+
+        var detail = accountService.get("acct_grant_only");
+        assertThat(detail.overrides()).extracting(AccountDetailDto.OverrideRow::effectNow)
+            .containsExactly("NO_EFFECT_PLAN_MORE_GENEROUS");
     }
 }

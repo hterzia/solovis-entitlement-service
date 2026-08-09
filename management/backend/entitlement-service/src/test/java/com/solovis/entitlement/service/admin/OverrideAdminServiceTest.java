@@ -49,4 +49,25 @@ class OverrideAdminServiceTest {
         var afterDelete = overrideService.delete("acct_override", created.overrideId(), null);
         assertThat(afterDelete.decision().allowed()).isFalse();
     }
+
+    @Test
+    void deleteRejectsAnOverrideThatBelongsToAnotherAccount() {
+        planService.create(new PlanCreateRequest("t7-owner-plan", "T7 Owner Plan", null));
+        planService.designateDefault("t7-owner-plan");
+        capabilityService.create(new CapabilityCreateRequest("t7.owner.check", "Owner check", null, "SWITCH",
+            new ValueDto("SWITCH", false, null, null, null, null), null, null));
+        accountService.create(new AccountCreateRequest("acct_owner_a", null));
+        accountService.create(new AccountCreateRequest("acct_owner_b", null));
+
+        var created = overrideService.create("acct_owner_a", new OverrideCreateRequest("t7.owner.check", "GRANT",
+            new ValueDto("SWITCH", true, null, null, null, null), "belongs to account A only"));
+
+        assertThatThrownBy(() -> overrideService.delete("acct_owner_b", created.overrideId(), null))
+            .isInstanceOf(EntitlementApiException.class)
+            .extracting("errorCode").isEqualTo(ErrorCode.VALIDATION_FAILED);
+
+        var stillLive = accountService.get("acct_owner_a").overrides().stream()
+            .anyMatch(o -> o.id().equals(created.overrideId()));
+        assertThat(stillLive).isTrue();
+    }
 }

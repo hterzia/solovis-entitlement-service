@@ -127,24 +127,39 @@ public class AccountAdminService {
             snapshot.snapshotVersion(), entitlements, overrides);
     }
 
-    /** Derives the one effectNow value data-model.md's override list needs, from the same Trace the entitlements row already computed — see this task's documented limitation for the retired-capability case (handled by the caller passing a null Explanation). */
+    /**
+     * Derives the one effectNow value data-model.md's override list needs, from this override's own
+     * {@link com.solovis.entitlement.core.engine.TraceEntry#outcome()} in the same Trace the entitlements
+     * row already computed — see this task's documented limitation for the retired-capability case
+     * (handled by the caller passing a null Explanation). {@code WON} is ambiguous on its own (a hold's
+     * top candidate is marked WON even when it doesn't restrict the result — see Resolver's own
+     * comment on holdWinner), so grantWinner()/holdWinner() presence disambiguates the applied case.
+     */
     private static String effectNow(AccountOverrideRow row, com.solovis.entitlement.core.engine.Trace trace) {
         boolean isGrant = row.kind().equals("GRANT");
         var candidates = isGrant ? trace.grants() : trace.holds();
-        var winner = isGrant ? trace.grantWinner() : trace.holdWinner();
-        boolean isWinner = winner.isPresent() && winner.get().overrideId().equals(java.util.OptionalLong.of(row.id()));
-        boolean groupApplied = winner.isPresent();
-        if (isWinner) {
-            if (isGrant) {
-                return groupApplied ? (trace.holdWinner().isPresent() ? "OVERRIDDEN_BY_HOLD" : "WINNING") : "NO_EFFECT_PLAN_MORE_GENEROUS";
-            }
-            return groupApplied ? "WINNING" : "NO_EFFECT_NOT_MORE_RESTRICTIVE";
-        }
-        boolean isCandidate = candidates.stream().anyMatch(c -> c.overrideId().equals(java.util.OptionalLong.of(row.id())));
-        if (!isCandidate) {
+        var entry = candidates.stream()
+            .filter(c -> c.overrideId().equals(java.util.OptionalLong.of(row.id())))
+            .findFirst();
+        if (entry.isEmpty()) {
             return null; // not among this capability's candidates at all — shouldn't happen for a live override, defensive only
         }
-        return isGrant ? "SUPERSEDED_BY_GRANT" : "SUPERSEDED_BY_STRICTER_HOLD";
+        var outcome = entry.get().outcome().orElseThrow();
+        if (isGrant) {
+            return switch (outcome) {
+                case WON -> trace.holdWinner().isPresent() ? "OVERRIDDEN_BY_HOLD" : "WINNING";
+                case LOST_NOT_MORE_GENEROUS_THAN_PLAN -> "NO_EFFECT_PLAN_MORE_GENEROUS";
+                case LOST_NOT_MORE_GENEROUS_THAN_WINNING_GRANT -> "SUPERSEDED_BY_GRANT";
+                case LOST_NOT_MORE_RESTRICTIVE_THAN_WINNING_HOLD ->
+                    throw new IllegalStateException("A GRANT candidate cannot carry a HOLD-only outcome.");
+            };
+        }
+        return switch (outcome) {
+            case WON -> trace.holdWinner().isPresent() ? "WINNING" : "NO_EFFECT_NOT_MORE_RESTRICTIVE";
+            case LOST_NOT_MORE_RESTRICTIVE_THAN_WINNING_HOLD -> "SUPERSEDED_BY_STRICTER_HOLD";
+            case LOST_NOT_MORE_GENEROUS_THAN_PLAN, LOST_NOT_MORE_GENEROUS_THAN_WINNING_GRANT ->
+                throw new IllegalStateException("A HOLD candidate cannot carry a GRANT-only outcome.");
+        };
     }
 
     @Transactional
