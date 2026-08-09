@@ -116,7 +116,16 @@ Cloud Run sends SIGTERM with a 10-second CPU-allocated grace period before stopp
 
 Seed data will exist and populate the demo with accounts, plans and capabilities. Because seeding runs on every boot and a restored database arrives already populated, **the `seed/` package must skip when the database is not empty.** Without that guard, every restart overwrites whatever the reviewer did with pristine demo data, defeating the point of Litestream entirely.
 
-This is a requirement on a package that is not yet written, and belongs in its plan as well as this one.
+**Audit history is seed data too.** This is a full demo, and spec §8's change history is one of the things being demonstrated — an empty history screen shows a reviewer nothing, and the filters by account, by plan and by actor cannot be exercised against no rows. Seeding it imposes four requirements:
+
+- **Enough variety to exercise the filters.** Several actors, several accounts, more than one plan, and a mix of event kinds: plan edits, plan assignments, override creations and removals, capability changes. Enough rows to make pagination visible rather than theoretical.
+- **Timestamps backdated relative to the injected `Clock`, never hard-coded dates.** A demo seeded with fixed 2026 dates looks abandoned six months later. Deriving each event from `clock.instant()` minus an offset means the history always reads as recent, whenever the container happens to boot. This also keeps the rule in `CLAUDE.md` — timestamps computed in Java and passed in, never `datetime('now')` in SQL.
+- **The history must agree with current state.** The seeded trail should tell the story that ends at the state the demo actually starts in. An audit record saying an override was removed, next to that override sitting live in the UI, is the kind of contradiction a sharp reviewer finds in the first five minutes.
+- **Reasons on every override event.** They are mandatory per spec §8, and they are what makes the explanation screens worth looking at.
+
+Seeding audit rows is compatible with the append-only enforcement: the schema triggers block `UPDATE` and `DELETE`, not `INSERT`.
+
+These are requirements on a package that is not yet written, and belong in its plan as well as this one.
 
 ### Accepted weakness: redeploy overlap
 
@@ -203,9 +212,9 @@ Infrastructure alone is not sufficient; four changes are needed in the repo.
 
 **Graceful shutdown.** Add `server.shutdown: graceful` and `spring.lifecycle.timeout-per-shutdown-phase: 8s` — inside Cloud Run's 10-second SIGTERM window — so in-flight requests finish and SQLite closes cleanly before Litestream's final sync. Without this, §4's durability story does not hold even if Litestream behaves as hoped.
 
-**`seed/` must skip a populated database.** Covered in §4.
+**`seed/` must skip a populated database, and must seed audit history.** Covered in §4.
 
-**SPA history-mode fallback.** Client-side routes need unknown non-API paths forwarded to `index.html`, or a deep link into the operator UI returns 404 when opened directly — the exact thing that happens when a reviewer is sent a link to a specific screen. This is not currently in `frontend-plan.md` and should be added there.
+**SPA client-side routing fallback.** Unknown non-API paths need forwarding to `index.html`, or a deep link into the operator UI returns 404 when opened directly — the exact thing that happens when a reviewer is sent a link to a specific screen. (This is the router's history mode, unrelated to the audit history above.) Not currently in `frontend-plan.md` and should be added there.
 
 ---
 
@@ -258,7 +267,8 @@ The deployment is not done until these pass. The third is the one that matters m
 3. **Data survives a redeploy.** Save a change through the UI, redeploy the service, and confirm the change is still there. **If this fails, §4's fallbacks apply** — this is the experiment that decides whether B-warm is viable at all.
 4. **A cold restore works.** Delete the service, redeploy from scratch, and confirm the data returns from GCS rather than being re-seeded.
 5. **Seed does not clobber.** Confirm a restart against a populated database leaves reviewer-made changes intact.
-6. **The single-writer guarantee holds.** Confirm the deployed service reports `max-instances=1`.
+6. **History is populated and filterable.** The audit screen shows seeded events on first load, the account, plan and actor filters each return results, and the timestamps read as recent rather than fixed to the date the seed was written.
+7. **The single-writer guarantee holds.** Confirm the deployed service reports `max-instances=1`.
 
 ---
 
