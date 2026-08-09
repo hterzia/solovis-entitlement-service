@@ -2,7 +2,7 @@
 
 **Status:** Draft for review
 **Date:** 2026-08-08
-**Companion document:** [`future-spec.md`](./future-spec.md) — everything deliberately deferred out of v1
+**Companion document:** [`future-spec.md`](../future-spec.md) — everything deliberately deferred out of v1
 
 ---
 
@@ -44,7 +44,7 @@ These are named explicitly because they are the things people will otherwise ass
 | **Customer-facing display of entitlements** | Internal service and internal UI only in v1. |
 | **Migrating existing product checks** | Rewiring today's scattered ad-hoc checks to ask this service is rollout work for each product team, tracked outside this document. v1 is done when the service and its UI stand ready to answer. |
 
-Deferred capabilities — time-bounded exceptions, upgrade-path hints, relative grants, bulk exceptions and others — are specified in [`future-spec.md`](./future-spec.md), not omitted by accident.
+Deferred capabilities — time-bounded exceptions, upgrade-path hints, relative grants, bulk exceptions and others — are specified in [`future-spec.md`](../future-spec.md), not omitted by accident.
 
 ---
 
@@ -96,7 +96,7 @@ Overrides are **open-ended** — they last until someone removes them. They are 
 
 An account may hold any number of GRANTs and HOLDs on the same capability. They do not conflict, because of how they combine (§4).
 
-Overrides **persist untouched when an account changes plan**. Losing them silently would break promises the business has made. The consequence — a stale HOLD created under an old plan can keep suppressing a capability the customer has since paid for — is a known and accepted v1 limitation; see [`future-spec.md`](./future-spec.md) §2.
+Overrides **persist untouched when an account changes plan**. Losing them silently would break promises the business has made. The consequence — a stale HOLD created under an old plan can keep suppressing a capability the customer has since paid for — is an accepted condition rather than a limitation awaiting a fix: it stays visible in the account view and is cleared by an operator's judgement. See [`future-spec.md`](../future-spec.md), "Removed from this document".
 
 **Every override requires a reason.** An exception with no stated reason becomes unremovable in practice, because nobody later dares to touch it.
 
@@ -236,9 +236,9 @@ The history **only ever grows** — it cannot be edited or tidied — and is fil
 
 **No approval queue.** Speed is the entire reason exceptions exist. The audit trail and the affected-account warning carry the safety.
 
-**No plan rollback.** Removing an override is deleting it. Reverting a plan edit is a genuinely different operation — accounts move between plans in the meantime, so replaying an old plan version can grant capabilities to accounts that were never meant to have them. Pretending these are the same feature is a trap; see [`future-spec.md`](./future-spec.md) §6.
+**No plan rollback.** Removing an override is deleting it. Reverting a plan edit is a genuinely different operation — accounts move between plans in the meantime, so replaying an old plan version can grant capabilities to accounts that were never meant to have them. Pretending these are the same feature is a trap; see [`future-spec.md`](../future-spec.md) item 4.
 
-**HOLDs can be removed by anyone with override rights**, with the removal audited. This is a known v1 gap: it means a compliance suspension can be lifted by someone who should not be lifting it. Accepted for v1; see [`future-spec.md`](./future-spec.md) §4.
+**HOLDs can be removed by anyone with override rights**, with the removal audited. This is a known v1 gap: it means a compliance suspension can be lifted by someone who should not be lifting it. Accepted for v1; see [`future-spec.md`](../future-spec.md) item 2.
 
 ---
 
@@ -346,7 +346,7 @@ These are real decisions, excluded from this document because they are engineeri
 
 ## 12. Known v1 limitations
 
-Accepted knowingly, each with its resolution in [`future-spec.md`](./future-spec.md):
+Accepted knowingly, each with its resolution in [`future-spec.md`](../future-spec.md):
 
 | Limitation | Consequence |
 |---|---|

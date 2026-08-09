@@ -1,6 +1,6 @@
 # Implementation Plan: Entitlement Service (v1)
 
-**Branch**: `001-entitlement-service` | **Date**: 2026-08-09 | **Spec**: [`init-spec.md`](../init-spec.md) (deferred scope: [`future-spec.md`](../future-spec.md))
+**Branch**: `001-entitlement-service` | **Date**: 2026-08-09 | **Spec**: [`spec.md`](./spec.md) (deferred scope: [`future-spec.md`](../future-spec.md))
 
 ## Summary
 
@@ -8,7 +8,7 @@ One service answers, for any account and any capability, *are they allowed*, *wh
 
 The technical approach has one central idea: **the decision engine is a small pure library over an immutable in-memory snapshot, and that snapshot is replicated.** SQLite is the durable system of record and is never on a decision path. The Spring Boot management service holds the current snapshot in memory and swaps it atomically on every committed write; consuming product services embed the same engine via a Java SDK that keeps its own snapshot replica, refreshed from a delta feed. Because the SDK replicates the *model* (capabilities, plans, account→plan, overrides) rather than computed answers, decisions are local and sub-millisecond, deltas stay small, and a consuming product keeps answering from its last replica when the management service is down — which is exactly the outage posture fixed in spec §11.
 
-**Explanations stay in the management layer.** Only the operator UI needs the §6.1 trace; every other service needs an answer. So `entitlement-core` exposes the one resolution rule through two entry points — `resolve()` returns `(allowed, value)` and allocates nothing, `explain()` layers the trace on top of the identical arithmetic. The service calls both; the replica feed and the SDK carry only what `resolve()` needs. This makes criterion 24 stronger rather than weaker: the trace is produced in exactly one place, by the only component holding the complete record. It also keeps commercially sensitive override reasons ("suspended pending investigation", "goodwill grant, renewal risk") out of every consuming service's memory and disk cache, which `future-spec.md` §16 warns about.
+**Explanations stay in the management layer.** Only the operator UI needs the §6.1 trace; every other service needs an answer. So `entitlement-core` exposes the one resolution rule through two entry points — `resolve()` returns `(allowed, value)` and allocates nothing, `explain()` layers the trace on top of the identical arithmetic. The service calls both; the replica feed and the SDK carry only what `resolve()` needs. This makes criterion 24 stronger rather than weaker: the trace is produced in exactly one place, by the only component holding the complete record. It also keeps commercially sensitive override reasons ("suspended pending investigation", "goodwill grant, renewal risk") out of every consuming service's memory and disk cache, which `future-spec.md` §11 warns about.
 
 Because consumers hold a copy of the rule but never a trace, drift between replicas would be undiagnosable after the fact. It is therefore prevented up front: the feed carries a `resolverContract` version and a set of conformance vectors that each replica evaluates at startup, refusing to serve if its engine disagrees.
 
@@ -46,7 +46,7 @@ No constitution is defined for this project ("None defined"), so this gate is no
 
 - **Two readings that could reasonably go the other way**, now recorded as decisions in "Recorded interpretations" below rather than left implicit: the scope of criterion 21's trace requirement, and append-only tier ordering.
 - **Criteria 25–31 are designed for but not yet evidenced.** The spec's definition of done requires a demonstration at 100,000 accounts and 5,000 decisions/second *against data changing during the demonstration*. The design makes those targets easy (decisions are in-memory map lookups against an immutably swapped snapshot), but "easy in principle" is not evidence — `entitlement-loadtest` exists as a module precisely so this is measured rather than asserted.
-- **One risk the design creates and must answer for**: the resolution rule now runs in every consuming service, so two replicas on different SDK versions could disagree about the same account — the scattered-logic failure §1 exists to prevent, reappearing one layer down. It is dormant while §4's rule is frozen, and becomes live the moment `future-spec.md` §1 (time-bounded overrides) or §5 (relative grants) changes what "most generous" means. Answered by the `resolverContract` version and startup conformance vectors (`research.md` §20), not by discipline.
+- **One risk the design creates and must answer for**: the resolution rule now runs in every consuming service, so two replicas on different SDK versions could disagree about the same account — the scattered-logic failure §1 exists to prevent, reappearing one layer down. It is dormant while §4's rule is frozen, and becomes live the moment `future-spec.md` §1 (time-bounded overrides) or §3 (relative grants) changes what "most generous" means. Answered by the `resolverContract` version and startup conformance vectors (`research.md` §20), not by discipline.
 
 The one deviation from the specification, below, is unchanged by Phase 1.
 
@@ -74,10 +74,10 @@ The one deviation from the specification, below, is unchanged by Phase 1.
 
 ```
 .specs/                                 # all specification material lives here
-├── init-spec.md            # the v1 business specification (source of truth)
 ├── future-spec.md          # deliberately deferred scope
 └── 001-entitlement-service/
-    ├── plan.md             # this file
+    ├── spec.md            # the v1 business specification (source of truth)
+    ├── plan.md            # this file
     ├── research.md         # Phase 0 — every technical decision, with alternatives
     ├── data-model.md       # Phase 1 — logical model, validation rules, SQLite DDL
     └── contracts/
@@ -89,7 +89,7 @@ The one deviation from the specification, below, is unchanged by Phase 1.
         └── ui-screens.md      # the five §9 screens as UI contracts
 ```
 
-Implementation-plan artifacts sit inside `.specs/` beside the business specification they derive from, one directory per feature slug. There is no top-level `specs/` directory.
+Each feature owns one directory under `.specs/`, holding its business specification and every plan artifact derived from it. There is no top-level `specs/` directory.
 
 ### Source Code (repository root)
 

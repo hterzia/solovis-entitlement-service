@@ -1,6 +1,6 @@
 # Contracts — Entitlement Service v1
 
-**Date**: 2026-08-09 | Criterion references *(cNN)* point at [`init-spec.md`](../../init-spec.md) §10.
+**Date**: 2026-08-09 | Criterion references *(cNN)* point at [`spec.md`](../spec.md) §10.
 
 This feature exposes four API surfaces plus the operator screens. Each has its own file:
 
@@ -104,6 +104,6 @@ RFC 9457 `application/problem+json`. Every error carries a stable `type` slug �
 The snapshot feed carries **two** integers, because a replica can be wrong in two different ways:
 
 - `format` — the wire shape. An old SDK meeting a new payload fails loudly instead of misreading it.
-- `resolverContract` — the resolution semantics of §4. Bumped only when the rule itself changes, which `future-spec.md` §1 (time-bounded overrides) and §5 (relative grants) both would. A replica that does not implement the current contract refuses to serve rather than answering differently from its neighbours.
+- `resolverContract` — the resolution semantics of §4. Bumped only when the rule itself changes, which `future-spec.md` §1 (time-bounded overrides) and §3 (relative grants) both would. A replica that does not implement the current contract refuses to serve rather than answering differently from its neighbours.
 
 Version numbers alone are a claim, not a check, so the feed also carries conformance vectors that each replica evaluates against its own engine before serving. See [`snapshot-feed.md`](./snapshot-feed.md), "The conformance gate".

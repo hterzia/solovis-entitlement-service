@@ -2,7 +2,7 @@
 
 **Feature**: Entitlement Service (v1) | **Date**: 2026-08-09 | **Storage engine**: SQLite (WAL)
 
-Criterion references in the form *(c14)* point at the numbered acceptance criteria in [`init-spec.md`](../init-spec.md) §10; section references point at the same document.
+Criterion references in the form *(c14)* point at the numbered acceptance criteria in [`spec.md`](./spec.md) §10; section references point at the same document.
 
 ---
 
@@ -215,7 +215,7 @@ An exception attached to one account and one capability (§3.4). Open-ended, abs
                         participates in resolution only while LIVE
 ```
 
-> **Known v1 limitation, carried from §12 and visible in this model as an absence**: there are no `starts_at` / `expires_at` columns, so every temporary promise is permanent until removed by hand (`future-spec.md` §1), and there is no category column, so "contractually agreed lower limit" and "suspended for fraud" are both HOLDs distinguished only by free text (`future-spec.md` §9).
+> **Known v1 limitation, carried from §12 and visible in this model as an absence**: there are no `starts_at` / `expires_at` columns, so every temporary promise is permanent until removed by hand (`future-spec.md` §1), and there is no category column, so "contractually agreed lower limit" and "suspended for fraud" are both HOLDs distinguished only by free text (`future-spec.md` §7).
 
 ### 7. Audit event
 

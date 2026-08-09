@@ -252,13 +252,13 @@ No uniqueness check and no conflict error: an account may hold any number of GRA
 
 There is deliberately no edit route: **an override is immutable from creation to removal** (decision 2026-08-09). Correcting one is a `DELETE` and a fresh `POST`, each with its own reason and audit event — so no override's stated reason can ever drift from the value it justifies.
 
-> `future-spec.md` §3 (warn the operator about overrides that already exist) is **not** in v1. The returned trace is the partial mitigation.
+> Warning the operator about overrides that already exist on the same account and capability is **not** in v1, and was withdrawn from `future-spec.md` on 2026-08-09, so it is not planned scope either. The returned trace is the standing mitigation: an operator whose GRANT is being capped by an existing HOLD sees that in the response to their own write.
 
 ### `DELETE /admin/v1/accounts/{external}/overrides/{id}`
 
 Optional body `{ "reason": "Investigation closed" }`. Soft-deletes and returns the account's new decision with its trace, so the operator sees the restored value immediately *(c14, c15)*.
 
-> v1 gap, stated in §8 and `future-spec.md` §4: **any caller may remove a HOLD**, including a compliance suspension. Removal is audited but not prevented. With authentication deferred, this is currently unauthenticated as well.
+> v1 gap, stated in §8 and `future-spec.md` §2: **any caller may remove a HOLD**, including a compliance suspension. Removal is audited but not prevented. With authentication deferred, this is currently unauthenticated as well.
 
 ### `PUT /admin/v1/accounts/{external}/plan`
 

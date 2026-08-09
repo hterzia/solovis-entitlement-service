@@ -81,10 +81,10 @@ Declares capabilities and retires them.
 - **Effective entitlements** — every non-retired capability in one place, area-grouped, each row marked with the source of its value: `default` · `plan` · `GRANT` · `HOLD` *(c39)*. Override sources show the reason inline; clicking any row opens its full trace.
 - **Overrides** — GRANTs and HOLDs listed with kind, value, reason, author, creation time, and current effect (`winning`, `overridden by a HOLD`, `superseded by a larger or newer GRANT`, `superseded by a stricter or newer HOLD`, `no effect — plan is more generous`, `no effect — not more restrictive than the result`). Multiple overrides on one capability are shown together as normal, not as a conflict, because §4 combines them safely.
 - **Add override** — capability picker (area-grouped), kind, value, and a **reason field that blocks submission when empty** *(c9)*. After saving, the resulting trace is shown immediately, which is how an operator discovers that their GRANT is being capped by an existing HOLD.
-- **Remove override** — confirmation showing what the value returns to, computed from the same resolver *(c14, c15)*. The confirmation for a HOLD says plainly that removal is permitted and audited but not restricted, so the known v1 gap (§8, `future-spec.md` §4) is visible at the moment it matters.
+- **Remove override** — confirmation showing what the value returns to, computed from the same resolver *(c14, c15)*. The confirmation for a HOLD says plainly that removal is permitted and audited but not restricted, so the known v1 gap (§8, `future-spec.md` §2) is visible at the moment it matters.
 - **Change plan** — a picker requiring the source (`person` / `upstream system`) *(c36)*, with a confirmation stating that overrides are retained, and how many.
 
-> Not in v1, and deliberately absent from this screen: any warning about overrides that already exist when adding a new one (`future-spec.md` §3), any expiry field (§1), and any staleness flag on overrides that survived a plan change (§2).
+> Not in v1, and deliberately absent from this screen: any expiry field on an override (`future-spec.md` §1). Two further absences are no longer tracked as deferred scope at all, having been withdrawn from that document on 2026-08-09 — a warning about overrides that already exist when adding a new one, for which the trace returned on save is the standing mitigation, and a staleness flag on overrides that survived a plan change.
 
 ---
 
