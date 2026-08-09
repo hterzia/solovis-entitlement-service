@@ -4509,7 +4509,11 @@ describe('CheckerRoute', () => {
 
   it('copies the rendered explanation as text', async () => {
     const user = userEvent.setup()
-    Object.assign(navigator, { clipboard: { writeText: vi.fn() } })
+    // Object.defineProperty, not Object.assign: jsdom 30 implements navigator.clipboard as a
+    // getter-only accessor property, so a plain property set throws "Cannot set property
+    // clipboard of #<Navigator> which has only a getter". defineProperty with configurable:true
+    // is the standard override for this.
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: vi.fn() }, configurable: true })
     renderWithProviders(<CheckerRoute />)
     await waitFor(() => expect(screen.getByLabelText('Account')).toBeInTheDocument())
     await user.type(screen.getByLabelText('Account'), 'acct_9931')
