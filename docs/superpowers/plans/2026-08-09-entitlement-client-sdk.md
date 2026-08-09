@@ -1093,8 +1093,7 @@ class FullSnapshotReaderTest {
             {"kind":"conformance","id":"api.access: plan on, hold off -> off",\
             "model":{"account":"acct_c1","capability":"api.access",\
             "capabilities":[{"kind":"capability","key":"api.access","area":"api","valueType":"SWITCH",\
-            "default":{"type":"SWITCH","enabled":false},"offValue":{"type":"SWITCH","enabled":false},\
-            "status":"ACTIVE"}],\
+            "default":{"type":"SWITCH","enabled":false},"status":"ACTIVE"}],\
             "plans":[{"kind":"plan","key":"p","status":"ACTIVE","isDefaultForNewAccounts":true,\
             "entitlements":{"api.access":{"type":"SWITCH","enabled":true}}}],\
             "accounts":[{"kind":"account","external":"acct_c1","planKey":"p"}],\
@@ -1345,10 +1344,12 @@ class ConformanceGateTest {
 
     /** A vector whose expectation the real resolver satisfies. */
     private static ConformanceVector satisfiable() {
+        // No explicit off-value: core forbids one on a SWITCH and folds in the rule that false is
+        // always SWITCH's off-value, so `allowed` still comes out true here for Switch(true).
         var capability = new Capability(
             new CapabilityKey("api.access"), "api.access", null, ValueType.SWITCH,
             new EntitlementValue.Switch(false),
-            Optional.of(new OffValue(new EntitlementValue.Switch(false))),
+            Optional.empty(),
             TierOrder.NONE, Capability.Status.ACTIVE, null);
         var fixture = new SnapshotBuilder()
             .capability(capability)
