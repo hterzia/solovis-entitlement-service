@@ -2049,7 +2049,7 @@ git commit -m "frontend: CapabilityTree — grouped, collapsible, searchable cap
 ```tsx
 // src/components/ValueEditor.test.tsx
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ValueEditor, ValueBadge } from './ValueEditor'
 import type { CapabilityTier } from '../types/domain'
@@ -2068,14 +2068,21 @@ describe('ValueEditor', () => {
     expect(onChange).toHaveBeenCalledWith({ type: 'SWITCH', enabled: true })
   })
 
-  it('edits a bounded QUANTITY amount', async () => {
-    const user = userEvent.setup()
+  it('edits a bounded QUANTITY amount', () => {
+    // fireEvent.change, not userEvent.type: ValueEditor's `value` prop is a static test
+    // fixture here (the spy `onChange` never feeds a new value back in), so it stays a
+    // controlled input pinned at amount:50 across renders. userEvent.type() dispatches
+    // one keystroke event per character against that unchanging controlled value, which
+    // does not accumulate the way it would against a real, wired-up parent — e.g. typing
+    // "75" after clearing observably produces amount:505, not amount:75. A single
+    // fireEvent.change sets the whole field's value in one atomic event, side-stepping
+    // the mismatch entirely, which is exactly what this test needs: proof that ValueEditor
+    // reports the field's value on change, not a simulation of realistic per-keystroke UX.
     const onChange = vi.fn()
     render(<ValueEditor valueType="QUANTITY" tiers={[]} value={{ type: 'QUANTITY', amount: 50 }} onChange={onChange} />)
     const input = screen.getByRole('spinbutton', { name: 'Amount' })
-    await user.clear(input)
-    await user.type(input, '75')
-    expect(onChange).toHaveBeenLastCalledWith({ type: 'QUANTITY', amount: 75 })
+    fireEvent.change(input, { target: { value: '75' } })
+    expect(onChange).toHaveBeenCalledWith({ type: 'QUANTITY', amount: 75 })
   })
 
   it('switches a QUANTITY to unlimited via the checkbox, disabling the amount field', async () => {
