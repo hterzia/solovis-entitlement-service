@@ -3,8 +3,14 @@ package com.solovis.entitlement.service.api;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.solovis.entitlement.core.conformance.ResolverContract;
+import com.solovis.entitlement.service.admin.dto.AccountCreateRequest;
 import com.solovis.entitlement.service.admin.dto.CapabilityCreateRequest;
+import com.solovis.entitlement.service.admin.dto.OverrideCreateRequest;
+import com.solovis.entitlement.service.admin.dto.PlanCreateRequest;
+import com.solovis.entitlement.service.admin.service.AccountAdminService;
 import com.solovis.entitlement.service.admin.service.CapabilityAdminService;
+import com.solovis.entitlement.service.admin.service.OverrideAdminService;
+import com.solovis.entitlement.service.admin.service.PlanAdminService;
 import com.solovis.entitlement.service.dto.ValueDto;
 import com.solovis.entitlement.service.snapshot.SnapshotHolder;
 import org.junit.jupiter.api.Test;
@@ -16,7 +22,9 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.zip.GZIPInputStream;
 
@@ -32,6 +40,9 @@ class SnapshotFeedControllerTest {
     @Autowired MockMvc mockMvc;
     @Autowired SnapshotHolder snapshotHolder;
     @Autowired CapabilityAdminService capabilityAdminService;
+    @Autowired PlanAdminService planAdminService;
+    @Autowired AccountAdminService accountAdminService;
+    @Autowired OverrideAdminService overrideAdminService;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -174,6 +185,94 @@ class SnapshotFeedControllerTest {
         mockMvc.perform(get("/v1/snapshot").param("since", String.valueOf(current + 1000)))
             .andExpect(status().isUnprocessableEntity())
             .andExpect(jsonPath("$.type").value("entitlement/validation-failed"));
+    }
+
+    // GAP 1 — snapshot-feed.md's opening note: override records travel as (account, capability, kind,
+    // value) only. reason/createdBy/createdAt are commercially sensitive (an internal reason like
+    // "suspended pending investigation" must never reach a consuming service) and must never appear on
+    // either feed surface. This pins that guarantee with a real override carrying a distinctive reason.
+    @Test
+    void fullSnapshotOverrideLineCarriesNoReasonCreatedByOrCreatedAtAndTheReasonTextNeverAppears() throws Exception {
+        String reason = "t30 confidential investigation reason";
+        planAdminService.create(new PlanCreateRequest("t30-full-plan", "T30 full plan", null));
+        planAdminService.designateDefault("t30-full-plan");
+        capabilityAdminService.create(new CapabilityCreateRequest("t30.full.privacy-probe", "T30 full privacy probe", null, "SWITCH",
+            new ValueDto("SWITCH", false, null, null, null, null), null, null));
+        accountAdminService.create(new AccountCreateRequest("t30-acct-full-privacy", null));
+        var created = overrideAdminService.create("t30-acct-full-privacy", new OverrideCreateRequest("t30.full.privacy-probe", "GRANT",
+            new ValueDto("SWITCH", true, null, null, null, null), reason));
+
+        MvcResult started = mockMvc.perform(get("/v1/snapshot/full"))
+            .andExpect(request().asyncStarted())
+            .andReturn();
+        MvcResult finished = mockMvc.perform(asyncDispatch(started))
+            .andExpect(status().isOk())
+            .andReturn();
+
+        byte[] gzipped = finished.getResponse().getContentAsByteArray();
+        var out = new ByteArrayOutputStream();
+        try (var gzipIn = new GZIPInputStream(new ByteArrayInputStream(gzipped))) {
+            gzipIn.transferTo(out);
+        }
+        String body = out.toString(StandardCharsets.UTF_8);
+
+        // The confidential reason text itself must not appear anywhere in the full gunzipped body —
+        // a stronger, simpler check than looking only for the "reason" key.
+        assertThat(body).doesNotContain(reason);
+
+        String overrideRawLine = Arrays.stream(body.split("\n"))
+            .filter(line -> line.contains("\"kind\":\"override\""))
+            .filter(line -> line.contains("\"ref\":\"" + created.overrideId() + "\""))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("No override line for " + created.overrideId() + " found in full snapshot body"));
+
+        assertThat(overrideRawLine).doesNotContain("\"reason\"");
+        assertThat(overrideRawLine).doesNotContain("\"createdBy\"");
+        assertThat(overrideRawLine).doesNotContain("\"createdAt\"");
+        assertThat(overrideRawLine).contains("\"ref\"");
+        assertThat(overrideRawLine).contains("\"account\"");
+        assertThat(overrideRawLine).contains("\"capability\"");
+        assertThat(overrideRawLine).contains("\"overrideKind\"");
+        assertThat(overrideRawLine).contains("\"value\"");
+    }
+
+    @Test
+    void deltaOverrideCreatedChangeCarriesNoReasonCreatedByOrCreatedAtAndTheReasonTextNeverAppears() throws Exception {
+        String reason = "t30 confidential investigation reason";
+        long before = snapshotHolder.current().snapshotVersion();
+
+        planAdminService.create(new PlanCreateRequest("t30-delta-plan", "T30 delta plan", null));
+        planAdminService.designateDefault("t30-delta-plan");
+        capabilityAdminService.create(new CapabilityCreateRequest("t30.delta.privacy-probe", "T30 delta privacy probe", null, "SWITCH",
+            new ValueDto("SWITCH", false, null, null, null, null), null, null));
+        accountAdminService.create(new AccountCreateRequest("t30-acct-delta-privacy", null));
+        var created = overrideAdminService.create("t30-acct-delta-privacy", new OverrideCreateRequest("t30.delta.privacy-probe", "GRANT",
+            new ValueDto("SWITCH", true, null, null, null, null), reason));
+
+        String response = mockMvc.perform(get("/v1/snapshot").param("since", String.valueOf(before)))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+
+        assertThat(response).doesNotContain(reason);
+
+        JsonNode changes = MAPPER.readTree(response).get("changes");
+        JsonNode overrideCreated = null;
+        for (JsonNode change : changes) {
+            if ("override.created".equals(change.path("kind").asText())
+                && created.overrideId().equals(change.path("ref").asText())) {
+                overrideCreated = change;
+                break;
+            }
+        }
+        assertThat(overrideCreated).as("override.created change for %s", created.overrideId()).isNotNull();
+        assertThat(overrideCreated.has("reason")).isFalse();
+        assertThat(overrideCreated.has("createdBy")).isFalse();
+        assertThat(overrideCreated.has("createdAt")).isFalse();
+        assertThat(overrideCreated.has("ref")).isTrue();
+        assertThat(overrideCreated.has("account")).isTrue();
+        assertThat(overrideCreated.has("capability")).isTrue();
+        assertThat(overrideCreated.has("overrideKind")).isTrue();
+        assertThat(overrideCreated.has("value")).isTrue();
     }
 
     private static List<JsonNode> readGzippedNdjsonLines(byte[] gzipped) throws Exception {
