@@ -48,17 +48,21 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void queryParamTypeMismatchMapsTo400NotTheUnexpectedExceptionFallback() throws Exception {
+    void queryParamTypeMismatchMapsToStableValidationFailedSlugNotAboutBlank() throws Exception {
         mockMvc.perform(get("/test/typed-param").param("value", "not-a-number"))
-            .andExpect(status().isBadRequest())
-            .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+            .andExpect(jsonPath("$.type").value("entitlement/validation-failed"))
+            .andExpect(jsonPath("$.violations").isNotEmpty());
     }
 
     @Test
-    void missingRequiredQueryParamMapsTo400NotTheUnexpectedExceptionFallback() throws Exception {
+    void missingRequiredQueryParamMapsToStableValidationFailedSlugNotAboutBlank() throws Exception {
         mockMvc.perform(get("/test/typed-param"))
-            .andExpect(status().isBadRequest())
-            .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+            .andExpect(jsonPath("$.type").value("entitlement/validation-failed"))
+            .andExpect(jsonPath("$.violations").isNotEmpty());
     }
 
     @Test
@@ -66,5 +70,13 @@ class GlobalExceptionHandlerTest {
         mockMvc.perform(post("/test/unknown-account"))
             .andExpect(status().isMethodNotAllowed())
             .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+    }
+
+    @Test
+    void dataIntegrityViolationMapsTo409ConflictSlug() throws Exception {
+        mockMvc.perform(get("/test/data-integrity-violation"))
+            .andExpect(status().isConflict())
+            .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+            .andExpect(jsonPath("$.type").value("entitlement/conflict"));
     }
 }
