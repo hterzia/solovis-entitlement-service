@@ -4,6 +4,7 @@ import { HomeRoute } from './routes/home/HomeRoute'
 import { CapabilitiesListRoute } from './routes/capabilities/CapabilitiesListRoute'
 import { CapabilityDetailRoute } from './routes/capabilities/CapabilityDetailRoute'
 import { PlansListRoute } from './routes/plans/PlansListRoute'
+import { PlanEditorRoute } from './routes/plans/PlanEditorRoute'
 
 const rootRoute = createRootRoute({ component: AppLayout })
 
@@ -11,8 +12,7 @@ const indexRoute = createRoute({ getParentRoute: () => rootRoute, path: '/', com
 const capabilitiesRoute = createRoute({ getParentRoute: () => rootRoute, path: '/capabilities', component: CapabilitiesListRoute })
 const capabilityDetailRoute = createRoute({ getParentRoute: () => rootRoute, path: '/capabilities/$key', component: () => <CapabilityDetailRoute /> })
 const plansRoute = createRoute({ getParentRoute: () => rootRoute, path: '/plans', component: PlansListRoute })
-// The list route's own row links to `/plans/$key` (Task 14's editor route) — placeholder until then.
-const planEditorRoute = createRoute({ getParentRoute: () => rootRoute, path: '/plans/$key', component: () => <div>Plan editor</div> })
+const planEditorRoute = createRoute({ getParentRoute: () => rootRoute, path: '/plans/$key', component: () => <PlanEditorRoute /> })
 // Still placeholders — kept so AppLayout's typed nav links to the not-yet-built screens compile.
 const accountsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/accounts', component: () => <div>Accounts</div> })
 const checkerRoute = createRoute({ getParentRoute: () => rootRoute, path: '/checker', component: () => <div>Checker</div> })
