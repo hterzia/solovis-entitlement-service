@@ -1289,12 +1289,13 @@ git commit -m "frontend: typed fetch wrapper, RFC 9457 error model, service meta
   - `archivePlan(key) => Promise<Plan>`
   - `setDefaultPlan(planKey) => Promise<{planKey: string}>`
   - `listAccounts(params?) => Promise<{accounts: AccountSummary[]; nextCursor: string|null}>`
+  - `createAccount(input: {external: string; name?: string}) => Promise<AccountDetail>`
   - `getAccount(external) => Promise<AccountDetail>`
   - `setAccountPlan(external, input) => Promise<AccountDetail & {retainedOverrideCount: number}>`
   - `addOverride(external, input) => Promise<{override: Override; decision: Decision; snapshotVersion: number; changeVisibleEverywhereWithinSeconds: number}>`
   - `removeOverride(external, id, reason?) => Promise<{decision: Decision; snapshotVersion: number}>`
   - `checkDecision(params) => Promise<Decision>`
-  - `listAuditEvents(params?) => Promise<{events: AuditEvent[]; nextCursor: string|null}>`
+  - `listAuditEvents(params) => Promise<{events: AuditEvent[]; nextCursor: string|null}>` (every call site passes an object — pass `{}` for "no filters", never omit the argument)
 
 - [ ] **Step 1: Write and run the failing capabilities tests, then implement**
 
