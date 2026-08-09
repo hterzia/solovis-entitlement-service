@@ -66,18 +66,25 @@ public final class DecisionDtos {
         return new Trace(
             toBaselineEntry(trace.baseline()),
             grants,
-            winnerOf(grants),
+            trace.grantStep().applied() ? winnerOf(grants) : Optional.empty(),
             holds,
-            winnerOf(holds),
+            trace.holdStep().applied() ? winnerOf(holds) : Optional.empty(),
             WireMapper.toValue(trace.result().value()),
             trace.result().allowed());
     }
 
     /**
-     * The winner of a candidate group is whichever entry's outcome is {@code WON} — never the
-     * step's {@code applied}/{@code winner} fields, which are presentation-only. An empty result
-     * covers both "no candidates" and "candidates existed but none won" identically, matching
-     * {@link Trace}'s own contract.
+     * The winner, once the group's step has reported {@code applied}, is whichever entry's
+     * outcome is {@code WON}. The {@code applied} gate is load-bearing and not redundant with
+     * scanning for {@code WON}: {@code Outcome}'s own contract is that the most restrictive HOLD
+     * candidate is marked {@code WON} in its own list even when it does not bind — {@code
+     * Trace.holdWinner} being empty is precisely what records that it didn't. Core's HOLD outcome
+     * is computed without ever consulting {@code applied} (it is {@code isTop ? WON : LOST_...}),
+     * so scanning for {@code WON} without the gate would report a winner for an unapplied hold —
+     * disagreeing with the service's own {@code Trace} for the same decision, which is exactly
+     * what this module exists to prevent. Grants happen to be equivalent either way (a GRANT is
+     * only ever marked {@code WON} when it applied), but the gate is applied uniformly so a future
+     * reader does not have to rediscover the asymmetry.
      */
     private static Optional<TraceEntry> winnerOf(List<TraceEntry> candidates) {
         return candidates.stream().filter(c -> c.outcome().equals(Optional.of(Outcome.WON))).findFirst();

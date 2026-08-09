@@ -10,6 +10,7 @@ import com.solovis.entitlement.client.replica.FullSnapshotReader;
 import com.solovis.entitlement.client.replica.Replica;
 import com.solovis.entitlement.client.testing.StubFeedServer;
 import com.solovis.entitlement.client.transport.FeedHttpClient;
+import com.solovis.entitlement.core.engine.Outcome;
 import com.solovis.entitlement.core.engine.TraceSource;
 import com.solovis.entitlement.core.error.UnknownAccountException;
 import com.solovis.entitlement.core.model.EntitlementValue;
@@ -73,6 +74,52 @@ class ExplainAndReadThroughTest {
            "holds":[],
            "holdStep":{"applied":false,"why":"NO_HOLDS"},
            "result":{"value":{"type":"QUANTITY","amount":200},"allowed":true,
+                     "allowedReason":"DIFFERS_FROM_OFF_VALUE"}}}""";
+
+    // A HOLD candidate can be marked WON in its own list while the step still reports
+    // applied:false — Outcome's own contract: the most restrictive hold is always WON among
+    // holds, even when it does not cap the result. holdWinner must stay empty here.
+    private static final String EXPLAINED_WITH_UNAPPLIED_HOLD = """
+        {"account":"acct_9931","capability":"reports.monthly","allowed":true,
+         "value":{"type":"QUANTITY","amount":200},"snapshotVersion":48211,
+         "evaluatedAt":"2026-08-09T14:05:00.000Z",
+         "trace":{
+           "baseline":{"source":"PLAN","planKey":"pro","value":{"type":"QUANTITY","amount":50},
+                       "note":"Plan 'pro' sets this capability."},
+           "grants":[{"overrideId":"ovr_4471","value":{"type":"QUANTITY","amount":200},
+                      "reason":"negotiated uplift","createdBy":"ops@solovis",
+                      "createdAt":"2026-08-01T09:00:00.000Z","outcome":"WON"}],
+           "grantStep":{"applied":true,"winner":"ovr_4471","value":{"type":"QUANTITY","amount":200},
+                        "note":"Most generous GRANT (200) beats the plan baseline (50)."},
+           "holds":[{"overrideId":"ovr_5501","value":{"type":"QUANTITY","amount":500},
+                     "reason":"soft cap","createdBy":"ops@solovis",
+                     "createdAt":"2026-08-01T09:00:00.000Z","outcome":"WON"}],
+           "holdStep":{"applied":false,"why":"HOLD_NOT_MORE_RESTRICTIVE",
+                       "note":"No HOLD is more restrictive than the post-grant value."},
+           "result":{"value":{"type":"QUANTITY","amount":200},"allowed":true,
+                     "allowedReason":"DIFFERS_FROM_OFF_VALUE"}}}""";
+
+    // The mirror case: a HOLD that does bind. holdStep.applied:true, and its WON candidate must
+    // surface as the winner — pinned separately so the fix above cannot be satisfied by making
+    // holdWinner always empty.
+    private static final String EXPLAINED_WITH_BINDING_HOLD = """
+        {"account":"acct_9931","capability":"reports.monthly","allowed":true,
+         "value":{"type":"QUANTITY","amount":100},"snapshotVersion":48211,
+         "evaluatedAt":"2026-08-09T14:05:00.000Z",
+         "trace":{
+           "baseline":{"source":"PLAN","planKey":"pro","value":{"type":"QUANTITY","amount":50},
+                       "note":"Plan 'pro' sets this capability."},
+           "grants":[{"overrideId":"ovr_4471","value":{"type":"QUANTITY","amount":200},
+                      "reason":"negotiated uplift","createdBy":"ops@solovis",
+                      "createdAt":"2026-08-01T09:00:00.000Z","outcome":"WON"}],
+           "grantStep":{"applied":true,"winner":"ovr_4471","value":{"type":"QUANTITY","amount":200},
+                        "note":"Most generous GRANT (200) beats the plan baseline (50)."},
+           "holds":[{"overrideId":"ovr_5502","value":{"type":"QUANTITY","amount":100},
+                     "reason":"hard cap","createdBy":"ops@solovis",
+                     "createdAt":"2026-08-01T09:00:00.000Z","outcome":"WON"}],
+           "holdStep":{"applied":true,"winner":"ovr_5502","value":{"type":"QUANTITY","amount":100},
+                       "note":"Most restrictive HOLD (100) caps the result."},
+           "result":{"value":{"type":"QUANTITY","amount":100},"allowed":true,
                      "allowedReason":"DIFFERS_FROM_OFF_VALUE"}}}""";
 
     private StubFeedServer stub;
@@ -143,6 +190,33 @@ class ExplainAndReadThroughTest {
         assertThat(grant.reason()).contains("negotiated uplift");
         assertThat(trace.grantWinner()).isPresent();
         assertThat(trace.holdWinner()).isEmpty();
+    }
+
+    @Test
+    void explainReportsNoHoldWinnerWhenTheStepDidNotApplyEvenThoughTheCandidatesOwnOutcomeIsWon()
+            throws Exception {
+        var client = client(ClientMetrics.NO_OP);
+        stub.respondDecision(EXPLAINED_WITH_UNAPPLIED_HOLD);
+
+        var trace = client.explain("acct_9931", "reports.monthly").trace();
+
+        assertThat(trace.holds()).hasSize(1);
+        assertThat(trace.holds().get(0).outcome()).contains(Outcome.WON);
+        assertThat(trace.holdWinner())
+            .as("holdStep.applied is false, so there is no winner despite the candidate's own WON outcome")
+            .isEmpty();
+    }
+
+    @Test
+    void explainReportsTheHoldWinnerWhenTheStepReportsItActuallyBound() throws Exception {
+        var client = client(ClientMetrics.NO_OP);
+        stub.respondDecision(EXPLAINED_WITH_BINDING_HOLD);
+
+        var explanation = client.explain("acct_9931", "reports.monthly");
+
+        assertThat(explanation.decision().value()).isEqualTo(EntitlementValue.Quantity.of(100));
+        assertThat(explanation.trace().holdWinner()).isPresent();
+        assertThat(explanation.trace().holdWinner().get().overrideId()).isEqualTo(OptionalLong.of(5502L));
     }
 
     @Test

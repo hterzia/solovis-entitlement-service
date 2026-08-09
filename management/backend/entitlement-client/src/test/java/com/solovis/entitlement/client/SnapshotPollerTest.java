@@ -279,4 +279,39 @@ class SnapshotPollerTest {
         assertThat(calls).isGreaterThan(1);
         assertThat(stub.versionCalls()).isLessThanOrEqualTo(calls + 1);
     }
+
+    @Test
+    void nudgeWakesASleepingPollerToSyncSoonerWithoutKillingItAndCloseStillStopsItPromptly() throws Exception {
+        // A pollInterval long enough that nothing short of a nudge could explain a second sync
+        // happening inside this test's lifetime.
+        stub.respondVersion(100L, "2026-08-09T14:03:10.900Z", 1, 1);
+        var poller = new SnapshotPoller(feed, holder, Duration.ofMinutes(10), Duration.ofSeconds(60),
+            null, ClientMetrics.NO_OP, clock);
+
+        poller.start();
+        Thread.sleep(50);   // let the first (no-op) sync finish and the thread settle into its sleep
+        assertThat(holder.get().version()).isEqualTo(100L);
+
+        stub.respondVersion(101L, "2026-08-09T14:03:10.900Z", 1, 1);
+        stub.respondDelta("""
+            {"format":1,"fromVersion":100,"toVersion":101,"publishedAt":"2026-08-09T14:03:10.900Z",\
+            "changes":[{"version":101,"kind":"account.upserted","external":"acct_new","planKey":"pro"}]}""");
+
+        poller.nudge();
+        Thread.sleep(300);   // comfortably inside the 10-minute pollInterval
+
+        assertThat(holder.get().version())
+            .as("nudge() must cut the sleep short and sync now rather than after pollInterval")
+            .isEqualTo(101L);
+        assertThat(poller.state().lastError())
+            .as("the thread survived the nudge and completed a real sync, not just woke and died")
+            .isNull();
+
+        // Proof the thread is still the same live daemon (an unconditional interrupt->return
+        // regression would have exited it above): close() can still stop it.
+        int calls = stub.versionCalls();
+        poller.close();
+        Thread.sleep(100);
+        assertThat(stub.versionCalls()).isLessThanOrEqualTo(calls + 1);
+    }
 }

@@ -77,9 +77,12 @@ final class DefaultEntitlementClient implements EntitlementClient {
         if (feed == null) {   // forTesting(): no transport to read through with
             throw new ReplicaUnknownAccountException(accountExternalId, snapshotAge, false);
         }
-        DecisionDtos.DecisionResponse response;
         try {
-            response = feed.decision(accountExternalId, capabilityKey);
+            var decision = DecisionDtos.toDecision(feed.decision(accountExternalId, capabilityKey));
+            if (poller != null) {
+                poller.nudge();
+            }
+            return decision;
         } catch (UnknownAccountException confirmed) {
             // The service itself has no such account: a genuine 404, not a replica lag.
             throw new ReplicaUnknownAccountException(accountExternalId, snapshotAge, true);
@@ -88,12 +91,11 @@ final class DefaultEntitlementClient implements EntitlementClient {
             // gap is, it is not the caller's problem here; the capability error is the real one.
             throw domainAnswer;
         } catch (RuntimeException unreachable) {
+            // Covers transport failure and a 2xx body this SDK could not trust alike (a malformed
+            // evaluatedAt, an unrecognised value type): check() never throws a raw service failure
+            // it cannot make sense of, and there is no last answer to carry on with either.
             throw new ReplicaUnknownAccountException(accountExternalId, snapshotAge, false);
         }
-        if (poller != null) {
-            poller.nudge();
-        }
-        return DecisionDtos.toDecision(response);
     }
 
     @Override
