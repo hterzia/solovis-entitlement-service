@@ -19,8 +19,11 @@ import com.solovis.entitlement.service.snapshot.*;
 import com.solovis.entitlement.service.store.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.solovis.entitlement.service.window.WindowRules;
 import java.time.Clock;
 import com.solovis.entitlement.service.time.Timestamps;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.Optional;
 
@@ -73,24 +76,41 @@ public class OverrideAdminService {
         try { kind = OverrideKind.valueOf(request.kind()); }
         catch (IllegalArgumentException e) { throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "Unknown override kind '" + request.kind() + "'."); }
 
+        LocalDate today = LocalDate.now(clock);
+        LocalDate startsOn = parseDate(request.startsOn(), "startsOn");
+        LocalDate expiresOn = parseDate(request.expiresOn(), "expiresOn");
+        WindowRules.validate(startsOn, expiresOn, today);
+
         String now = Timestamps.iso(clock.instant());
         var actor = actorResolver.currentActor();
         var columns = ValueColumnCodec.toColumns(value);
-        long id = accountOverrideRepository.insert(AccountOverrideRow.openEnded(null, accountRow.id(), capRow.id(),
+        long id = accountOverrideRepository.insert(new AccountOverrideRow(null, accountRow.id(), capRow.id(),
             kind.name(), columns.boolValue(), columns.qtyValue(), columns.qtyUnlimited(), columns.tierValue(),
-            request.reason(), now, actor.id(), actor.kind().name(), null, null, null));
+            request.reason(), now, actor.id(), actor.kind().name(), null, null, null,
+            startsOn == null ? null : startsOn.toString(), expiresOn == null ? null : expiresOn.toString()));
         var override = new AccountOverride(java.util.OptionalLong.of(id), external, capability.key(), kind, value,
-            Optional.of(request.reason()), Optional.of(actor.id()), Optional.of(java.time.Instant.parse(now)));
+            Optional.of(request.reason()), Optional.of(actor.id()), Optional.of(java.time.Instant.parse(now)),
+            Optional.ofNullable(startsOn), Optional.ofNullable(expiresOn));
 
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actor).source(auditSource.current()).entityType("OVERRIDE")
             .entityId("ovr_" + id).action("CREATE").accountId(accountRow.id()).capabilityId(capRow.id())
             .reason(request.reason()).afterJson(auditJson.write(request)).build());
-        long newVersion = snapshotPublisher.publish(auditSeq,
-            new DeltaChange.OverrideCreated("ovr_" + id, external, capability.key().value(), kind.name(), ValueMapper.toDto(value)));
+        // An override that has not begun changes no decision anywhere, so it must not reach the
+        // replicas — publishing it would grant a promise early. It enters the feed at its start
+        // boundary instead, as an ordinary override.created. The record is already stored and the
+        // audit row already written, so the account view shows it immediately either way.
+        boolean inForceNow = OverrideStanding.of(Optional.ofNullable(startsOn), Optional.ofNullable(expiresOn),
+            Optional.empty(), today).counts();
+        Long published = inForceNow
+            ? snapshotPublisher.publish(auditSeq, new DeltaChange.OverrideCreated(
+                "ovr_" + id, external, capability.key().value(), kind.name(), ValueMapper.toDto(value)))
+            : null;
 
-        var explanation = Resolver.explain(
-            recordViewAssembler.pointViewInWriteTxn(external, capability.key().value()),
-            external, capability.key(), clock.instant());
+        var view = recordViewAssembler.pointViewInWriteTxn(external, capability.key().value());
+        var explanation = Resolver.explain(view, external, capability.key(), clock.instant());
+        // Nothing published means nothing moved, so the honest answer is the version already current.
+        // The view reads it on the write connection, which is the same row `publish` would have added.
+        long newVersion = published != null ? published : view.snapshotVersion();
         return new OverrideMutationResponseDto("ovr_" + id, DecisionMapper.toResponse(explanation, capability), newVersion, 60);
     }
 
@@ -165,7 +185,22 @@ public class OverrideAdminService {
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actor).source(auditSource.current()).entityType("OVERRIDE")
             .entityId(canonicalRef).action("REMOVE").accountId(accountRow.id()).capabilityId(capRow.id())
             .reason(removeReason).beforeJson(auditJson.write(beforeMap)).build());
-        long newVersion = snapshotPublisher.publish(auditSeq, new DeltaChange.OverrideRemoved(canonicalRef));
+        // The mirror of the create path: replicas only ever received this override if it was in
+        // force, so only then is there anything to withdraw. Removing one that had not begun, or had
+        // already ended, is invisible to them — publishing a removal for a record they never held
+        // would be a phantom event.
+        boolean wasInForce = OverrideStanding.of(
+            Optional.ofNullable(overrideRow.startsOn()).map(LocalDate::parse),
+            Optional.ofNullable(overrideRow.expiresOn()).map(LocalDate::parse),
+            Optional.empty(), LocalDate.now(clock)).counts();
+        Long published = wasInForce
+            ? snapshotPublisher.publish(auditSeq, new DeltaChange.OverrideRemoved(canonicalRef))
+            : null;
+
+        // The write connection sees this transaction's own uncommitted soft-delete, so the
+        // explanation already describes the post-removal answer.
+        var view = recordViewAssembler.pointViewInWriteTxn(external, capabilityKey.value());
+        long newVersion = published != null ? published : view.snapshotVersion();
 
         // A retired capability's referent still needs its stale overrides cleared (spec §3.4) —
         // but Resolver.lookUp/explain refuses to evaluate a retired capability at all, so the
@@ -173,11 +208,19 @@ public class OverrideAdminService {
         if (capability.isRetired()) {
             return new OverrideMutationResponseDto(canonicalRef, null, newVersion, 60);
         }
-        // The write connection sees this transaction's own uncommitted soft-delete, so the
-        // explanation already describes the post-removal answer.
-        var explanation = Resolver.explain(
-            recordViewAssembler.pointViewInWriteTxn(external, capabilityKey.value()),
-            external, capabilityKey, clock.instant());
+        var explanation = Resolver.explain(view, external, capabilityKey, clock.instant());
         return new OverrideMutationResponseDto(canonicalRef, DecisionMapper.toResponse(explanation, capability), newVersion, 60);
+    }
+
+    private static LocalDate parseDate(String value, String field) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(value.trim());
+        } catch (DateTimeParseException e) {
+            throw new EntitlementApiException(ErrorCode.INVALID_WINDOW,
+                "'" + field + "' must be an ISO date like 2026-12-31, not '" + value + "'.");
+        }
     }
 }

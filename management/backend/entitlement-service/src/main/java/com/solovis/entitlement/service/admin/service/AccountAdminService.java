@@ -19,6 +19,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import com.solovis.entitlement.service.time.Timestamps;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.*;
 
 @Service
@@ -35,6 +38,7 @@ public class AccountAdminService {
     private final SnapshotPublisher snapshotPublisher;
     private final RecordViewAssembler recordViewAssembler;
     private final Clock clock;
+    private final ZoneId zone;
 
     public AccountAdminService(AccountRepository accountRepository, AccountOverrideRepository accountOverrideRepository,
             PlanRepository planRepository, CapabilityRepository capabilityRepository, AuditRecorder auditRecorder,
@@ -51,6 +55,7 @@ public class AccountAdminService {
         this.snapshotPublisher = snapshotPublisher;
         this.recordViewAssembler = recordViewAssembler;
         this.clock = clock;
+        this.zone = clock.getZone();
     }
 
     public AccountSearchResponseDto search(String q, String planKey, long afterId, int limit) {
@@ -132,8 +137,14 @@ public class AccountAdminService {
             var capability = RowMappers.toCapability(capRow, capabilityRepository.findTiers(capRow.id()));
             var value = ValueColumnCodec.toValue(capability.valueType(), overrideRow.boolValue(), overrideRow.qtyValue(),
                 overrideRow.qtyUnlimited(), overrideRow.tierValue(), capability.tierOrder());
+            var standing = OverrideStanding.of(
+                Optional.ofNullable(overrideRow.startsOn()).map(LocalDate::parse),
+                Optional.ofNullable(overrideRow.expiresOn()).map(LocalDate::parse),
+                Optional.ofNullable(overrideRow.removedAt()).map(at -> LocalDate.ofInstant(Instant.parse(at), zone)),
+                LocalDate.now(clock));
             overrides.add(new AccountDetailDto.OverrideRow("ovr_" + overrideRow.id(), capRow.key(), overrideRow.kind(),
-                ValueMapper.toDto(value), overrideRow.reason(), overrideRow.createdBy(), overrideRow.createdAt(), effectNow));
+                ValueMapper.toDto(value), overrideRow.reason(), overrideRow.createdBy(), overrideRow.createdAt(), effectNow,
+                overrideRow.startsOn(), overrideRow.expiresOn(), standing.name()));
         }
 
         return new AccountDetailDto(external, row.name(), row.status(),

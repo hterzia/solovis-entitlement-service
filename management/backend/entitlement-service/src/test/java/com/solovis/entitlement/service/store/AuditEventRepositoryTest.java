@@ -48,14 +48,14 @@ class AuditEventRepositoryTest {
 		repository.insert(event("s.patel", null, "2026-08-09T00:02:00.000Z"));
 		long e4 = repository.insert(event("a.reyes", null, "2026-08-09T00:03:00.000Z"));
 
-		var byActor = repository.find(new AuditEventFilter(null, null, "a.reyes", null, null, null, null, 10));
+		var byActor = repository.find(new AuditEventFilter(null, null, null, "a.reyes", null, null, null, null, 10));
 		assertThat(byActor).extracting(AuditEventRow::seq).containsExactly(e4, e2);
 
-		var firstPage = repository.find(new AuditEventFilter(null, null, "a.reyes", null, null, null, null, 1));
+		var firstPage = repository.find(new AuditEventFilter(null, null, null, "a.reyes", null, null, null, null, 1));
 		assertThat(firstPage).extracting(AuditEventRow::seq).containsExactly(e4);
 
 		var secondPage = repository.find(
-				new AuditEventFilter(null, null, "a.reyes", null, null, null, firstPage.get(0).seq(), 10));
+				new AuditEventFilter(null, null, null, "a.reyes", null, null, null, firstPage.get(0).seq(), 10));
 		assertThat(secondPage).extracting(AuditEventRow::seq).containsExactly(e2);
 	}
 
@@ -69,11 +69,11 @@ class AuditEventRepositoryTest {
 		repository.insert(event("billing-bot", acct, "2026-08-09T00:00:00.000Z"));
 		repository.insert(event("billing-bot", null, "2026-08-09T00:01:00.000Z"));
 
-		var byAccount = repository.find(new AuditEventFilter(acct, null, null, null, null, null, null, 10));
+		var byAccount = repository.find(new AuditEventFilter(acct, null, null, null, null, null, null, null, 10));
 		assertThat(byAccount).hasSize(1);
 
 		var byEntityType = repository.find(
-				new AuditEventFilter(null, null, null, "PLAN_ENTITLEMENT", null, null, null, 10));
+				new AuditEventFilter(null, null, null, null, "PLAN_ENTITLEMENT", null, null, null, 10));
 		assertThat(byEntityType).hasSize(2);
 	}
 

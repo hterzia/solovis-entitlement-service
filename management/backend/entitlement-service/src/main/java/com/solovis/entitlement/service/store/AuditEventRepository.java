@@ -95,6 +95,9 @@ public class AuditEventRepository {
 		if (filter.planId() != null) {
 			sql.append(" AND plan_id = :planId");
 		}
+		if (filter.capabilityId() != null) {
+			sql.append(" AND capability_id = :capabilityId");
+		}
 		if (filter.actorId() != null) {
 			sql.append(" AND actor_id = :actorId");
 		}
@@ -118,6 +121,9 @@ public class AuditEventRepository {
 		}
 		if (filter.planId() != null) {
 			spec = spec.param("planId", filter.planId());
+		}
+		if (filter.capabilityId() != null) {
+			spec = spec.param("capabilityId", filter.capabilityId());
 		}
 		if (filter.actorId() != null) {
 			spec = spec.param("actorId", filter.actorId());
