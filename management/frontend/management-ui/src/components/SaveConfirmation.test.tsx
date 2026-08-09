@@ -4,8 +4,8 @@ import { renderWithProviders } from '../test/testUtils'
 import { SaveConfirmation } from './SaveConfirmation'
 
 describe('SaveConfirmation', () => {
-  it('states the exact liveness promise with the given second count', () => {
+  it('states the exact liveness promise with the given second count', async () => {
     renderWithProviders(<SaveConfirmation seconds={60} />)
-    expect(screen.getByText('Saved. Active everywhere within 60 seconds.')).toBeInTheDocument()
+    expect(await screen.findByText('Saved. Active everywhere within 60 seconds.')).toBeInTheDocument()
   })
 })
