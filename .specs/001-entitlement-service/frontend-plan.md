@@ -3247,13 +3247,18 @@ describe('PlanEditorRoute', () => {
   it('shows an explicit plan value distinctly from a capability falling back to default', async () => {
     renderWithProviders(<PlanEditorRoute planKey="pro" />)
     await waitFor(() => expect(screen.getByText('50')).toBeInTheDocument())
-    expect(screen.getByText(/not set — falls back to default \(Off\)/)).toBeInTheDocument()
+    // getAllByText, not getByText: the "pro" plan fixture only sets an explicit value for
+    // reports.monthly, so every other ACTIVE capability falls back to its default and renders
+    // this identical text — two of them (api.access, export.parquet) share the same SWITCH
+    // default (Off), so more than one row matches. The test only needs to prove the fallback
+    // pattern is visible at all, distinctly from the explicit "50" above — not which capability.
+    expect(screen.getAllByText(/not set — falls back to default \(Off\)/).length).toBeGreaterThan(0)
   })
 
   it('lets an operator set a capability the plan does not currently mention', async () => {
     const user = userEvent.setup()
     renderWithProviders(<PlanEditorRoute planKey="pro" />)
-    await waitFor(() => expect(screen.getByText(/not set — falls back to default \(Off\)/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getAllByText(/not set — falls back to default \(Off\)/).length).toBeGreaterThan(0))
     await user.click(screen.getAllByRole('button', { name: 'Edit' })[0])
     await user.click(screen.getByRole('checkbox', { name: 'Enabled' }))
     await user.click(screen.getByRole('button', { name: 'Done' }))
@@ -3442,7 +3447,10 @@ import { renderWithProviders } from '../../test/testUtils'
 import { PlanEditorRoute } from './PlanEditorRoute'
 
 async function makeAChange(user: ReturnType<typeof userEvent.setup>) {
-  await waitFor(() => expect(screen.getByText(/not set — falls back to default \(Off\)/)).toBeInTheDocument())
+  // getAllByText, not getByText: two ACTIVE capabilities (api.access, export.parquet) share the
+  // same SWITCH default (Off) and neither has an explicit "pro" plan value, so more than one row
+  // renders this identical fallback text — the wait only needs to confirm the tree has loaded.
+  await waitFor(() => expect(screen.getAllByText(/not set — falls back to default \(Off\)/).length).toBeGreaterThan(0))
   await user.click(screen.getAllByRole('button', { name: 'Edit' })[0])
   await user.click(screen.getByRole('checkbox', { name: 'Enabled' }))
   await user.click(screen.getByRole('button', { name: 'Done' }))
@@ -3452,7 +3460,7 @@ describe('PlanEditorRoute', () => {
   it('shows an explicit plan value distinctly from a capability falling back to default', async () => {
     renderWithProviders(<PlanEditorRoute planKey="pro" />)
     await waitFor(() => expect(screen.getByText('50')).toBeInTheDocument())
-    expect(screen.getByText(/not set — falls back to default \(Off\)/)).toBeInTheDocument()
+    expect(screen.getAllByText(/not set — falls back to default \(Off\)/).length).toBeGreaterThan(0)
   })
 
   it('lets an operator set a capability the plan does not currently mention', async () => {
