@@ -1,12 +1,16 @@
 import { useState } from 'react'
 import { useParams } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
-import { getAccount } from '../../api/accounts'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { getAccount, addOverride, removeOverride, setAccountPlan } from '../../api/accounts'
 import { checkDecision } from '../../api/checker'
+import { listPlans } from '../../api/plans'
+import { listCapabilities } from '../../api/capabilities'
 import { queryKeys } from '../../queries/keys'
-import { ValueBadge } from '../../components/ValueEditor'
+import { ValueBadge, ValueEditor } from '../../components/ValueEditor'
 import { TraceView } from '../../components/TraceView'
-import type { OverrideEffect } from '../../types/domain'
+import { zeroValueFor } from '../../types/value'
+import type { EntitlementValue } from '../../types/value'
+import type { AssignmentSource, Decision, OverrideEffect, OverrideKind } from '../../types/domain'
 
 const EFFECT_LABELS: Record<OverrideEffect, string> = {
   WINNING: 'winning',
@@ -17,16 +21,73 @@ const EFFECT_LABELS: Record<OverrideEffect, string> = {
   NO_EFFECT_NOT_MORE_RESTRICTIVE: 'no effect — not more restrictive than the result',
 }
 
+function groupByArea<T extends { area: string }>(items: T[]): [string, T[]][] {
+  const byArea = new Map<string, T[]>()
+  for (const item of items) {
+    const bucket = byArea.get(item.area) ?? []
+    bucket.push(item)
+    byArea.set(item.area, bucket)
+  }
+  return [...byArea.entries()].sort(([a], [b]) => a.localeCompare(b))
+}
+
 export function AccountDetailRoute({ external: externalProp }: { external?: string } = {}) {
   const params = useParams({ strict: false }) as { external?: string }
   const external = externalProp ?? params.external!
+  const queryClient = useQueryClient()
 
   const accountQuery = useQuery({ queryKey: queryKeys.account(external), queryFn: () => getAccount(external) })
+  const capabilitiesQuery = useQuery({ queryKey: queryKeys.capabilities({ status: 'ACTIVE' }), queryFn: () => listCapabilities({ status: 'ACTIVE' }) })
+  const plansQuery = useQuery({ queryKey: queryKeys.plans(), queryFn: listPlans })
+
   const [openTraceFor, setOpenTraceFor] = useState<string | null>(null)
   const traceQuery = useQuery({
     queryKey: queryKeys.check({ account: external, capability: openTraceFor ?? undefined }),
     queryFn: () => checkDecision({ account: external, capability: openTraceFor! }),
     enabled: openTraceFor !== null,
+  })
+
+  const invalidateAccount = () => queryClient.invalidateQueries({ queryKey: queryKeys.account(external) })
+
+  // --- Add override ---
+  const [addingOverride, setAddingOverride] = useState(false)
+  const [newCapability, setNewCapability] = useState('')
+  const [newKind, setNewKind] = useState<OverrideKind | ''>('')
+  const [newValue, setNewValue] = useState<EntitlementValue | null>(null)
+  const [newReason, setNewReason] = useState('')
+  const [addedDecision, setAddedDecision] = useState<Decision | null>(null)
+
+  const addMutation = useMutation({
+    mutationFn: () => addOverride(external, { capability: newCapability, kind: newKind as OverrideKind, value: newValue!, reason: newReason }),
+    onSuccess: (result) => {
+      setAddedDecision(result.decision)
+      invalidateAccount()
+      setNewReason('')
+    },
+  })
+
+  function selectNewCapability(key: string) {
+    setNewCapability(key)
+    const cap = capabilitiesQuery.data?.capabilities.find((c) => c.key === key)
+    setNewValue(cap ? zeroValueFor(cap.valueType) : null)
+  }
+
+  // --- Remove override ---
+  const [confirmingRemoveId, setConfirmingRemoveId] = useState<string | null>(null)
+  const [removedDecision, setRemovedDecision] = useState<Decision | null>(null)
+  const removeMutation = useMutation({
+    mutationFn: (id: string) => removeOverride(external, id),
+    onSuccess: (result) => { setRemovedDecision(result.decision); invalidateAccount(); setConfirmingRemoveId(null) },
+  })
+
+  // --- Change plan ---
+  const [changingPlan, setChangingPlan] = useState(false)
+  const [newPlanKey, setNewPlanKey] = useState('')
+  const [newPlanSource, setNewPlanSource] = useState<AssignmentSource>('PERSON')
+  const [retainedOverrideCount, setRetainedOverrideCount] = useState<number | null>(null)
+  const changePlanMutation = useMutation({
+    mutationFn: () => setAccountPlan(external, { planKey: newPlanKey, source: newPlanSource, actor: 'dev-operator' }),
+    onSuccess: (result) => { setRetainedOverrideCount(result.retainedOverrideCount); invalidateAccount() },
   })
 
   if (!accountQuery.data) return <p>Loading…</p>
@@ -40,6 +101,23 @@ export function AccountDetailRoute({ external: externalProp }: { external?: stri
         <dt>Assigned</dt>
         <dd>{account.plan.assignedAt} by {account.plan.assignedBy} ({account.plan.source === 'PERSON' ? 'a person' : 'an upstream system'})</dd>
       </dl>
+      <button type="button" className="sv-btn--secondary" onClick={() => setChangingPlan((v) => !v)}>Change plan</button>
+      {changingPlan && (
+        <form onSubmit={(e) => { e.preventDefault(); changePlanMutation.mutate() }}>
+          <label className="sv-label">New plan
+            <select className="sv-field" aria-label="New plan" value={newPlanKey} onChange={(e) => setNewPlanKey(e.target.value)}>
+              <option value="" disabled>Select a plan</option>
+              {plansQuery.data?.plans.map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}
+            </select>
+          </label>
+          <label><input type="radio" name="plan-source" checked={newPlanSource === 'PERSON'} onChange={() => setNewPlanSource('PERSON')} /> A person</label>
+          <label><input type="radio" name="plan-source" checked={newPlanSource === 'SYSTEM'} onChange={() => setNewPlanSource('SYSTEM')} /> An upstream system</label>
+          <button type="submit" className="sv-btn" disabled={!newPlanKey}>Confirm plan change</button>
+        </form>
+      )}
+      {retainedOverrideCount !== null && (
+        <p role="status">{`Plan changed. ${retainedOverrideCount} overrides are retained.`}</p>
+      )}
 
       <h2>Effective entitlements</h2>
       <table>
@@ -68,9 +146,67 @@ export function AccountDetailRoute({ external: externalProp }: { external?: stri
         {account.overrides.map((o) => (
           <li key={o.id}>
             {o.kind} <ValueBadge value={o.value} tiers={[]} /> — {o.reason} — {o.createdBy}, {o.createdAt} — {EFFECT_LABELS[o.effectNow]}
+            {confirmingRemoveId === o.id ? (
+              <span>
+                {o.kind === 'HOLD'
+                  ? ' Removal is permitted and audited but not restricted.'
+                  : ' The value will return to whatever the plan and remaining overrides produce.'}
+                <button type="button" className="sv-btn" onClick={() => removeMutation.mutate(o.id)}>Confirm removal</button>
+                <button type="button" className="sv-btn--secondary" onClick={() => setConfirmingRemoveId(null)}>Cancel</button>
+              </span>
+            ) : (
+              <button type="button" className="sv-btn--secondary" data-testid={`remove-${o.id}`} onClick={() => setConfirmingRemoveId(o.id)}>Remove</button>
+            )}
           </li>
         ))}
       </ul>
+      {removedDecision && (
+        <div className="app-panel">
+          <h3>Restored value</h3>
+          <TraceView trace={removedDecision.trace} />
+        </div>
+      )}
+
+      <button type="button" className="sv-btn--secondary" onClick={() => setAddingOverride((v) => !v)}>Add override</button>
+      {addingOverride && (
+        <form onSubmit={(e) => { e.preventDefault(); addMutation.mutate() }}>
+          <label className="sv-label">Capability
+            <select className="sv-field" aria-label="Capability" value={newCapability} onChange={(e) => selectNewCapability(e.target.value)}>
+              <option value="" disabled>Select a capability</option>
+              {groupByArea(capabilitiesQuery.data?.capabilities ?? []).map(([area, caps]) => (
+                <optgroup key={area} label={area}>
+                  {caps.map((c) => <option key={c.key} value={c.key}>{c.displayName}</option>)}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+          <label className="sv-label">Kind
+            <select className="sv-field" aria-label="Kind" value={newKind} onChange={(e) => setNewKind(e.target.value as OverrideKind)}>
+              <option value="" disabled>Select a kind</option>
+              <option value="GRANT">GRANT</option>
+              <option value="HOLD">HOLD</option>
+            </select>
+          </label>
+          {newValue && (
+            <ValueEditor
+              valueType={capabilitiesQuery.data!.capabilities.find((c) => c.key === newCapability)!.valueType}
+              tiers={capabilitiesQuery.data!.capabilities.find((c) => c.key === newCapability)!.tiers}
+              value={newValue}
+              onChange={setNewValue}
+            />
+          )}
+          <label className="sv-label">Reason
+            <input className="sv-field" aria-label="Reason" value={newReason} onChange={(e) => setNewReason(e.target.value)} />
+          </label>
+          <button type="submit" className="sv-btn" disabled={!newCapability || !newKind || newReason.trim() === ''}>Save override</button>
+        </form>
+      )}
+      {addedDecision && (
+        <div className="app-panel">
+          <h3>Resulting decision</h3>
+          <TraceView trace={addedDecision.trace} />
+        </div>
+      )}
     </div>
   )
 }
