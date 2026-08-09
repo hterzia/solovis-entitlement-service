@@ -2585,13 +2585,17 @@ import { getCapability } from '../../api/capabilities'
 describe('CapabilityCreateForm', () => {
   it('hides the off-value control for SWITCH, per §5', async () => {
     renderWithProviders(<CapabilityCreateForm onCreated={vi.fn()} />)
+    // Same await-the-router's-initial-match convention as every other test in this plan
+    // (established in Task 10, commit 94ad1d3): guard even a negative assertion so it
+    // doesn't pass vacuously before RouterProvider's first match resolves.
+    await screen.findByLabelText('Key')
     expect(screen.queryByLabelText(/off-value/i)).not.toBeInTheDocument()
   })
 
   it('constrains the off-value to 0 for QUANTITY, offered as a checkbox not a number field', async () => {
     const user = userEvent.setup()
     renderWithProviders(<CapabilityCreateForm onCreated={vi.fn()} />)
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Value type' }), 'QUANTITY')
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Value type' }), 'QUANTITY')
     expect(screen.getByRole('checkbox', { name: /off at 0/i })).toBeInTheDocument()
     expect(screen.queryByRole('spinbutton', { name: /off-value/i })).not.toBeInTheDocument()
   })
@@ -2599,7 +2603,7 @@ describe('CapabilityCreateForm', () => {
   it('requires at least two tiers before submit is enabled for a TIER capability', async () => {
     const user = userEvent.setup()
     renderWithProviders(<CapabilityCreateForm onCreated={vi.fn()} />)
-    await user.type(screen.getByLabelText('Key'), 'sla.level')
+    await user.type(await screen.findByLabelText('Key'), 'sla.level')
     await user.type(screen.getByLabelText('Display name'), 'SLA level')
     await user.selectOptions(screen.getByRole('combobox', { name: 'Value type' }), 'TIER')
     expect(screen.getByRole('button', { name: 'Declare capability' })).toBeDisabled()
@@ -2616,7 +2620,7 @@ describe('CapabilityCreateForm', () => {
     const user = userEvent.setup()
     const onCreated = vi.fn()
     renderWithProviders(<CapabilityCreateForm onCreated={onCreated} />)
-    await user.type(screen.getByLabelText('Key'), 'integration.hubspot')
+    await user.type(await screen.findByLabelText('Key'), 'integration.hubspot')
     await user.type(screen.getByLabelText('Display name'), 'HubSpot integration')
     await user.click(screen.getByRole('button', { name: 'Declare capability' }))
     await waitFor(() => expect(screen.getByText('Saved. Active everywhere within 60 seconds.')).toBeInTheDocument())
