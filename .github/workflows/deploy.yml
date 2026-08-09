@@ -94,7 +94,7 @@ jobs:
             --memory 1Gi \
             --port 8081 \
             --allow-unauthenticated \
-            --set-env-vars "ENTITLEMENT_DB_PATH=/data/entitlement.db,LITESTREAM_BUCKET=${PROJECT_ID}-litestream" \
+            --set-env-vars "ENTITLEMENT_DB_PATH=/data/entitlement.db,LITESTREAM_BUCKET=${PROJECT_ID}-litestream,ENTITLEMENT_SEED_ENABLED=true" \
             --set-secrets "GOOGLE_AI_GEMINI_API_KEY=gemini-api-key:latest" \
             --quiet
 
