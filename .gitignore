@@ -4,6 +4,11 @@
 # Vendored read-only reference checkout (LangChain4j examples); not part of the build
 refs/
 
+# Agent worktrees — complete additional clones of this repository (~292 MB, each
+# with its own .git). Previously excluded only via .git/info/exclude, which is
+# local and does not travel with a clone.
+.claude/worktrees/
+
 # Build output
 **/target/
 **/node_modules/
