@@ -27,7 +27,7 @@ public class DemoDataSeeder implements ApplicationRunner {
 
     public DemoDataSeeder(CapabilityAdminService capabilityService, PlanAdminService planService,
             AccountAdminService accountService, OverrideAdminService overrideService,
-            @Value("${entitlement.seed.enabled:true}") boolean enabled) {
+            @Value("${entitlement.seed.enabled:false}") boolean enabled) {
         this.capabilityService = capabilityService;
         this.planService = planService;
         this.accountService = accountService;
