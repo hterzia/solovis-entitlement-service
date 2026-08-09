@@ -100,28 +100,29 @@ final class SnapshotPoller implements AutoCloseable {
             return false;
         }
         try {
+            var version = feed.version();
+            if (version.format() != ConformanceGate.SUPPORTED_FORMAT
+                || version.resolverContract() != com.solovis.entitlement.core.conformance.ResolverContract.VERSION) {
+                halt("Feed advertises format " + version.format() + " / resolverContract "
+                    + version.resolverContract() + "; this SDK implements format "
+                    + ConformanceGate.SUPPORTED_FORMAT + " / resolverContract "
+                    + com.solovis.entitlement.core.conformance.ResolverContract.VERSION
+                    + ". Replication has stopped; the last good replica keeps serving.");
+                return false;
+            }
             var current = holder.get();
+            if (version.version() == current.version()) {
+                return succeed();
+            }
             Replica candidate;
             try {
-                var version = feed.version();
-                if (version.format() != ConformanceGate.SUPPORTED_FORMAT
-                    || version.resolverContract()
-                        != com.solovis.entitlement.core.conformance.ResolverContract.VERSION) {
-                    halt("Feed advertises format " + version.format() + " / resolverContract "
-                        + version.resolverContract() + "; this SDK implements format "
-                        + ConformanceGate.SUPPORTED_FORMAT + " / resolverContract "
-                        + com.solovis.entitlement.core.conformance.ResolverContract.VERSION
-                        + ". Replication has stopped; the last good replica keeps serving.");
-                    return false;
-                }
-                if (version.version() == current.version()) {
-                    return succeed();
-                }
+                // Scoped to the delta path only: the version endpoint is deliberately trivial and
+                // never reports snapshot-too-old (spec: snapshot-feed.md) — SnapshotTooOldException
+                // can only come from feed.delta() below, and OutOfOrderDeltaException /
+                // UnknownChangeKindException only from DeltaApplier.apply's inspection of the
+                // batch it returns, so both are covered by wrapping this one statement.
                 candidate = DeltaApplier.apply(current, feed.delta(current.version()));
             } catch (SnapshotTooOldException | DeltaApplier.OutOfOrderDeltaException e) {
-                // The delta path is unusable from here, however that surfaced — whether the
-                // service reported it against the version poll or against the delta fetch itself,
-                // the response is identical: fetch a full snapshot instead.
                 metrics.fullResync();
                 candidate = feed.full();
             } catch (DeltaApplier.UnknownChangeKindException e) {

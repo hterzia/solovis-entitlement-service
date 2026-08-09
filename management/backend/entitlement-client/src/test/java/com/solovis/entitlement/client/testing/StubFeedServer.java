@@ -27,6 +27,9 @@ public final class StubFeedServer implements AutoCloseable {
     private final AtomicReference<String> decisionBody = new AtomicReference<>(null);
     private final AtomicReference<int[]> failure = new AtomicReference<>(null);   // {status} for the next call
     private final AtomicReference<String> failureBody = new AtomicReference<>(null);
+    // {status} for the next /v1/snapshot?since= call only — see failNextDeltaWith().
+    private final AtomicReference<int[]> deltaFailure = new AtomicReference<>(null);
+    private final AtomicReference<String> deltaFailureBody = new AtomicReference<>(null);
     private final AtomicInteger versionCalls = new AtomicInteger();
     private final AtomicInteger fullCalls = new AtomicInteger();
     private final AtomicInteger deltaCalls = new AtomicInteger();
@@ -71,6 +74,17 @@ public final class StubFeedServer implements AutoCloseable {
         failureBody.set(problemJson);
     }
 
+    /**
+     * The next request to {@code /v1/snapshot?since=} — and only that route — answers with this
+     * status and problem+json body. {@link #failWith} is a global one-shot consumed by whichever
+     * route is hit first, which makes it unusable for a scenario that needs the version poll to
+     * succeed and the delta fetch specifically to fail (the real trigger for a full resync).
+     */
+    public void failNextDeltaWith(int status, String problemJson) {
+        deltaFailure.set(new int[] {status});
+        deltaFailureBody.set(problemJson);
+    }
+
     /** Truncate the full-snapshot body before its footer, simulating a cut-off response. */
     public void truncateFullSnapshot() {
         truncateFull = true;
@@ -101,11 +115,16 @@ public final class StubFeedServer implements AutoCloseable {
     }
 
     private boolean servedFailure(HttpExchange exchange) throws IOException {
-        var pending = failure.getAndSet(null);
+        return servedFailure(exchange, failure, failureBody);
+    }
+
+    private boolean servedFailure(HttpExchange exchange, AtomicReference<int[]> statusRef,
+            AtomicReference<String> bodyRef) throws IOException {
+        var pending = statusRef.getAndSet(null);
         if (pending == null) {
             return false;
         }
-        var body = failureBody.getAndSet(null).getBytes(StandardCharsets.UTF_8);
+        var body = bodyRef.getAndSet(null).getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/problem+json");
         exchange.sendResponseHeaders(pending[0], body.length);
         exchange.getResponseBody().write(body);
@@ -158,6 +177,9 @@ public final class StubFeedServer implements AutoCloseable {
         }
         deltaCalls.incrementAndGet();
         paths.add(exchange.getRequestURI().toString());
+        if (servedFailure(exchange, deltaFailure, deltaFailureBody)) {
+            return;
+        }
         if (servedFailure(exchange)) {
             return;
         }

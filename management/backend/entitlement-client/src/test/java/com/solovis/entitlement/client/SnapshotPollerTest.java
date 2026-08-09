@@ -127,26 +127,31 @@ class SnapshotPollerTest {
     @Test
     void aSinceOlderThanTheHorizonTriggersAFullResyncAndTheOldReplicaServesUntilItCompletes() {
         stub.respondVersion(200L, "2026-08-09T14:03:10.900Z", 1, 1);
-        stub.failWith(410, """
+        // Targets the delta call only: the version poll above must succeed normally, and it is
+        // specifically the ?since= request going stale that must trigger the resync.
+        stub.failNextDeltaWith(410, """
             {"type":"entitlement/snapshot-too-old","title":"Snapshot too old","status":410,\
             "currentVersion":200}""");
         stub.respondFull(feedAt(200L, null));
 
         assertThat(poller().syncOnce()).isTrue();
         assertThat(holder.get().version()).isEqualTo(200L);
+        assertThat(stub.deltaCalls()).isEqualTo(1);
         assertThat(stub.fullCalls()).isEqualTo(1);
     }
 
     @Test
     void aFullResyncThatAlsoFailsLeavesThePreviousReplicaInPlace() {
         stub.respondVersion(200L, "2026-08-09T14:03:10.900Z", 1, 1);
-        stub.failWith(410, "{\"type\":\"entitlement/snapshot-too-old\",\"status\":410}");
+        stub.failNextDeltaWith(410, "{\"type\":\"entitlement/snapshot-too-old\",\"status\":410}");
         stub.respondFull(feedAt(200L, null));
         stub.truncateFullSnapshot();
         var before = holder.get();
 
         assertThat(poller().syncOnce()).isFalse();
         assertThat(holder.get()).isSameAs(before);
+        assertThat(stub.deltaCalls()).isEqualTo(1);
+        assertThat(stub.fullCalls()).isEqualTo(1);
     }
 
     @Test
@@ -192,12 +197,14 @@ class SnapshotPollerTest {
             + "\"overrides\":[]},"
             + "\"expect\":{\"allowed\":true,\"value\":{\"type\":\"SWITCH\",\"enabled\":true}}}";
         stub.respondVersion(200L, "2026-08-09T14:03:10.900Z", 1, 1);
-        stub.failWith(410, "{\"type\":\"entitlement/snapshot-too-old\",\"status\":410}");
+        stub.failNextDeltaWith(410, "{\"type\":\"entitlement/snapshot-too-old\",\"status\":410}");
         stub.respondFull(feedAt(200L, badVector));
         var before = holder.get();
 
         assertThat(poller().syncOnce()).isFalse();
         assertThat(holder.get()).isSameAs(before);
+        assertThat(stub.deltaCalls()).isEqualTo(1);
+        assertThat(stub.fullCalls()).isEqualTo(1);
     }
 
     @Test
