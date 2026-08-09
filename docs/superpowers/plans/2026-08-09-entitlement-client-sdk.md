@@ -3513,7 +3513,7 @@ git commit -m "feat(entitlement-client): the sync loop, holding the last good re
 **Interfaces:**
 - Consumes: `SnapshotPoller`, `Replica`, `FeedHttpClient`, `ClientMetrics`; core `Resolver`, `Decision`, `Capability`.
 - Produces:
-  - `EntitlementClient` — the public interface, exactly as the contract declares it, plus `static EntitlementClientBuilder builder()`.
+  - `EntitlementClient` — the public interface, exactly as the contract declares it. The `static builder()` factory is deferred to Task 13, which creates the builder type it returns.
   - `AccountEntitlements(String account, String planKey, List<Decision> decisions, long snapshotVersion, Instant evaluatedAt)`
   - `ClientHealth(long snapshotVersion, Instant snapshotPublishedAt, Duration snapshotAge, boolean stale, Instant lastSuccessfulSync, Optional<String> lastError)`
   - `DefaultEntitlementClient` — package-private class implementing the interface; constructed only by the builder.
@@ -3799,12 +3799,10 @@ public interface EntitlementClient extends AutoCloseable {
 
     @Override
     void close();
-
-    static EntitlementClientBuilder builder() {
-        return new EntitlementClientBuilder();
-    }
 }
 ```
+
+**No `builder()` factory in this task.** Task 13 adds `static EntitlementClientBuilder builder()` at the same time as it creates `EntitlementClientBuilder`. A static factory cannot return a type that does not exist yet, so declaring it here would fail to compile the whole module — unlike `explain`/`awaitVersion`, whose return types already exist and whose *bodies* are what Tasks 12–13 fill in.
 
 - [ ] **Step 5: Write `DefaultEntitlementClient`**
 
@@ -4059,6 +4057,13 @@ git commit -m "feat(entitlement-client): service-fetched explanations, and a bou
 - Create: `entitlement-client/src/main/java/com/solovis/entitlement/client/StartupMode.java`
 - Create: `entitlement-client/src/main/java/com/solovis/entitlement/client/EntitlementClientBuilder.java`
 - Modify: `entitlement-client/src/main/java/com/solovis/entitlement/client/DefaultEntitlementClient.java`
+- Modify: `entitlement-client/src/main/java/com/solovis/entitlement/client/EntitlementClient.java` — add the `builder()` factory, deferred from Task 11:
+
+```java
+    static EntitlementClientBuilder builder() {
+        return new EntitlementClientBuilder();
+    }
+```
 - Test: `entitlement-client/src/test/java/com/solovis/entitlement/client/ReadYourWritesTest.java`
 - Test: `entitlement-client/src/test/java/com/solovis/entitlement/client/EntitlementClientBuilderTest.java`
 
