@@ -527,7 +527,7 @@ export function formatValue(value: EntitlementValue, tiers?: CapabilityTier[]): 
     case 'SWITCH':
       return value.enabled ? 'On' : 'Off'
     case 'QUANTITY':
-      return 'unlimited' in value && value.unlimited ? 'Unlimited' : String(value.amount)
+      return 'amount' in value ? String(value.amount) : 'Unlimited'
     case 'TIER': {
       const declared = tiers?.find((t) => t.tier === value.tier)
       return declared?.displayName ?? value.tier
@@ -539,10 +539,9 @@ export function valuesEqual(a: EntitlementValue, b: EntitlementValue): boolean {
   if (a.type !== b.type) return false
   if (a.type === 'SWITCH' && b.type === 'SWITCH') return a.enabled === b.enabled
   if (a.type === 'QUANTITY' && b.type === 'QUANTITY') {
-    const aUnlimited = 'unlimited' in a && a.unlimited
-    const bUnlimited = 'unlimited' in b && b.unlimited
-    if (aUnlimited || bUnlimited) return Boolean(aUnlimited) === Boolean(bUnlimited)
-    return a.amount === b.amount
+    const aAmount = 'amount' in a ? a.amount : null
+    const bAmount = 'amount' in b ? b.amount : null
+    return aAmount === bAmount
   }
   if (a.type === 'TIER' && b.type === 'TIER') return a.tier === b.tier
   return false
@@ -2141,8 +2140,8 @@ export function ValueEditor({ valueType, tiers, value, onChange }: ValueEditorPr
   }
 
   if (valueType === 'QUANTITY') {
-    const unlimited = value.type === 'QUANTITY' && 'unlimited' in value && value.unlimited
-    const amount = value.type === 'QUANTITY' && !unlimited ? value.amount : 0
+    const amount = value.type === 'QUANTITY' && 'amount' in value ? value.amount : 0
+    const unlimited = value.type === 'QUANTITY' && 'unlimited' in value && value.unlimited === true
     return (
       <div>
         <label className="sv-label">
