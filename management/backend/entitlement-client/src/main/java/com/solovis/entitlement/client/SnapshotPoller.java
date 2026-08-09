@@ -1,0 +1,188 @@
+package com.solovis.entitlement.client;
+
+import com.solovis.entitlement.client.metrics.ClientMetrics;
+import com.solovis.entitlement.client.replica.ConformanceGate;
+import com.solovis.entitlement.client.replica.DeltaApplier;
+import com.solovis.entitlement.client.replica.DiskCache;
+import com.solovis.entitlement.client.replica.Replica;
+import com.solovis.entitlement.client.transport.Backoff;
+import com.solovis.entitlement.client.transport.FeedHttpClient;
+import com.solovis.entitlement.client.transport.FeedUnavailableException;
+import com.solovis.entitlement.client.transport.SnapshotTooOldException;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+/**
+ * The daemon that keeps one replica current: poll the version, advance by delta, full-resync when
+ * the delta path is unusable, gate the candidate, swap.
+ *
+ * <p>Nothing here ever makes the decision path fail. A sync that cannot complete leaves the last
+ * good replica serving, which is the entire §11 posture: not fail-open, not fail-closed, but the
+ * last state it knew.
+ */
+final class SnapshotPoller implements AutoCloseable {
+
+    private static final Logger LOG = Logger.getLogger(SnapshotPoller.class.getName());
+
+    private final FeedHttpClient feed;
+    private final AtomicReference<Replica> holder;
+    private final Duration pollInterval;
+    private final Duration staleAfter;
+    private final DiskCache cache;              // nullable
+    private final ClientMetrics metrics;
+    private final Clock clock;
+    private final Backoff backoff;
+
+    private final AtomicReference<SyncState> state;
+    private volatile boolean stopped;           // a contract violation was seen; stop syncing
+    private volatile boolean closed;
+    private volatile Thread thread;
+    private volatile boolean warnedStale;
+
+    record SyncState(Instant lastSuccessfulSync, String lastError, boolean stale) {}
+
+    SnapshotPoller(FeedHttpClient feed, AtomicReference<Replica> holder, Duration pollInterval,
+            Duration staleAfter, DiskCache cache, ClientMetrics metrics, Clock clock) {
+        this.feed = feed;
+        this.holder = holder;
+        this.pollInterval = pollInterval;
+        this.staleAfter = staleAfter;
+        this.cache = cache;
+        this.metrics = metrics;
+        this.clock = clock;
+        this.backoff = new Backoff(pollInterval);
+        this.state = new AtomicReference<>(new SyncState(clock.instant(), null, false));
+    }
+
+    SyncState state() {
+        return state.get();
+    }
+
+    /** True once a format or resolverContract mismatch has permanently halted replication. */
+    boolean stopped() {
+        return stopped;
+    }
+
+    void start() {
+        var t = new Thread(this::loop, "entitlement-snapshot-poller");
+        t.setDaemon(true);
+        thread = t;
+        t.start();
+    }
+
+    private void loop() {
+        while (!closed) {
+            Duration wait;
+            try {
+                wait = syncOnce() ? pollInterval : backoff.nextDelay();
+            } catch (RuntimeException e) {
+                // Belt and braces. A poller thread that dies would age the replica forever while
+                // health() still looked plausible.
+                LOG.log(Level.SEVERE, "Unexpected failure in the entitlement snapshot poller.", e);
+                wait = backoff.nextDelay();
+            }
+            try {
+                Thread.sleep(wait.toMillis());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
+    /** One sync attempt. Returns true when the replica is current. Never throws. */
+    boolean syncOnce() {
+        if (stopped) {
+            return false;
+        }
+        try {
+            var current = holder.get();
+            Replica candidate;
+            try {
+                var version = feed.version();
+                if (version.format() != ConformanceGate.SUPPORTED_FORMAT
+                    || version.resolverContract()
+                        != com.solovis.entitlement.core.conformance.ResolverContract.VERSION) {
+                    halt("Feed advertises format " + version.format() + " / resolverContract "
+                        + version.resolverContract() + "; this SDK implements format "
+                        + ConformanceGate.SUPPORTED_FORMAT + " / resolverContract "
+                        + com.solovis.entitlement.core.conformance.ResolverContract.VERSION
+                        + ". Replication has stopped; the last good replica keeps serving.");
+                    return false;
+                }
+                if (version.version() == current.version()) {
+                    return succeed();
+                }
+                candidate = DeltaApplier.apply(current, feed.delta(current.version()));
+            } catch (SnapshotTooOldException | DeltaApplier.OutOfOrderDeltaException e) {
+                // The delta path is unusable from here, however that surfaced — whether the
+                // service reported it against the version poll or against the delta fetch itself,
+                // the response is identical: fetch a full snapshot instead.
+                metrics.fullResync();
+                candidate = feed.full();
+            } catch (DeltaApplier.UnknownChangeKindException e) {
+                halt("Feed delivered an unknown change kind '" + e.kind()
+                    + "'. Replication has stopped; the last good replica keeps serving.");
+                return false;
+            }
+            var gate = ConformanceGate.evaluate(candidate);
+            if (!gate.passed()) {
+                metrics.conformanceFailed();
+                LOG.severe("Discarding a snapshot that failed the conformance gate; keeping version "
+                    + current.version() + ". " + gate.reason());
+                return fail(gate.reason());
+            }
+            holder.set(candidate);
+            if (cache != null) {
+                cache.store(candidate);
+            }
+            metrics.snapshotVersion(candidate.version());
+            metrics.resolverContract(candidate.resolverContract());
+            return succeed();
+        } catch (FeedUnavailableException e) {
+            return fail(e.getMessage());
+        } catch (RuntimeException e) {
+            return fail(e.toString());
+        }
+    }
+
+    private void halt(String reason) {
+        stopped = true;
+        LOG.severe(reason);
+        fail(reason);
+    }
+
+    private boolean succeed() {
+        backoff.reset();
+        warnedStale = false;
+        state.set(new SyncState(clock.instant(), null, false));
+        return true;
+    }
+
+    private boolean fail(String error) {
+        metrics.syncFailed();
+        var previous = state.get();
+        var since = Duration.between(previous.lastSuccessfulSync(), clock.instant());
+        boolean stale = since.compareTo(staleAfter) > 0;
+        if (stale && !warnedStale) {
+            warnedStale = true;   // once per transition, not once per call
+            LOG.warning("Entitlement replica has not synced for " + since
+                + " and is now stale. It keeps answering from the last state it knew.");
+        }
+        state.set(new SyncState(previous.lastSuccessfulSync(), error, stale));
+        return false;
+    }
+
+    @Override
+    public void close() {
+        closed = true;
+        var t = thread;
+        if (t != null) {
+            t.interrupt();
+        }
+    }
+}
