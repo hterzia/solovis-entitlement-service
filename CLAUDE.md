@@ -20,10 +20,10 @@ cd management/backend
                                          # (without it: "Could not find artifact entitlement-core")
 ./mvnw -pl entitlement-core test -Dtest=ResolverResolveTest          # single class
 ./mvnw -pl entitlement-core test -Dtest=ResolverResolveTest#methodName
-./mvnw spring-boot:run -pl entitlement-service -am                   # http://172.17.192.221:8081
+./mvnw spring-boot:run -pl entitlement-service -am                   # serves on port 8081
 ```
 
-The app already binds `0.0.0.0:8081` (`application.yaml`) — this box is headless, always give the LAN URL, never `localhost`. Swagger UI at `/swagger-ui.html`. DB file defaults to `management/backend/entitlement-service/data/entitlement.db` (`ENTITLEMENT_DB_PATH` overrides).
+The app already binds `0.0.0.0:8081` (`application.yaml`) — on a headless host, give the machine's LAN URL, never `localhost`. Swagger UI at `/swagger-ui.html`. DB file defaults to `management/backend/entitlement-service/data/entitlement.db` (`ENTITLEMENT_DB_PATH` overrides).
 
 Frontend (`management/frontend/management-ui`, still the bare Vite scaffold; `node_modules` not installed):
 
