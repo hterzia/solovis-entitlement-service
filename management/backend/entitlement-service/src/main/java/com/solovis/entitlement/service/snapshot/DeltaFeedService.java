@@ -36,11 +36,16 @@ public class DeltaFeedService {
             return new SnapshotDeltaResponseDto(1, current, current, Timestamps.iso(clock.instant()), List.of());
         }
         var rows = snapshotVersionRepository.findSince(since, MAX_ROWS_PER_REQUEST);
+        if (rows.isEmpty() || rows.get(0).version() != since + 1) {
+            throw new EntitlementApiException(ErrorCode.SNAPSHOT_TOO_OLD,
+                "Versions after " + since + " are no longer retained; a full resync is required.",
+                Map.of("currentVersion", current));
+        }
         var changes = rows.stream()
             .map(row -> new SnapshotDeltaResponseDto.Change(row.version(), DeltaJson.read(row.deltaJson())))
             .toList();
-        long toVersion = changes.isEmpty() ? current : changes.get(changes.size() - 1).version();
-        String publishedAt = rows.isEmpty() ? Timestamps.iso(clock.instant()) : rows.get(rows.size() - 1).publishedAt();
+        long toVersion = changes.get(changes.size() - 1).version();
+        String publishedAt = rows.get(rows.size() - 1).publishedAt();
         return new SnapshotDeltaResponseDto(1, since, toVersion, publishedAt, changes);
     }
 }

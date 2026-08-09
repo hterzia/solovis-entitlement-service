@@ -15,8 +15,6 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
-import java.time.Clock;
-import com.solovis.entitlement.service.time.Timestamps;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -26,14 +24,17 @@ import java.util.Map;
 public class FullSnapshotWriter {
 
     private final ObjectMapper mapper;
-    private final Clock clock;
 
-    public FullSnapshotWriter(ObjectMapper mapper, Clock clock) {
+    public FullSnapshotWriter(ObjectMapper mapper) {
         this.mapper = mapper;
-        this.clock = clock;
     }
 
-    public void write(Snapshot snapshot, OutputStream out) throws IOException {
+    /**
+     * {@code publishedAt} is the version's recorded publish time (the same value {@code GET
+     * /v1/snapshot/version} reports for this version), not a fresh clock read — snapshot-feed.md
+     * §§1–2 require the two endpoints to agree for a given version.
+     */
+    public void write(Snapshot snapshot, String publishedAt, OutputStream out) throws IOException {
         var writer = new PrintWriter(new java.io.OutputStreamWriter(out, StandardCharsets.UTF_8));
 
         var lines = new ArrayList<Object>();
@@ -60,7 +61,7 @@ public class FullSnapshotWriter {
         }
 
         var header = Map.of("kind", "header", "version", snapshot.snapshotVersion(), "format", 1,
-            "resolverContract", ResolverContract.VERSION, "publishedAt", Timestamps.iso(clock.instant()),
+            "resolverContract", ResolverContract.VERSION, "publishedAt", publishedAt,
             "counts", Map.of("capabilities", capabilityCount, "plans", planCount,
                 "accounts", accountCount, "overrides", overrideCount));
         writer.println(mapper.writeValueAsString(header));

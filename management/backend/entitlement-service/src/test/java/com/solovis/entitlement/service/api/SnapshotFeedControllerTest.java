@@ -68,6 +68,31 @@ class SnapshotFeedControllerTest {
     }
 
     @Test
+    void fullSnapshotHeaderPublishedAtMatchesTheVersionEndpointForTheSameVersion() throws Exception {
+        // A real snapshot_version row must exist so both endpoints resolve the same stored
+        // publishedAt rather than either one falling back to a fresh clock read.
+        capabilityAdminService.create(new CapabilityCreateRequest("t9c.publishedat-match.probe", "PublishedAt match probe", null, "SWITCH",
+            new ValueDto("SWITCH", false, null, null, null, null), null, null));
+
+        String versionResponse = mockMvc.perform(get("/v1/snapshot/version"))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        String versionPublishedAt = com.jayway.jsonpath.JsonPath.read(versionResponse, "$.publishedAt");
+
+        MvcResult started = mockMvc.perform(get("/v1/snapshot/full"))
+            .andExpect(request().asyncStarted())
+            .andReturn();
+        MvcResult finished = mockMvc.perform(asyncDispatch(started))
+            .andExpect(status().isOk())
+            .andReturn();
+
+        List<JsonNode> lines = readGzippedNdjsonLines(finished.getResponse().getContentAsByteArray());
+        JsonNode header = lines.get(0);
+        assertThat(header.get("kind").asText()).isEqualTo("header");
+        assertThat(header.get("publishedAt").asText()).isEqualTo(versionPublishedAt);
+    }
+
+    @Test
     void fullSnapshotIsGzippedNdjsonWithHeaderFirstAndFooterLast() throws Exception {
         MvcResult started = mockMvc.perform(get("/v1/snapshot/full"))
             .andExpect(request().asyncStarted())

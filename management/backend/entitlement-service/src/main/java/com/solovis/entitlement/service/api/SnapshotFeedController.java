@@ -38,9 +38,7 @@ public class SnapshotFeedController {
     @GetMapping("/version")
     public ResponseEntity<SnapshotVersionResponseDto> version() {
         var snapshot = snapshotHolder.current();
-        String publishedAt = snapshotVersionRepository.findByVersion(snapshot.snapshotVersion())
-            .map(row -> row.publishedAt())
-            .orElseGet(() -> Timestamps.iso(clock.instant()));
+        String publishedAt = publishedAtFor(snapshot.snapshotVersion());
         var body = new SnapshotVersionResponseDto(snapshot.snapshotVersion(), publishedAt, 1, ResolverContract.VERSION);
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(body);
     }
@@ -48,13 +46,21 @@ public class SnapshotFeedController {
     @GetMapping(value = "/full", produces = "application/x-ndjson")
     public ResponseEntity<StreamingResponseBody> full() {
         var snapshot = snapshotHolder.current();
+        String publishedAt = publishedAtFor(snapshot.snapshotVersion());
         StreamingResponseBody body = out -> {
             try (var gzip = new GZIPOutputStream(out)) {
-                fullSnapshotWriter.write(snapshot, gzip);
+                fullSnapshotWriter.write(snapshot, publishedAt, gzip);
             }
         };
         return ResponseEntity.ok().header("Content-Encoding", "gzip")
             .contentType(MediaType.parseMediaType("application/x-ndjson")).body(body);
+    }
+
+    /** The recorded publish time for a version — same resolution {@code /version} and {@code /full} must agree on. */
+    private String publishedAtFor(long version) {
+        return snapshotVersionRepository.findByVersion(version)
+            .map(row -> row.publishedAt())
+            .orElseGet(() -> Timestamps.iso(clock.instant()));
     }
 
     @GetMapping
