@@ -37,8 +37,9 @@ describe('HistoryRoute', () => {
     expect(screen.getByText(/Suspended pending billing investigation/)).toBeInTheDocument()
   })
 
-  it('offers no edit, delete, or export control', () => {
+  it('offers no edit, delete, or export control', async () => {
     renderWithProviders(<HistoryRoute />)
+    await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(4))
     expect(screen.queryByRole('button', { name: /edit|delete|export/i })).not.toBeInTheDocument()
   })
 
