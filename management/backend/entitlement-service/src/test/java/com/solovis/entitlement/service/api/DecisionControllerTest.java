@@ -1,5 +1,7 @@
 package com.solovis.entitlement.service.api;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.solovis.entitlement.service.snapshot.SnapshotHolder;
 import com.solovis.entitlement.service.store.*;
 import org.junit.jupiter.api.BeforeAll;
@@ -10,6 +12,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -39,11 +42,20 @@ class DecisionControllerTest {
     @Autowired SnapshotVersionRepository snapshotVersionRepository;
     @Autowired AuditEventRepository auditEventRepository;
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     @BeforeAll
     void seedAndRefreshSnapshot() {
         long capId = capabilityRepository.insert(new CapabilityRow(null, "reports.t4.monthly", "reports",
             "Monthly reports", null, "QUANTITY", null, 0L, false, null, false, null, null, "ACTIVE", null,
             "2026-08-09T00:00:00.000Z", "2026-08-09T00:00:00.000Z"));
+        // GAP 1 fixture: a RETIRED capability so the decision route's 409 retired-capability
+        // path (Resolver.explain -> RetiredCapabilityException -> GlobalExceptionHandler) has
+        // something to exercise. Mirrors the ACTIVE capability's insert shape above, just with
+        // status/retiredAt set, and namespaced "t28" so it can't collide with another class's fixtures.
+        capabilityRepository.insert(new CapabilityRow(null, "reports.t28.retired", "reports",
+            "Retired monthly reports", null, "QUANTITY", null, 0L, false, null, false, null, null, "RETIRED",
+            "2026-08-09T00:00:00.000Z", "2026-08-09T00:00:00.000Z", "2026-08-09T00:00:00.000Z"));
         // Not the default plan: the schema permits exactly one, SchemaInvariantsTest
         // legitimately claims it, and tests sharing a Spring context share one SQLite
         // file — so claiming it here makes the pair order-dependent. The account below
@@ -123,5 +135,56 @@ class DecisionControllerTest {
         mockMvc.perform(get("/v1/capabilities/reports.t4.monthly"))
             .andExpect(status().isOk())
             .andExpect(header().exists("X-Entitlement-Snapshot-Version"));
+    }
+
+    @Test
+    void retiredCapabilityOnSingleDecisionRouteIsAConflictNotADenial() throws Exception {
+        mockMvc.perform(get("/v1/accounts/acct_t4_1/capabilities/reports.t28.retired"))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.type").value("entitlement/retired-capability"));
+    }
+
+    @Test
+    void minSnapshotVersionAheadOfCurrentIsSnapshotBehind() throws Exception {
+        mockMvc.perform(get("/v1/accounts/acct_t4_1/capabilities/reports.t4.monthly")
+                .param("minSnapshotVersion", "999999999"))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.type").value("entitlement/snapshot-behind"))
+            .andExpect(jsonPath("$.currentVersion").isNumber());
+    }
+
+    @Test
+    void singleCapabilityRouteIsCacheableForTenSecondsAndStaleForADay() throws Exception {
+        mockMvc.perform(get("/v1/accounts/acct_t4_1/capabilities/reports.t4.monthly"))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Cache-Control", "max-age=10, stale-if-error=86400"));
+    }
+
+    @Test
+    void wholeAccountAnswersMatchSingleCapabilityAnswersForEveryEntitlement() throws Exception {
+        String wholeAccountBody = mockMvc.perform(get("/v1/accounts/acct_t4_1/entitlements"))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        JsonNode entitlements = MAPPER.readTree(wholeAccountBody).get("entitlements");
+        assertThat(entitlements.isArray()).isTrue();
+        assertThat(entitlements.size()).isGreaterThan(0);
+
+        for (JsonNode entitlement : entitlements) {
+            String capability = entitlement.get("capability").asText();
+            boolean wholeAccountAllowed = entitlement.get("allowed").asBoolean();
+            JsonNode wholeAccountValue = entitlement.get("value");
+
+            String singleBody = mockMvc.perform(get("/v1/accounts/acct_t4_1/capabilities/" + capability))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+            JsonNode single = MAPPER.readTree(singleBody);
+
+            assertThat(single.get("allowed").asBoolean())
+                .as("allowed for capability %s", capability)
+                .isEqualTo(wholeAccountAllowed);
+            assertThat(single.get("value"))
+                .as("value for capability %s", capability)
+                .isEqualTo(wholeAccountValue);
+        }
     }
 }
