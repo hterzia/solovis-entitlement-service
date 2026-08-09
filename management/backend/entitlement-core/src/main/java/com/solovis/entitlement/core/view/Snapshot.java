@@ -52,6 +52,11 @@ public final class Snapshot implements EntitlementView {
     }
 
     @Override
+    public Collection<Capability> capabilities() {
+        return capabilities.values();
+    }
+
+    @Override
     public Collection<Capability> activeCapabilities() {
         return capabilities.values().stream().filter(c -> !c.isRetired()).toList();
     }

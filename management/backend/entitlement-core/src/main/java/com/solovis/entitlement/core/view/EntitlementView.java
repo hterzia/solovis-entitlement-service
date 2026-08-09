@@ -21,6 +21,9 @@ public interface EntitlementView {
 
     Optional<Capability> capability(CapabilityKey key);
 
+    /** Every declared capability, retired or not — the registry read needs this; resolution never does. */
+    Collection<Capability> capabilities();
+
     /** Every non-retired capability, for whole-account resolution (c20). */
     Collection<Capability> activeCapabilities();
 
