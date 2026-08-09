@@ -44,7 +44,11 @@ class DecisionControllerTest {
         long capId = capabilityRepository.insert(new CapabilityRow(null, "reports.t4.monthly", "reports",
             "Monthly reports", null, "QUANTITY", null, 0L, false, null, false, null, null, "ACTIVE", null,
             "2026-08-09T00:00:00.000Z", "2026-08-09T00:00:00.000Z"));
-        long planId = planRepository.insert(new PlanRow(null, "t4-free", "Free", null, "ACTIVE", true,
+        // Not the default plan: the schema permits exactly one, SchemaInvariantsTest
+        // legitimately claims it, and tests sharing a Spring context share one SQLite
+        // file — so claiming it here makes the pair order-dependent. The account below
+        // is assigned this plan explicitly, so default-for-new-accounts is irrelevant here.
+        long planId = planRepository.insert(new PlanRow(null, "t4-free", "Free", null, "ACTIVE", false,
             "2026-08-09T00:00:00.000Z", "2026-08-09T00:00:00.000Z"));
         accountRepository.insert(new AccountRow(null, "acct_t4_1", null, planId, "2026-08-09T00:00:00.000Z",
             "PERSON", "dev-operator", "ACTIVE", "2026-08-09T00:00:00.000Z", "2026-08-09T00:00:00.000Z"));
