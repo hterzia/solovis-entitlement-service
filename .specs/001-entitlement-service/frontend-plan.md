@@ -589,7 +589,7 @@ git commit -m "frontend: value encoding and domain types"
 - Create: `management/frontend/management-ui/src/queries/keys.ts`
 
 **Interfaces:**
-- Produces: `server` (MSW `SetupServerApi`) and `resetDb()` from `mocks/server.ts`; `renderWithProviders(ui, options?: {initialPath?}) => RenderResult & {router}` from `testUtils.tsx` — mounts both `QueryClientProvider` and a minimal single-route `RouterProvider`, since every screen from Task 10 onward renders `<Link>`/calls `useParams` and needs router context or it crashes; `queryKeys` object from `queries/keys.ts`. Every later API and component test imports from these three files instead of building its own fixtures, so every screen's tests exercise the same account/plan/capability data the contracts document.
+- Produces: `server` (MSW `SetupServerApi`) and `resetDb()` from `mocks/server.ts`; `renderWithProviders(ui) => RenderResult & {router}` from `testUtils.tsx` — mounts both `QueryClientProvider` and a minimal single-route `RouterProvider`, since every screen from Task 10 onward renders `<Link>`/calls `useParams` and needs router context or it crashes; `queryKeys` object from `queries/keys.ts`. Every later API and component test imports from these three files instead of building its own fixtures, so every screen's tests exercise the same account/plan/capability data the contracts document.
 
 - [ ] **Step 1: Write the fixture data, matching the contract examples exactly**
 
@@ -1056,7 +1056,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from '@tanstack/react-router'
 
-export function renderWithProviders(ui: ReactElement, options?: { initialPath?: string }) {
+export function renderWithProviders(ui: ReactElement) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
@@ -1065,7 +1065,7 @@ export function renderWithProviders(ui: ReactElement, options?: { initialPath?: 
   const testRoute = createRoute({ getParentRoute: () => rootRoute, path: '/', component: () => ui })
   const router = createRouter({
     routeTree: rootRoute.addChildren([testRoute]),
-    history: createMemoryHistory({ initialEntries: [options?.initialPath ?? '/'] }),
+    history: createMemoryHistory({ initialEntries: ['/'] }),
   })
 
   const result = render(
@@ -1077,7 +1077,7 @@ export function renderWithProviders(ui: ReactElement, options?: { initialPath?: 
 }
 ```
 
-The `router` returned alongside the RTL render result lets a test assert on `router.state.location.pathname` after a simulated navigation, or pass `{ initialPath: '/accounts/acct_9931' }` if a future test needs the mounted location to be something other than `/` (no task in this plan currently needs that, but the option costs nothing to have).
+The `router` returned alongside the RTL render result lets a test assert on `router.state.location.pathname` after a simulated navigation. No task in this plan mounts a route other than `/` under test — every screen component that needs a param (`$key`, `$external`) accepts it as a direct override prop instead (see Task 12 onward) — so there is no `initialPath` option to configure; adding one with nothing to exercise it was dead code with an actual latent bug (the single registered route's path was hardcoded to `/` regardless of what the option said).
 
 - [ ] **Step 6: Confirm the toolchain wires together**
 
