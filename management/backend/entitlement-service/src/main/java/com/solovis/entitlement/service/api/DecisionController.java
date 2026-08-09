@@ -15,6 +15,7 @@ import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.time.Clock;
+import com.solovis.entitlement.service.time.Timestamps;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.Map;
@@ -57,7 +58,7 @@ public class DecisionController {
                 return new WholeAccountResponseDto.Entitlement(capability.key().value(), decision.allowed(), ValueMapper.toDto(decision.value()));
             }).toList();
         var body = new WholeAccountResponseDto(accountExternalId, account.planKey(), snapshot.snapshotVersion(),
-            clock.instant().toString(), entitlements);
+            Timestamps.iso(clock.instant()), entitlements);
         return ResponseEntity.ok().header("X-Entitlement-Snapshot-Version", String.valueOf(snapshot.snapshotVersion())).body(body);
     }
 

@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import java.time.Clock;
+import com.solovis.entitlement.service.time.Timestamps;
 
 /**
  * The one place a write path advances the model. Must be called from inside a {@code @Transactional}
@@ -40,7 +41,7 @@ public class SnapshotPublisher {
         long newVersion = current.snapshotVersion() + 1;
         Snapshot next = mutation.apply(current, newVersion);
         String deltaJson = DeltaJson.write(delta);
-        snapshotVersionRepository.insert(new SnapshotVersionRow(null, clock.instant().toString(), lastAuditSeq, deltaJson));
+        snapshotVersionRepository.insert(new SnapshotVersionRow(null, Timestamps.iso(clock.instant()), lastAuditSeq, deltaJson));
 
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override

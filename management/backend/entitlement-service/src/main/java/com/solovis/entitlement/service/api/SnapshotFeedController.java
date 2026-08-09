@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import java.time.Clock;
+import com.solovis.entitlement.service.time.Timestamps;
 import java.util.zip.GZIPOutputStream;
 
 @RestController
@@ -39,7 +40,7 @@ public class SnapshotFeedController {
         var snapshot = snapshotHolder.current();
         String publishedAt = snapshotVersionRepository.findByVersion(snapshot.snapshotVersion())
             .map(row -> row.publishedAt())
-            .orElseGet(() -> clock.instant().toString());
+            .orElseGet(() -> Timestamps.iso(clock.instant()));
         var body = new SnapshotVersionResponseDto(snapshot.snapshotVersion(), publishedAt, 1, ResolverContract.VERSION);
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(body);
     }

@@ -6,6 +6,7 @@ import com.solovis.entitlement.service.error.ErrorCode;
 import com.solovis.entitlement.service.store.SnapshotVersionRepository;
 import org.springframework.stereotype.Component;
 import java.time.Clock;
+import com.solovis.entitlement.service.time.Timestamps;
 import java.util.List;
 import java.util.Map;
 
@@ -32,14 +33,14 @@ public class DeltaFeedService {
                 Map.of("currentVersion", current));
         }
         if (since == current) {
-            return new SnapshotDeltaResponseDto(1, current, current, clock.instant().toString(), List.of());
+            return new SnapshotDeltaResponseDto(1, current, current, Timestamps.iso(clock.instant()), List.of());
         }
         var rows = snapshotVersionRepository.findSince(since, MAX_ROWS_PER_REQUEST);
         var changes = rows.stream()
             .map(row -> new SnapshotDeltaResponseDto.Change(row.version(), DeltaJson.read(row.deltaJson())))
             .toList();
         long toVersion = changes.isEmpty() ? current : changes.get(changes.size() - 1).version();
-        String publishedAt = rows.isEmpty() ? clock.instant().toString() : rows.get(rows.size() - 1).publishedAt();
+        String publishedAt = rows.isEmpty() ? Timestamps.iso(clock.instant()) : rows.get(rows.size() - 1).publishedAt();
         return new SnapshotDeltaResponseDto(1, since, toVersion, publishedAt, changes);
     }
 }

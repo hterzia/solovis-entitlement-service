@@ -19,6 +19,7 @@ import com.solovis.entitlement.service.store.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
+import com.solovis.entitlement.service.time.Timestamps;
 import java.util.*;
 
 @Service
@@ -70,7 +71,7 @@ public class AccountAdminService {
         }
         var defaultPlan = planRepository.findDefault()
             .orElseThrow(() -> new EntitlementApiException(ErrorCode.DEFAULT_PLAN_REQUIRED, "No default plan is designated."));
-        String now = clock.instant().toString();
+        String now = Timestamps.iso(clock.instant());
         var actor = actorResolver.currentActor();
         accountRepository.insert(new AccountRow(null, request.externalId(), request.name(), defaultPlan.id(), now,
             actor.kind().name(), actor.id(), "ACTIVE", now, now));
@@ -186,7 +187,7 @@ public class AccountAdminService {
         } catch (IllegalArgumentException e) {
             throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "Unknown actor source '" + source + "'.");
         }
-        String now = clock.instant().toString();
+        String now = Timestamps.iso(clock.instant());
         accountRepository.updatePlanAssignment(row.id(), targetPlan.id(), now, source, actorId, now);
         var assignment = new AccountAssignment(external, targetPlan.key());
 

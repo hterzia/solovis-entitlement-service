@@ -20,6 +20,7 @@ import com.solovis.entitlement.service.store.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
+import com.solovis.entitlement.service.time.Timestamps;
 import java.util.*;
 
 @Service
@@ -74,7 +75,7 @@ public class PlanAdminService {
         if (planRepository.findByKey(request.key()).isPresent()) {
             throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "Plan key '" + request.key() + "' is already declared.");
         }
-        String now = clock.instant().toString();
+        String now = Timestamps.iso(clock.instant());
         planRepository.insert(new PlanRow(null, request.key(), request.name(), request.description(), "ACTIVE", false, now, now));
         var plan = new Plan(request.key(), request.name(), Plan.Status.ACTIVE, false);
 
@@ -92,7 +93,7 @@ public class PlanAdminService {
         var row = requireRow(key);
         String name = request.name() != null ? request.name() : row.name();
         String description = request.description() != null ? request.description() : row.description();
-        String now = clock.instant().toString();
+        String now = Timestamps.iso(clock.instant());
         planRepository.update(row.id(), name, description, now);
         var plan = new Plan(key, name, Plan.Status.valueOf(row.status()), row.defaultForNewAccounts());
 
@@ -170,7 +171,7 @@ public class PlanAdminService {
                 "The preview token is missing or was computed against a different snapshot version.");
         }
 
-        String now = clock.instant().toString();
+        String now = Timestamps.iso(clock.instant());
         for (var entry : request.set().entrySet()) {
             var capRow = capabilityRepository.findByKey(entry.getKey()).orElseThrow();
             var capability = requireDomainCapability(entry.getKey());
@@ -214,7 +215,7 @@ public class PlanAdminService {
         if (row.defaultForNewAccounts()) {
             throw new EntitlementApiException(ErrorCode.DEFAULT_PLAN_REQUIRED, "Plan '" + key + "' is the default for new accounts.");
         }
-        String now = clock.instant().toString();
+        String now = Timestamps.iso(clock.instant());
         planRepository.archive(row.id(), now);
         var plan = new Plan(key, row.name(), Plan.Status.ARCHIVED, false);
 
@@ -229,7 +230,7 @@ public class PlanAdminService {
         if (!row.status().equals("ACTIVE")) {
             throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "Plan '" + key + "' is not ACTIVE.");
         }
-        String now = clock.instant().toString();
+        String now = Timestamps.iso(clock.instant());
         var previousDefault = planRepository.findDefault();
         planRepository.clearDefault(now);
         planRepository.setDefault(row.id(), now);

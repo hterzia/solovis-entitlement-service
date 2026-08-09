@@ -19,6 +19,7 @@ import com.solovis.entitlement.service.store.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
+import com.solovis.entitlement.service.time.Timestamps;
 import java.util.Optional;
 
 @Service
@@ -67,7 +68,7 @@ public class OverrideAdminService {
         try { kind = OverrideKind.valueOf(request.kind()); }
         catch (IllegalArgumentException e) { throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "Unknown override kind '" + request.kind() + "'."); }
 
-        String now = clock.instant().toString();
+        String now = Timestamps.iso(clock.instant());
         var actor = actorResolver.currentActor();
         var columns = ValueColumnCodec.toColumns(value);
         long id = accountOverrideRepository.insert(new AccountOverrideRow(null, accountRow.id(), capRow.id(), kind.name(),
@@ -100,7 +101,7 @@ public class OverrideAdminService {
         }
         var capRow = capabilityRepository.findById(overrideRow.capabilityId()).orElseThrow();
 
-        String now = clock.instant().toString();
+        String now = Timestamps.iso(clock.instant());
         var actor = actorResolver.currentActor();
         boolean removed = accountOverrideRepository.remove(id, now, actor.id(), removeReason);
         if (!removed) {

@@ -16,6 +16,7 @@ import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import com.solovis.entitlement.service.time.Timestamps;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -59,7 +60,7 @@ public class FullSnapshotWriter {
         }
 
         var header = Map.of("kind", "header", "version", snapshot.snapshotVersion(), "format", 1,
-            "resolverContract", ResolverContract.VERSION, "publishedAt", clock.instant().toString(),
+            "resolverContract", ResolverContract.VERSION, "publishedAt", Timestamps.iso(clock.instant()),
             "counts", Map.of("capabilities", capabilityCount, "plans", planCount,
                 "accounts", accountCount, "overrides", overrideCount));
         writer.println(mapper.writeValueAsString(header));

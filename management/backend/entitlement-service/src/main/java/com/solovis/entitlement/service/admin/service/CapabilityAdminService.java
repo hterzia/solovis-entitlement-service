@@ -19,6 +19,7 @@ import com.solovis.entitlement.service.store.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
+import com.solovis.entitlement.service.time.Timestamps;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -85,7 +86,7 @@ public class CapabilityAdminService {
         Capability capability = buildCapability(new CapabilityKey(request.key()), request.displayName(),
             request.description(), valueType, defaultValue, offValue, tierOrder, Capability.Status.ACTIVE, null);
 
-        String now = clock.instant().toString();
+        String now = Timestamps.iso(clock.instant());
         var columns = ValueColumnCodec.toColumns(defaultValue);
         var offColumns = offValue.map(ov -> ValueColumnCodec.toColumns(ov.value()));
         long id = capabilityRepository.insert(new CapabilityRow(null, capability.key().value(), capability.area(),
@@ -124,7 +125,7 @@ public class CapabilityAdminService {
         Capability updated = buildCapability(current.key(), displayName, description, current.valueType(),
             defaultValue, offValue, current.tierOrder(), current.status(), current.retiredAt());
 
-        String now = clock.instant().toString();
+        String now = Timestamps.iso(clock.instant());
         var columns = ValueColumnCodec.toColumns(defaultValue);
         var offColumns = offValue.map(ov -> ValueColumnCodec.toColumns(ov.value()));
         capabilityRepository.update(new CapabilityRow(row.id(), row.key(), row.area(), displayName, description,
@@ -181,7 +182,7 @@ public class CapabilityAdminService {
             throw new EntitlementApiException(ErrorCode.RETIRED_CAPABILITY, "Capability '" + key + "' is already retired.");
         }
         var row = capabilityRepository.findByKey(key).orElseThrow();
-        String now = clock.instant().toString();
+        String now = Timestamps.iso(clock.instant());
         boolean retired = capabilityRepository.retire(row.id(), now, now);
         if (!retired) {
             throw new EntitlementApiException(ErrorCode.RETIRED_CAPABILITY, "Capability '" + key + "' is already retired.");
