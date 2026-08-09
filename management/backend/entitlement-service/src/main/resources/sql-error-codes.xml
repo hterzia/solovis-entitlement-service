@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+       https://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <!--
+      Xerial sqlite-jdbc reports SQLException.getSQLState() as null for every constraint
+      violation, so Spring's SQLState fallback cannot classify them. Its vendor error code
+      IS reliable: SQLite's base result code SQLITE_CONSTRAINT (19) is returned by
+      getErrorCode() for every constraint kind (CHECK, UNIQUE, FOREIGN KEY, NOT NULL, and a
+      trigger's RAISE(ABORT, ...)); the driver only distinguishes them in the message text.
+      This file is Spring's documented extension point for a database its built-in
+      sql-error-codes.xml does not cover; SQLErrorCodesFactory merges it with the defaults,
+      matching on DatabaseMetaData.getDatabaseProductName(), which sqlite-jdbc reports as
+      exactly "SQLite" (verified empirically against 3.49.1.0).
+    -->
+    <bean id="SQLite" class="org.springframework.jdbc.support.SQLErrorCodes">
+        <property name="databaseProductName" value="SQLite"/>
+        <property name="badSqlGrammarCodes">
+            <value>1</value>
+        </property>
+        <property name="dataIntegrityViolationCodes">
+            <value>19</value>
+        </property>
+    </bean>
+
+</beans>
