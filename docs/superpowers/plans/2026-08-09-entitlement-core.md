@@ -1943,9 +1943,9 @@ class ResolverResolveTest {
 
     private static final CapabilityKey API_ACCESS = new CapabilityKey("api.access");
     private static final CapabilityKey REPORTS = new CapabilityKey("reports.monthly");
-    private static final CapabilityKey SEATS = new CapabilityKey("seats");
-    private static final CapabilityKey SUPPORT = new CapabilityKey("support");
-    private static final CapabilityKey SLA = new CapabilityKey("sla");
+    private static final CapabilityKey SEATS = new CapabilityKey("seats.count");
+    private static final CapabilityKey SUPPORT = new CapabilityKey("support.tier");
+    private static final CapabilityKey SLA = new CapabilityKey("sla.tier");
     private static final Instant NOW = Instant.parse("2026-08-09T14:03:11.482Z");
 
     private static Capability switchCapability(CapabilityKey key) {
@@ -2170,6 +2170,7 @@ import java.util.OptionalLong;
 import net.jqwik.api.ForAll;
 import net.jqwik.api.Property;
 import net.jqwik.api.constraints.IntRange;
+import net.jqwik.api.constraints.LongRange;
 import net.jqwik.api.constraints.Size;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -2184,7 +2185,7 @@ class ResolverOrderIndependencePropertyTest {
 
     @Property
     void resolutionIsInvariantUnderPermutationOfOverrides(
-        @ForAll @IntRange(min = 0, max = 1000) long planAmount,
+        @ForAll @LongRange(min = 0, max = 1000) long planAmount,
         @ForAll @Size(min = 0, max = 6) List<@IntRange(min = 0, max = 1000) Integer> grantAmounts,
         @ForAll @Size(min = 0, max = 6) List<@IntRange(min = 0, max = 1000) Integer> holdAmounts) {
 
@@ -2289,8 +2290,11 @@ public final class Resolver {
             }
         }
 
+        // capture a final copy — `result` above is reassigned in the loop, and javac rejects a
+        // lambda closing over a variable that isn't effectively final.
+        EntitlementValue finalResult = result;
         boolean allowed = capability.effectiveOffValue()
-            .map(off -> !off.equals(result))
+            .map(off -> !off.equals(finalResult))
             .orElse(true);
 
         return new Decision(accountExternalId, capabilityKey.value(), allowed, result, view.snapshotVersion(), evaluatedAt);
@@ -3148,20 +3152,20 @@ public record ConformanceVector(
     }
 
     private static ConformanceVector seatsVector(String name) {
-        var key = new CapabilityKey("seats");
+        var key = new CapabilityKey("seats.count");
         var fixture = new SnapshotBuilder()
             .capability(new Capability(key, "Seats", null, ValueType.QUANTITY,
                 EntitlementValue.Quantity.of(0), Optional.empty(), TierOrder.NONE, Capability.Status.ACTIVE, null))
             .plan(new Plan("enterprise", "Enterprise", Plan.Status.ACTIVE, false))
             .planEntitlement(new PlanEntitlement("enterprise", key, EntitlementValue.Quantity.unbounded()))
             .account(new AccountAssignment("acct_1", "enterprise"))
-            .override(hold("seats", 1, EntitlementValue.Quantity.of(100)))
+            .override(hold("seats.count", 1, EntitlementValue.Quantity.of(100)))
             .build(1);
         return new ConformanceVector(name, fixture, "acct_1", key, true, EntitlementValue.Quantity.of(100));
     }
 
     private static ConformanceVector supportTierVector(String name) {
-        var key = new CapabilityKey("support");
+        var key = new CapabilityKey("support.tier");
         var tiers = new TierOrder(List.of(
             new TierOrder.TierDefinition("community", 0, "Community"),
             new TierOrder.TierDefinition("gold", 1, "Gold")));
@@ -3175,7 +3179,7 @@ public record ConformanceVector(
     }
 
     private static ConformanceVector slaTierVector(String name) {
-        var key = new CapabilityKey("sla");
+        var key = new CapabilityKey("sla.tier");
         var tiers = new TierOrder(List.of(
             new TierOrder.TierDefinition("none", 0, "None"),
             new TierOrder.TierDefinition("standard", 1, "Standard")));
