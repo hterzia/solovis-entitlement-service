@@ -44,7 +44,7 @@ entitlement-core/src/main/java/com/solovis/entitlement/core/
 │   ├── Plan.java                    (nested Status)
 │   ├── PlanEntitlement.java
 │   ├── OverrideKind.java
-│   ├── Override.java
+│   ├── AccountOverride.java
 │   └── AccountAssignment.java
 ├── order/
 │   ├── Generosity.java
@@ -212,7 +212,7 @@ git commit -m "feat(entitlement-core): add unknown/retired error types"
 - Test: `entitlement-core/src/test/java/com/solovis/entitlement/core/model/EntitlementValueTest.java`
 
 **Interfaces:**
-- Produces: `ValueType` enum `{SWITCH, QUANTITY, TIER}`; `CapabilityKey(String value)` with `.area()`; sealed `EntitlementValue` with `valueType()` and nested `Switch(boolean enabled)`, `Quantity(long amount, boolean unlimited)` (factories `Quantity.of(long)`, `Quantity.unlimited()`), `Tier(String tierKey, int ordinal)`. These are consumed by every later task.
+- Produces: `ValueType` enum `{SWITCH, QUANTITY, TIER}`; `CapabilityKey(String value)` with `.area()`; sealed `EntitlementValue` with `valueType()` and nested `Switch(boolean enabled)`, `Quantity(long amount, boolean unlimited)` (factories `Quantity.of(long)`, `Quantity.unbounded()` — named `unbounded`, not `unlimited`, because Java rejects a static method sharing a zero-arg name with the record's auto-generated `unlimited()` accessor), `Tier(String tierKey, int ordinal)`. These are consumed by every later task.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -278,7 +278,7 @@ class EntitlementValueTest {
 
     @Test
     void quantityUnlimitedIsADistinctVariantNotALargeNumber() {
-        var value = EntitlementValue.Quantity.unlimited();
+        var value = EntitlementValue.Quantity.unbounded();
         assertThat(value.unlimited()).isTrue();
         assertThat(value.amount()).isZero(); // amount is not meaningful when unlimited — never Long.MAX_VALUE (c2)
     }
@@ -409,7 +409,7 @@ public sealed interface EntitlementValue
             return new Quantity(amount, false);
         }
 
-        public static Quantity unlimited() {
+        public static Quantity unbounded() {
             return new Quantity(0, true);
         }
 
@@ -501,14 +501,14 @@ class GenerosityTest {
     @Test
     void unlimitedIsMoreGenerousThanAnyFiniteAmount() {
         var large = EntitlementValue.Quantity.of(1_000_000_000L);
-        var unlimited = EntitlementValue.Quantity.unlimited();
+        var unlimited = EntitlementValue.Quantity.unbounded();
         assertThat(Generosity.compare(large, unlimited)).isNegative();
         assertThat(Generosity.mostGenerous(large, unlimited)).isEqualTo(unlimited);
     }
 
     @Test
     void twoUnlimitedQuantitiesAreEqual() {
-        assertThat(Generosity.compare(EntitlementValue.Quantity.unlimited(), EntitlementValue.Quantity.unlimited()))
+        assertThat(Generosity.compare(EntitlementValue.Quantity.unbounded(), EntitlementValue.Quantity.unbounded()))
             .isZero();
     }
 
@@ -845,6 +845,7 @@ git commit -m "feat(entitlement-core): add TierOrder and OffValue"
 ```java
 package com.solovis.entitlement.core.model;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -900,7 +901,7 @@ class CapabilityTest {
     void quantityOffValueMayNeverBeUnlimited() {
         assertThatThrownBy(() -> new Capability(
             new CapabilityKey("reports.monthly"), "Monthly reports", null, ValueType.QUANTITY,
-            EntitlementValue.Quantity.of(50), Optional.of(new OffValue(EntitlementValue.Quantity.unlimited())),
+            EntitlementValue.Quantity.of(50), Optional.of(new OffValue(EntitlementValue.Quantity.unbounded())),
             TierOrder.NONE, Capability.Status.ACTIVE, null))
             .isInstanceOf(IllegalArgumentException.class);
     }
@@ -911,6 +912,15 @@ class CapabilityTest {
             new CapabilityKey("reports.monthly"), "Monthly reports", null, ValueType.QUANTITY,
             EntitlementValue.Quantity.of(50), Optional.empty(), TierOrder.NONE, Capability.Status.ACTIVE, null);
         assertThat(capability.effectiveOffValue()).isEmpty();
+    }
+
+    @Test
+    void quantityOffValueOfZeroIsAccepted() {
+        var capability = new Capability(
+            new CapabilityKey("reports.monthly"), "Monthly reports", null, ValueType.QUANTITY,
+            EntitlementValue.Quantity.of(50), Optional.of(new OffValue(EntitlementValue.Quantity.of(0))),
+            TierOrder.NONE, Capability.Status.ACTIVE, null);
+        assertThat(capability.effectiveOffValue()).contains(EntitlementValue.Quantity.of(0));
     }
 
     @Test
@@ -934,6 +944,16 @@ class CapabilityTest {
 
     @Test
     void tierOffValueMustBeADeclaredTier() {
+        assertThatThrownBy(() -> new Capability(
+            new CapabilityKey("support.level"), "Support", null, ValueType.TIER,
+            new EntitlementValue.Tier("community", 0),
+            Optional.of(new OffValue(new EntitlementValue.Tier("platinum", 9))),
+            SUPPORT_TIERS, Capability.Status.ACTIVE, null))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void tierOffValueThatIsDeclaredIsAccepted() {
         var capability = new Capability(
             new CapabilityKey("support.level"), "Support", null, ValueType.TIER,
             new EntitlementValue.Tier("community", 0),
@@ -948,6 +968,24 @@ class CapabilityTest {
             new CapabilityKey("api.access"), "API access", null, ValueType.SWITCH,
             new EntitlementValue.Switch(false), Optional.empty(), TierOrder.NONE,
             Capability.Status.RETIRED, null))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void retiredCapabilityWithATimestampIsAccepted() {
+        var capability = new Capability(
+            new CapabilityKey("api.access"), "API access", null, ValueType.SWITCH,
+            new EntitlementValue.Switch(false), Optional.empty(), TierOrder.NONE,
+            Capability.Status.RETIRED, Instant.parse("2026-08-09T00:00:00Z"));
+        assertThat(capability.isRetired()).isTrue();
+    }
+
+    @Test
+    void activeCapabilityMustNotCarryARetiredAtTimestamp() {
+        assertThatThrownBy(() -> new Capability(
+            new CapabilityKey("api.access"), "API access", null, ValueType.SWITCH,
+            new EntitlementValue.Switch(false), Optional.empty(), TierOrder.NONE,
+            Capability.Status.ACTIVE, Instant.parse("2026-08-09T00:00:00Z")))
             .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -1098,20 +1136,20 @@ git commit -m "feat(entitlement-core): add Capability with §5 validation rules"
 
 ---
 
-### Task 6: `Plan`, `PlanEntitlement`, `OverrideKind`, `Override`, `AccountAssignment`
+### Task 6: `Plan`, `PlanEntitlement`, `OverrideKind`, `AccountOverride`, `AccountAssignment`
 
 **Files:**
 - Create: `entitlement-core/src/main/java/com/solovis/entitlement/core/model/Plan.java`
 - Create: `entitlement-core/src/main/java/com/solovis/entitlement/core/model/PlanEntitlement.java`
 - Create: `entitlement-core/src/main/java/com/solovis/entitlement/core/model/OverrideKind.java`
-- Create: `entitlement-core/src/main/java/com/solovis/entitlement/core/model/Override.java`
+- Create: `entitlement-core/src/main/java/com/solovis/entitlement/core/model/AccountOverride.java`
 - Create: `entitlement-core/src/main/java/com/solovis/entitlement/core/model/AccountAssignment.java`
 - Test: `entitlement-core/src/test/java/com/solovis/entitlement/core/model/PlanTest.java`
-- Test: `entitlement-core/src/test/java/com/solovis/entitlement/core/model/OverrideTest.java`
+- Test: `entitlement-core/src/test/java/com/solovis/entitlement/core/model/AccountOverrideTest.java`
 
 **Interfaces:**
 - Consumes: `CapabilityKey`, `EntitlementValue` (Task 2).
-- Produces: `Plan(String key, String name, Status status, boolean defaultForNewAccounts)`; `PlanEntitlement(String planKey, CapabilityKey capabilityKey, EntitlementValue value)`; `OverrideKind {GRANT, HOLD}`; `Override(OptionalLong id, String accountExternalId, CapabilityKey capabilityKey, OverrideKind kind, EntitlementValue value, Optional<String> reason, Optional<String> createdBy, Optional<Instant> createdAt)` — the metadata fields are `Optional`/absent for a client-side replica, always present when built by the management service (research.md §2, data-model.md `delta_json` note); `AccountAssignment(String accountExternalId, String planKey)`. Consumed by `EntitlementView`/`Snapshot` (Task 8) and `Resolver` (Tasks 10–11).
+- Produces: `Plan(String key, String name, Status status, boolean defaultForNewAccounts)`; `PlanEntitlement(String planKey, CapabilityKey capabilityKey, EntitlementValue value)`; `OverrideKind {GRANT, HOLD}`; `AccountOverride(OptionalLong id, String accountExternalId, CapabilityKey capabilityKey, OverrideKind kind, EntitlementValue value, Optional<String> reason, Optional<String> createdBy, Optional<Instant> createdAt)` — the metadata fields are `Optional`/absent for a client-side replica, always present when built by the management service (research.md §2, data-model.md `delta_json` note); `AccountAssignment(String accountExternalId, String planKey)`. Consumed by `EntitlementView`/`Snapshot` (Task 8) and `Resolver` (Tasks 10–11).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1155,11 +1193,11 @@ import java.util.OptionalLong;
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
-class OverrideTest {
+class AccountOverrideTest {
 
     @Test
     void fullOverrideAsBuiltByTheManagementServiceCarriesEveryField() {
-        var override = new Override(
+        var override = new AccountOverride(
             OptionalLong.of(4471), "acct_9931", new CapabilityKey("reports.monthly"),
             OverrideKind.GRANT, EntitlementValue.Quantity.of(200),
             Optional.of("Renewal concession"), Optional.of("j.okafor"), Optional.of(Instant.parse("2026-06-02T09:12:44Z")));
@@ -1170,7 +1208,7 @@ class OverrideTest {
 
     @Test
     void projectedOverrideAsCarriedByAReplicaOmitsMetadata() {
-        var override = new Override(
+        var override = new AccountOverride(
             OptionalLong.empty(), "acct_9931", new CapabilityKey("reports.monthly"),
             OverrideKind.HOLD, EntitlementValue.Quantity.of(0),
             Optional.empty(), Optional.empty(), Optional.empty());
@@ -1191,7 +1229,7 @@ class OverrideTest {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `./mvnw -q -pl entitlement-core -am test -Dtest=PlanTest,OverrideTest`
+Run: `./mvnw -q -pl entitlement-core -am test -Dtest=PlanTest,AccountOverrideTest`
 Expected: FAIL to compile.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -1258,7 +1296,7 @@ import java.util.OptionalLong;
  * com.solovis.entitlement.core.engine.Resolver#resolve} never reads them; only {@code explain}
  * does.
  */
-public record Override(
+public record AccountOverride(
     OptionalLong id,
     String accountExternalId,
     CapabilityKey capabilityKey,
@@ -1269,7 +1307,7 @@ public record Override(
     Optional<Instant> createdAt
 ) {
 
-    public Override {
+    public AccountOverride {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(accountExternalId, "accountExternalId");
         Objects.requireNonNull(capabilityKey, "capabilityKey");
@@ -1299,7 +1337,7 @@ public record AccountAssignment(String accountExternalId, String planKey) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `./mvnw -q -pl entitlement-core -am test -Dtest=PlanTest,OverrideTest`
+Run: `./mvnw -q -pl entitlement-core -am test -Dtest=PlanTest,AccountOverrideTest`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -1308,11 +1346,11 @@ Expected: PASS
 git add management/backend/entitlement-core/src/main/java/com/solovis/entitlement/core/model/Plan.java \
         management/backend/entitlement-core/src/main/java/com/solovis/entitlement/core/model/PlanEntitlement.java \
         management/backend/entitlement-core/src/main/java/com/solovis/entitlement/core/model/OverrideKind.java \
-        management/backend/entitlement-core/src/main/java/com/solovis/entitlement/core/model/Override.java \
+        management/backend/entitlement-core/src/main/java/com/solovis/entitlement/core/model/AccountOverride.java \
         management/backend/entitlement-core/src/main/java/com/solovis/entitlement/core/model/AccountAssignment.java \
         management/backend/entitlement-core/src/test/java/com/solovis/entitlement/core/model/PlanTest.java \
-        management/backend/entitlement-core/src/test/java/com/solovis/entitlement/core/model/OverrideTest.java
-git commit -m "feat(entitlement-core): add Plan, PlanEntitlement, Override, AccountAssignment"
+        management/backend/entitlement-core/src/test/java/com/solovis/entitlement/core/model/AccountOverrideTest.java
+git commit -m "feat(entitlement-core): add Plan, PlanEntitlement, AccountOverride, AccountAssignment"
 ```
 
 ---
@@ -1323,7 +1361,7 @@ git commit -m "feat(entitlement-core): add Plan, PlanEntitlement, Override, Acco
 - Create: `entitlement-core/src/main/java/com/solovis/entitlement/core/view/EntitlementView.java`
 
 **Interfaces:**
-- Consumes: `Capability`, `CapabilityKey`, `AccountAssignment`, `PlanEntitlement`, `Override` (Tasks 5–6).
+- Consumes: `Capability`, `CapabilityKey`, `AccountAssignment`, `PlanEntitlement`, `AccountOverride` (Tasks 5–6).
 - Produces: the read contract `Resolver` (Task 10) and `Snapshot` (Task 8) both depend on. No behaviour to test in isolation — an interface with no default methods; correctness is exercised through `Snapshot` and `Resolver` tests.
 
 - [ ] **Step 1: Write the interface (no test — pure contract, exercised by later tasks)**
@@ -1334,7 +1372,7 @@ package com.solovis.entitlement.core.view;
 import com.solovis.entitlement.core.model.AccountAssignment;
 import com.solovis.entitlement.core.model.Capability;
 import com.solovis.entitlement.core.model.CapabilityKey;
-import com.solovis.entitlement.core.model.Override;
+import com.solovis.entitlement.core.model.AccountOverride;
 import com.solovis.entitlement.core.model.PlanEntitlement;
 import java.util.Collection;
 import java.util.List;
@@ -1359,7 +1397,7 @@ public interface EntitlementView {
     Optional<PlanEntitlement> planEntitlement(String planKey, CapabilityKey capabilityKey);
 
     /** Every LIVE override of either kind for this account and capability (§4). */
-    List<Override> liveOverrides(String accountExternalId, CapabilityKey capabilityKey);
+    List<AccountOverride> liveOverrides(String accountExternalId, CapabilityKey capabilityKey);
 }
 ```
 
@@ -1385,8 +1423,8 @@ git commit -m "feat(entitlement-core): add EntitlementView read contract"
 - Test: `entitlement-core/src/test/java/com/solovis/entitlement/core/view/SnapshotBuilderTest.java`
 
 **Interfaces:**
-- Consumes: `Capability`, `Plan`, `PlanEntitlement`, `AccountAssignment`, `Override`, `EntitlementView` (Tasks 5–7).
-- Produces: `Snapshot implements EntitlementView`, immutable; `SnapshotBuilder` with `.capability(Capability)`, `.plan(Plan)`, `.planEntitlement(PlanEntitlement)`, `.account(AccountAssignment)`, `.override(Override)`, `.build(long version): Snapshot`. Consumed by `Resolver` tests (Tasks 10–11) and `SnapshotMutator` (Task 12).
+- Consumes: `Capability`, `Plan`, `PlanEntitlement`, `AccountAssignment`, `AccountOverride`, `EntitlementView` (Tasks 5–7).
+- Produces: `Snapshot implements EntitlementView`, immutable; `SnapshotBuilder` with `.capability(Capability)`, `.plan(Plan)`, `.planEntitlement(PlanEntitlement)`, `.account(AccountAssignment)`, `.override(AccountOverride)`, `.build(long version): Snapshot`. Consumed by `Resolver` tests (Tasks 10–11) and `SnapshotMutator` (Task 12).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1397,7 +1435,7 @@ import com.solovis.entitlement.core.model.AccountAssignment;
 import com.solovis.entitlement.core.model.Capability;
 import com.solovis.entitlement.core.model.CapabilityKey;
 import com.solovis.entitlement.core.model.EntitlementValue;
-import com.solovis.entitlement.core.model.Override;
+import com.solovis.entitlement.core.model.AccountOverride;
 import com.solovis.entitlement.core.model.OverrideKind;
 import com.solovis.entitlement.core.model.Plan;
 import com.solovis.entitlement.core.model.PlanEntitlement;
@@ -1423,7 +1461,7 @@ class SnapshotBuilderTest {
             .plan(new Plan("pro", "Pro", Plan.Status.ACTIVE, true))
             .planEntitlement(new PlanEntitlement("pro", REPORTS, EntitlementValue.Quantity.of(50)))
             .account(new AccountAssignment("acct_9931", "pro"))
-            .override(new Override(OptionalLong.of(1), "acct_9931", REPORTS, OverrideKind.GRANT,
+            .override(new AccountOverride(OptionalLong.of(1), "acct_9931", REPORTS, OverrideKind.GRANT,
                 EntitlementValue.Quantity.of(200), Optional.of("goodwill"), Optional.of("s.patel"), Optional.empty()))
             .build(1);
 
@@ -1472,7 +1510,7 @@ package com.solovis.entitlement.core.view;
 import com.solovis.entitlement.core.model.AccountAssignment;
 import com.solovis.entitlement.core.model.Capability;
 import com.solovis.entitlement.core.model.CapabilityKey;
-import com.solovis.entitlement.core.model.Override;
+import com.solovis.entitlement.core.model.AccountOverride;
 import com.solovis.entitlement.core.model.Plan;
 import com.solovis.entitlement.core.model.PlanEntitlement;
 import java.util.Collection;
@@ -1493,7 +1531,7 @@ public final class Snapshot implements EntitlementView {
     private final Map<String, Plan> plans;
     private final Map<PlanCapabilityKey, PlanEntitlement> planEntitlements;
     private final Map<String, AccountAssignment> accounts;
-    private final Map<AccountCapabilityKey, List<Override>> liveOverrides;
+    private final Map<AccountCapabilityKey, List<AccountOverride>> liveOverrides;
 
     Snapshot(
         long version,
@@ -1501,7 +1539,7 @@ public final class Snapshot implements EntitlementView {
         Map<String, Plan> plans,
         Map<PlanCapabilityKey, PlanEntitlement> planEntitlements,
         Map<String, AccountAssignment> accounts,
-        Map<AccountCapabilityKey, List<Override>> liveOverrides) {
+        Map<AccountCapabilityKey, List<AccountOverride>> liveOverrides) {
         this.version = version;
         this.capabilities = capabilities;
         this.plans = plans;
@@ -1536,7 +1574,7 @@ public final class Snapshot implements EntitlementView {
     }
 
     @Override
-    public List<Override> liveOverrides(String accountExternalId, CapabilityKey capabilityKey) {
+    public List<AccountOverride> liveOverrides(String accountExternalId, CapabilityKey capabilityKey) {
         return liveOverrides.getOrDefault(new AccountCapabilityKey(accountExternalId, capabilityKey), List.of());
     }
 
@@ -1549,7 +1587,7 @@ public final class Snapshot implements EntitlementView {
     Map<String, Plan> plansMap() { return plans; }
     Map<PlanCapabilityKey, PlanEntitlement> planEntitlementsMap() { return planEntitlements; }
     Map<String, AccountAssignment> accountsMap() { return accounts; }
-    Map<AccountCapabilityKey, List<Override>> liveOverridesMap() { return liveOverrides; }
+    Map<AccountCapabilityKey, List<AccountOverride>> liveOverridesMap() { return liveOverrides; }
 
     record PlanCapabilityKey(String planKey, CapabilityKey capabilityKey) {}
 
@@ -1563,7 +1601,7 @@ package com.solovis.entitlement.core.view;
 import com.solovis.entitlement.core.model.AccountAssignment;
 import com.solovis.entitlement.core.model.Capability;
 import com.solovis.entitlement.core.model.CapabilityKey;
-import com.solovis.entitlement.core.model.Override;
+import com.solovis.entitlement.core.model.AccountOverride;
 import com.solovis.entitlement.core.model.Plan;
 import com.solovis.entitlement.core.model.PlanEntitlement;
 import java.util.ArrayList;
@@ -1578,7 +1616,7 @@ public final class SnapshotBuilder {
     private final Map<String, Plan> plans = new HashMap<>();
     private final Map<Snapshot.PlanCapabilityKey, PlanEntitlement> planEntitlements = new HashMap<>();
     private final Map<String, AccountAssignment> accounts = new HashMap<>();
-    private final Map<Snapshot.AccountCapabilityKey, List<Override>> liveOverrides = new HashMap<>();
+    private final Map<Snapshot.AccountCapabilityKey, List<AccountOverride>> liveOverrides = new HashMap<>();
 
     public SnapshotBuilder capability(Capability capability) {
         capabilities.put(capability.key(), capability);
@@ -1601,14 +1639,14 @@ public final class SnapshotBuilder {
         return this;
     }
 
-    public SnapshotBuilder override(Override override) {
+    public SnapshotBuilder override(AccountOverride override) {
         var key = new Snapshot.AccountCapabilityKey(override.accountExternalId(), override.capabilityKey());
         liveOverrides.computeIfAbsent(key, k -> new ArrayList<>()).add(override);
         return this;
     }
 
     public Snapshot build(long version) {
-        var frozenOverrides = new HashMap<Snapshot.AccountCapabilityKey, List<Override>>();
+        var frozenOverrides = new HashMap<Snapshot.AccountCapabilityKey, List<AccountOverride>>();
         liveOverrides.forEach((key, value) -> frozenOverrides.put(key, List.copyOf(value)));
         return new Snapshot(
             version,
@@ -1865,12 +1903,11 @@ git commit -m "feat(entitlement-core): add Decision, Trace and Explanation shape
 
 **Files:**
 - Create: `entitlement-core/src/main/java/com/solovis/entitlement/core/engine/Resolver.java`
-- Create: `entitlement-core/src/main/java/com/solovis/entitlement/core/model/OffValueFactory.java` (small test-construction convenience introduced by this task's test, detailed in Step 1)
 - Test: `entitlement-core/src/test/java/com/solovis/entitlement/core/engine/ResolverResolveTest.java`
 - Test: `entitlement-core/src/test/java/com/solovis/entitlement/core/engine/ResolverOrderIndependencePropertyTest.java`
 
 **Interfaces:**
-- Consumes: `EntitlementView`, `Snapshot`, `SnapshotBuilder` (Tasks 7–8); `Capability`, `Override`, `OverrideKind`, `EntitlementValue`, `CapabilityKey` (model); `Generosity` (Task 3); `Decision` (Task 9); `UnknownAccountException`, `UnknownCapabilityException`, `RetiredCapabilityException` (Task 1).
+- Consumes: `EntitlementView`, `Snapshot`, `SnapshotBuilder` (Tasks 7–8); `Capability`, `AccountOverride`, `OverrideKind`, `EntitlementValue`, `CapabilityKey` (model); `Generosity` (Task 3); `Decision` (Task 9); `UnknownAccountException`, `UnknownCapabilityException`, `RetiredCapabilityException` (Task 1).
 - Produces: `Resolver.resolve(EntitlementView view, String accountExternalId, CapabilityKey capabilityKey, Instant evaluatedAt): Decision`. Task 11 adds `Resolver.explain(...)` to the same class, sharing this method's arithmetic.
 
 - [ ] **Step 1: Write the failing test — the §5 worked-examples table plus criteria 10–20**
@@ -1885,7 +1922,8 @@ import com.solovis.entitlement.core.model.AccountAssignment;
 import com.solovis.entitlement.core.model.Capability;
 import com.solovis.entitlement.core.model.CapabilityKey;
 import com.solovis.entitlement.core.model.EntitlementValue;
-import com.solovis.entitlement.core.model.Override;
+import com.solovis.entitlement.core.model.OffValue;
+import com.solovis.entitlement.core.model.AccountOverride;
 import com.solovis.entitlement.core.model.OverrideKind;
 import com.solovis.entitlement.core.model.Plan;
 import com.solovis.entitlement.core.model.PlanEntitlement;
@@ -1920,13 +1958,13 @@ class ResolverResolveTest {
             defaultValue, Optional.empty(), TierOrder.NONE, Capability.Status.ACTIVE, null);
     }
 
-    private static Override grant(CapabilityKey key, long id, EntitlementValue value) {
-        return new Override(OptionalLong.of(id), "acct_1", key, OverrideKind.GRANT, value,
+    private static AccountOverride grant(CapabilityKey key, long id, EntitlementValue value) {
+        return new AccountOverride(OptionalLong.of(id), "acct_1", key, OverrideKind.GRANT, value,
             Optional.of("reason"), Optional.of("actor"), Optional.of(NOW));
     }
 
-    private static Override hold(CapabilityKey key, long id, EntitlementValue value) {
-        return new Override(OptionalLong.of(id), "acct_1", key, OverrideKind.HOLD, value,
+    private static AccountOverride hold(CapabilityKey key, long id, EntitlementValue value) {
+        return new AccountOverride(OptionalLong.of(id), "acct_1", key, OverrideKind.HOLD, value,
             Optional.of("reason"), Optional.of("actor"), Optional.of(NOW));
     }
 
@@ -2020,7 +2058,7 @@ class ResolverResolveTest {
         var snapshot = new SnapshotBuilder()
             .capability(quantityCapability(SEATS, EntitlementValue.Quantity.of(0)))
             .plan(new Plan("enterprise", "Enterprise", Plan.Status.ACTIVE, false))
-            .planEntitlement(new PlanEntitlement("enterprise", SEATS, EntitlementValue.Quantity.unlimited()))
+            .planEntitlement(new PlanEntitlement("enterprise", SEATS, EntitlementValue.Quantity.unbounded()))
             .account(new AccountAssignment("acct_1", "enterprise"))
             .override(hold(SEATS, 1, EntitlementValue.Quantity.of(100)))
             .build(1);
@@ -2053,7 +2091,7 @@ class ResolverResolveTest {
             new TierOrder.TierDefinition("standard", 1, "Standard")));
         var capability = new Capability(SLA, "SLA", null, ValueType.TIER,
             new EntitlementValue.Tier("none", 0),
-            Optional.of(com.solovis.entitlement.core.model.OffValueFactory.tier("none")),
+            Optional.of(new OffValue(new EntitlementValue.Tier("none", 0))),
             tiers, Capability.Status.ACTIVE, null);
         var snapshot = new SnapshotBuilder()
             .capability(capability)
@@ -2108,29 +2146,6 @@ class ResolverResolveTest {
 }
 ```
 
-This test references a small helper, `OffValueFactory.tier(String)`, to keep the off-value construction call sites short. Add it to `entitlement-core/src/main/java/com/solovis/entitlement/core/model/OffValueFactory.java` in this same step:
-
-```java
-package com.solovis.entitlement.core.model;
-
-/** Convenience constructors for {@link OffValue} — no validation beyond what {@link Capability} already enforces. */
-public final class OffValueFactory {
-
-    private OffValueFactory() {}
-
-    public static OffValue quantityZero() {
-        return new OffValue(EntitlementValue.Quantity.of(0));
-    }
-
-    public static OffValue tier(String tierKey) {
-        // Ordinal is resolved by Capability's own validation against its TierOrder; 0 here is a
-        // placeholder that Capability's constructor would reject if the tier truly were ordinal-sensitive
-        // at this call site — callers building real data supply the tier's real ordinal instead.
-        return new OffValue(new EntitlementValue.Tier(tierKey, 0));
-    }
-}
-```
-
 Now write the property test for order independence (c12, c13, c16):
 
 ```java
@@ -2140,7 +2155,7 @@ import com.solovis.entitlement.core.model.AccountAssignment;
 import com.solovis.entitlement.core.model.Capability;
 import com.solovis.entitlement.core.model.CapabilityKey;
 import com.solovis.entitlement.core.model.EntitlementValue;
-import com.solovis.entitlement.core.model.Override;
+import com.solovis.entitlement.core.model.AccountOverride;
 import com.solovis.entitlement.core.model.OverrideKind;
 import com.solovis.entitlement.core.model.Plan;
 import com.solovis.entitlement.core.model.PlanEntitlement;
@@ -2173,7 +2188,7 @@ class ResolverOrderIndependencePropertyTest {
         @ForAll @Size(min = 0, max = 6) List<@IntRange(min = 0, max = 1000) Integer> grantAmounts,
         @ForAll @Size(min = 0, max = 6) List<@IntRange(min = 0, max = 1000) Integer> holdAmounts) {
 
-        var overrides = new java.util.ArrayList<Override>();
+        var overrides = new java.util.ArrayList<AccountOverride>();
         long id = 1;
         for (int amount : grantAmounts) {
             overrides.add(override(id++, OverrideKind.GRANT, amount));
@@ -2191,12 +2206,12 @@ class ResolverOrderIndependencePropertyTest {
         }
     }
 
-    private static Override override(long id, OverrideKind kind, int amount) {
-        return new Override(OptionalLong.of(id), "acct_1", REPORTS, kind, EntitlementValue.Quantity.of(amount),
+    private static AccountOverride override(long id, OverrideKind kind, int amount) {
+        return new AccountOverride(OptionalLong.of(id), "acct_1", REPORTS, kind, EntitlementValue.Quantity.of(amount),
             Optional.of("reason"), Optional.of("actor"), Optional.of(Instant.now()));
     }
 
-    private static EntitlementValue resolveWith(long planAmount, List<Override> overrides) {
+    private static EntitlementValue resolveWith(long planAmount, List<AccountOverride> overrides) {
         var builder = new SnapshotBuilder()
             .capability(new Capability(REPORTS, "Monthly reports", null, ValueType.QUANTITY,
                 EntitlementValue.Quantity.of(0), Optional.empty(), TierOrder.NONE, Capability.Status.ACTIVE, null))
@@ -2225,7 +2240,7 @@ import com.solovis.entitlement.core.error.UnknownCapabilityException;
 import com.solovis.entitlement.core.model.Capability;
 import com.solovis.entitlement.core.model.CapabilityKey;
 import com.solovis.entitlement.core.model.EntitlementValue;
-import com.solovis.entitlement.core.model.Override;
+import com.solovis.entitlement.core.model.AccountOverride;
 import com.solovis.entitlement.core.model.OverrideKind;
 import com.solovis.entitlement.core.order.Generosity;
 import com.solovis.entitlement.core.view.EntitlementView;
@@ -2258,7 +2273,7 @@ public final class Resolver {
             .map(pe -> pe.value())
             .orElse(capability.defaultValue());
 
-        List<Override> overrides = view.liveOverrides(accountExternalId, capabilityKey);
+        List<AccountOverride> overrides = view.liveOverrides(accountExternalId, capabilityKey);
 
         EntitlementValue afterGrants = baseline;
         for (var override : overrides) {
@@ -2291,8 +2306,7 @@ Expected: PASS. jqwik's `@Property` runs 1000 generated cases by default (each w
 - [ ] **Step 5: Commit**
 
 ```bash
-git add management/backend/entitlement-core/src/main/java/com/solovis/entitlement/core/model/OffValueFactory.java \
-        management/backend/entitlement-core/src/main/java/com/solovis/entitlement/core/engine/Resolver.java \
+git add management/backend/entitlement-core/src/main/java/com/solovis/entitlement/core/engine/Resolver.java \
         management/backend/entitlement-core/src/test/java/com/solovis/entitlement/core/engine/ResolverResolveTest.java \
         management/backend/entitlement-core/src/test/java/com/solovis/entitlement/core/engine/ResolverOrderIndependencePropertyTest.java
 git commit -m "feat(entitlement-core): implement Resolver.resolve() per spec §4/§5"
@@ -2319,7 +2333,7 @@ import com.solovis.entitlement.core.model.AccountAssignment;
 import com.solovis.entitlement.core.model.Capability;
 import com.solovis.entitlement.core.model.CapabilityKey;
 import com.solovis.entitlement.core.model.EntitlementValue;
-import com.solovis.entitlement.core.model.Override;
+import com.solovis.entitlement.core.model.AccountOverride;
 import com.solovis.entitlement.core.model.OverrideKind;
 import com.solovis.entitlement.core.model.Plan;
 import com.solovis.entitlement.core.model.PlanEntitlement;
@@ -2341,13 +2355,13 @@ class ResolverExplainTest {
     // hold 0 (wins) — matching the criteria-21-through-24 trace shape.
     @Test
     void tracesTheFullDecisionApiWorkedExample() {
-        var winningGrant = new Override(OptionalLong.of(4471), "acct_9931", REPORTS, OverrideKind.GRANT,
+        var winningGrant = new AccountOverride(OptionalLong.of(4471), "acct_9931", REPORTS, OverrideKind.GRANT,
             EntitlementValue.Quantity.of(200), Optional.of("Renewal concession — Q3 pilot"),
             Optional.of("j.okafor"), Optional.of(Instant.parse("2026-06-02T09:12:44.000Z")));
-        var losingGrant = new Override(OptionalLong.of(2210), "acct_9931", REPORTS, OverrideKind.GRANT,
+        var losingGrant = new AccountOverride(OptionalLong.of(2210), "acct_9931", REPORTS, OverrideKind.GRANT,
             EntitlementValue.Quantity.of(120), Optional.of("Migration goodwill"),
             Optional.of("s.patel"), Optional.of(Instant.parse("2026-03-18T16:40:02.000Z")));
-        var winningHold = new Override(OptionalLong.of(7788), "acct_9931", REPORTS, OverrideKind.HOLD,
+        var winningHold = new AccountOverride(OptionalLong.of(7788), "acct_9931", REPORTS, OverrideKind.HOLD,
             EntitlementValue.Quantity.of(0), Optional.of("Suspended pending billing investigation"),
             Optional.of("billing-bot"), Optional.of(Instant.parse("2026-08-01T02:00:00.000Z")));
 
@@ -2405,9 +2419,9 @@ class ResolverExplainTest {
 
     @Test
     void tiedGrantsAreWonByTheHighestOverrideId() {
-        var older = new Override(OptionalLong.of(1), "acct_1", REPORTS, OverrideKind.GRANT,
+        var older = new AccountOverride(OptionalLong.of(1), "acct_1", REPORTS, OverrideKind.GRANT,
             EntitlementValue.Quantity.of(200), Optional.of("r1"), Optional.of("a1"), Optional.of(NOW));
-        var newer = new Override(OptionalLong.of(2), "acct_1", REPORTS, OverrideKind.GRANT,
+        var newer = new AccountOverride(OptionalLong.of(2), "acct_1", REPORTS, OverrideKind.GRANT,
             EntitlementValue.Quantity.of(200), Optional.of("r2"), Optional.of("a2"), Optional.of(NOW));
 
         var snapshot = new SnapshotBuilder()
@@ -2425,7 +2439,7 @@ class ResolverExplainTest {
 
     @Test
     void grantThatDoesNotBeatThePlanIsMarkedLostNotMoreGenerousThanPlan() {
-        var onlyGrant = new Override(OptionalLong.of(1), "acct_1", REPORTS, OverrideKind.GRANT,
+        var onlyGrant = new AccountOverride(OptionalLong.of(1), "acct_1", REPORTS, OverrideKind.GRANT,
             EntitlementValue.Quantity.of(100), Optional.of("r"), Optional.of("a"), Optional.of(NOW));
 
         var snapshot = new SnapshotBuilder()
@@ -2447,8 +2461,8 @@ class ResolverExplainTest {
 
     @Test
     void theMostRestrictiveHoldIsMarkedWonEvenWhenItDoesNotChangeTheResult() {
-        var harmlessHold = new Override(OptionalLong.of(1), "acct_1", REPORTS, OverrideKind.HOLD,
-            EntitlementValue.Quantity.unlimited(), Optional.of("contract floor"), Optional.of("a"), Optional.of(NOW));
+        var harmlessHold = new AccountOverride(OptionalLong.of(1), "acct_1", REPORTS, OverrideKind.HOLD,
+            EntitlementValue.Quantity.unbounded(), Optional.of("contract floor"), Optional.of("a"), Optional.of(NOW));
 
         var snapshot = new SnapshotBuilder()
             .capability(new Capability(REPORTS, "Monthly reports", null, ValueType.QUANTITY,
@@ -2475,7 +2489,7 @@ class ResolverExplainTest {
             .plan(new Plan("pro", "Pro", Plan.Status.ACTIVE, false))
             .planEntitlement(new PlanEntitlement("pro", REPORTS, EntitlementValue.Quantity.of(50)))
             .account(new AccountAssignment("acct_1", "pro"))
-            .override(new Override(OptionalLong.of(1), "acct_1", REPORTS, OverrideKind.GRANT,
+            .override(new AccountOverride(OptionalLong.of(1), "acct_1", REPORTS, OverrideKind.GRANT,
                 EntitlementValue.Quantity.of(200), Optional.of("r"), Optional.of("a"), Optional.of(NOW)))
             .build(1);
 
@@ -2506,7 +2520,7 @@ import com.solovis.entitlement.core.model.AccountAssignment;
 import com.solovis.entitlement.core.model.Capability;
 import com.solovis.entitlement.core.model.CapabilityKey;
 import com.solovis.entitlement.core.model.EntitlementValue;
-import com.solovis.entitlement.core.model.Override;
+import com.solovis.entitlement.core.model.AccountOverride;
 import com.solovis.entitlement.core.model.OverrideKind;
 import com.solovis.entitlement.core.order.Generosity;
 import com.solovis.entitlement.core.view.EntitlementView;
@@ -2605,12 +2619,12 @@ public final class Resolver {
         TraceSource baselineSource = planEntitlement.isPresent() ? TraceSource.PLAN : TraceSource.CAPABILITY_DEFAULT;
         Optional<String> baselinePlanKey = planEntitlement.isPresent() ? Optional.of(account.planKey()) : Optional.empty();
 
-        List<Override> overrides = view.liveOverrides(accountExternalId, capabilityKey);
+        List<AccountOverride> overrides = view.liveOverrides(accountExternalId, capabilityKey);
         return new Lookup(capability, baseline, baselineSource, baselinePlanKey, overrides);
     }
 
-    private static List<Override> candidatesOfKind(List<Override> overrides, OverrideKind kind) {
-        var result = new ArrayList<Override>();
+    private static List<AccountOverride> candidatesOfKind(List<AccountOverride> overrides, OverrideKind kind) {
+        var result = new ArrayList<AccountOverride>();
         for (var override : overrides) {
             if (override.kind() == kind) {
                 result.add(override);
@@ -2627,8 +2641,8 @@ public final class Resolver {
      * result (beats the plan, or restricts below the post-grant value) is a separate question,
      * decided by the caller against the baseline it is being compared to.
      */
-    private static Optional<Override> pickWinner(List<Override> candidates, boolean generous) {
-        Override winner = null;
+    private static Optional<AccountOverride> pickWinner(List<AccountOverride> candidates, boolean generous) {
+        AccountOverride winner = null;
         for (var candidate : candidates) {
             if (winner == null) {
                 winner = candidate;
@@ -2649,7 +2663,7 @@ public final class Resolver {
      * candidate gets {@code WON} only if it actually beat the plan ({@code applied}); every other
      * candidate lost to it and is marked accordingly (c23 — denial explained as fully as a grant).
      */
-    private static List<TraceEntry> grantTraceEntries(List<Override> candidates, Optional<Override> top, boolean applied) {
+    private static List<TraceEntry> grantTraceEntries(List<AccountOverride> candidates, Optional<AccountOverride> top, boolean applied) {
         var entries = new ArrayList<TraceEntry>();
         for (var candidate : candidates) {
             boolean isTop = top.isPresent() && top.get().id().equals(candidate.id());
@@ -2666,7 +2680,7 @@ public final class Resolver {
      * change the result — {@code holdWinner} being empty on {@link Trace} is what records that it
      * did not apply (decision-api.md, "Ties are deterministic").
      */
-    private static List<TraceEntry> holdTraceEntries(List<Override> candidates, Optional<Override> top) {
+    private static List<TraceEntry> holdTraceEntries(List<AccountOverride> candidates, Optional<AccountOverride> top) {
         var entries = new ArrayList<TraceEntry>();
         for (var candidate : candidates) {
             boolean isTop = top.isPresent() && top.get().id().equals(candidate.id());
@@ -2676,7 +2690,7 @@ public final class Resolver {
         return entries;
     }
 
-    private static TraceEntry toTraceEntry(Override candidate, Outcome outcome) {
+    private static TraceEntry toTraceEntry(AccountOverride candidate, Outcome outcome) {
         return new TraceEntry(
             TraceSource.PLAN, candidate.id(), Optional.empty(), candidate.value(),
             candidate.reason(), candidate.createdBy(), candidate.createdAt(), Optional.of(outcome));
@@ -2687,7 +2701,7 @@ public final class Resolver {
         EntitlementValue baseline,
         TraceSource baselineSource,
         Optional<String> baselinePlanKey,
-        List<Override> overrides) {}
+        List<AccountOverride> overrides) {}
 }
 ```
 
@@ -2715,7 +2729,7 @@ git commit -m "feat(entitlement-core): implement Resolver.explain() sharing reso
 - Test: `entitlement-core/src/test/java/com/solovis/entitlement/core/view/SnapshotMutatorTest.java`
 
 **Interfaces:**
-- Consumes: `Snapshot` (Task 8, its package-private map accessors), `Capability`, `PlanEntitlement`, `AccountAssignment`, `Override`, `CapabilityKey` (model).
+- Consumes: `Snapshot` (Task 8, its package-private map accessors), `Capability`, `PlanEntitlement`, `AccountAssignment`, `AccountOverride`, `CapabilityKey` (model).
 - Produces: `SnapshotMutator.withCapability`, `.withPlanEntitlement`, `.withAccount`, `.withOverrideAdded`, `.withOverrideRemoved` — each `(Snapshot base, long newVersion, ...) -> Snapshot`. Not consumed elsewhere in this plan; this is the seam `entitlement-service`'s write path (a later module) uses on every commit.
 
 - [ ] **Step 1: Write the failing test**
@@ -2727,7 +2741,7 @@ import com.solovis.entitlement.core.model.AccountAssignment;
 import com.solovis.entitlement.core.model.Capability;
 import com.solovis.entitlement.core.model.CapabilityKey;
 import com.solovis.entitlement.core.model.EntitlementValue;
-import com.solovis.entitlement.core.model.Override;
+import com.solovis.entitlement.core.model.AccountOverride;
 import com.solovis.entitlement.core.model.OverrideKind;
 import com.solovis.entitlement.core.model.Plan;
 import com.solovis.entitlement.core.model.PlanEntitlement;
@@ -2785,7 +2799,7 @@ class SnapshotMutatorTest {
     @Test
     void withOverrideAddedAppendsToTheAccountCapabilityBucketOnly() {
         var base = baseSnapshot();
-        var override = new Override(OptionalLong.of(1), "acct_1", REPORTS, OverrideKind.GRANT,
+        var override = new AccountOverride(OptionalLong.of(1), "acct_1", REPORTS, OverrideKind.GRANT,
             EntitlementValue.Quantity.of(200), Optional.of("goodwill"), Optional.of("actor"), Optional.empty());
 
         var updated = SnapshotMutator.withOverrideAdded(base, 2, override);
@@ -2797,7 +2811,7 @@ class SnapshotMutatorTest {
 
     @Test
     void withOverrideRemovedDropsOnlyTheNamedOverride() {
-        var withOverride = SnapshotMutator.withOverrideAdded(baseSnapshot(), 2, new Override(
+        var withOverride = SnapshotMutator.withOverrideAdded(baseSnapshot(), 2, new AccountOverride(
             OptionalLong.of(1), "acct_1", REPORTS, OverrideKind.GRANT, EntitlementValue.Quantity.of(200),
             Optional.of("goodwill"), Optional.of("actor"), Optional.empty()));
 
@@ -2844,7 +2858,7 @@ package com.solovis.entitlement.core.view;
 import com.solovis.entitlement.core.model.AccountAssignment;
 import com.solovis.entitlement.core.model.Capability;
 import com.solovis.entitlement.core.model.CapabilityKey;
-import com.solovis.entitlement.core.model.Override;
+import com.solovis.entitlement.core.model.AccountOverride;
 import com.solovis.entitlement.core.model.PlanEntitlement;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -2883,7 +2897,7 @@ public final class SnapshotMutator {
             base.planEntitlementsMap(), Map.copyOf(accounts), base.liveOverridesMap());
     }
 
-    public static Snapshot withOverrideAdded(Snapshot base, long newVersion, Override override) {
+    public static Snapshot withOverrideAdded(Snapshot base, long newVersion, AccountOverride override) {
         var key = new Snapshot.AccountCapabilityKey(override.accountExternalId(), override.capabilityKey());
         var overrides = new HashMap<>(base.liveOverridesMap());
         var bucket = new ArrayList<>(overrides.getOrDefault(key, List.of()));
@@ -3090,22 +3104,22 @@ public record ConformanceVector(
         return List.copyOf(vectors);
     }
 
-    private static com.solovis.entitlement.core.model.Override grant(String key, long id, EntitlementValue value) {
-        return new com.solovis.entitlement.core.model.Override(
+    private static com.solovis.entitlement.core.model.AccountOverride grant(String key, long id, EntitlementValue value) {
+        return new com.solovis.entitlement.core.model.AccountOverride(
             java.util.OptionalLong.of(id), "acct_1", new CapabilityKey(key),
             com.solovis.entitlement.core.model.OverrideKind.GRANT, value,
             Optional.of("conformance fixture"), Optional.of("conformance"), Optional.empty());
     }
 
-    private static com.solovis.entitlement.core.model.Override hold(String key, long id, EntitlementValue value) {
-        return new com.solovis.entitlement.core.model.Override(
+    private static com.solovis.entitlement.core.model.AccountOverride hold(String key, long id, EntitlementValue value) {
+        return new com.solovis.entitlement.core.model.AccountOverride(
             java.util.OptionalLong.of(id), "acct_1", new CapabilityKey(key),
             com.solovis.entitlement.core.model.OverrideKind.HOLD, value,
             Optional.of("conformance fixture"), Optional.of("conformance"), Optional.empty());
     }
 
     private static ConformanceVector switchVector(
-        String name, EntitlementValue planValue, List<com.solovis.entitlement.core.model.Override> overrides,
+        String name, EntitlementValue planValue, List<com.solovis.entitlement.core.model.AccountOverride> overrides,
         boolean expectedAllowed, EntitlementValue expectedValue) {
         var key = new CapabilityKey("api.access");
         var builder = new SnapshotBuilder()
@@ -3119,7 +3133,7 @@ public record ConformanceVector(
     }
 
     private static ConformanceVector quantityVector(
-        String name, Optional<Long> planAmount, List<com.solovis.entitlement.core.model.Override> overrides,
+        String name, Optional<Long> planAmount, List<com.solovis.entitlement.core.model.AccountOverride> overrides,
         boolean expectedAllowed, EntitlementValue expectedValue) {
         var key = new CapabilityKey("reports.monthly");
         var builder = new SnapshotBuilder()
@@ -3139,7 +3153,7 @@ public record ConformanceVector(
             .capability(new Capability(key, "Seats", null, ValueType.QUANTITY,
                 EntitlementValue.Quantity.of(0), Optional.empty(), TierOrder.NONE, Capability.Status.ACTIVE, null))
             .plan(new Plan("enterprise", "Enterprise", Plan.Status.ACTIVE, false))
-            .planEntitlement(new PlanEntitlement("enterprise", key, EntitlementValue.Quantity.unlimited()))
+            .planEntitlement(new PlanEntitlement("enterprise", key, EntitlementValue.Quantity.unbounded()))
             .account(new AccountAssignment("acct_1", "enterprise"))
             .override(hold("seats", 1, EntitlementValue.Quantity.of(100)))
             .build(1);
