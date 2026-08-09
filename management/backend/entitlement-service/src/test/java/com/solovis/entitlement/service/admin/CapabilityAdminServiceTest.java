@@ -45,7 +45,7 @@ class CapabilityAdminServiceTest {
 
     @Test
     void createRejectsDefaultTypeMismatch() {
-        var request = new CapabilityCreateRequest("seats.count", "Seats", null, "QUANTITY",
+        var request = new CapabilityCreateRequest("billing.seat-count", "Seats", null, "QUANTITY",
             new ValueDto("SWITCH", true, null, null, null, null), null, null);
 
         assertThatThrownBy(() -> service.create(request))
