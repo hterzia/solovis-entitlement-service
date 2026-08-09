@@ -654,7 +654,7 @@ class WireMapperTest {
     @Test
     void aReplicaOverrideHoldsNoReasonNoAuthorAndNoTimestampBecauseTraceDataNeverReachesAReplica() {
         var line = new FeedDtos.OverrideLine(
-            "override", "ovr_1", "acct_1", "seats", "HOLD", new ValueDto("QUANTITY", null, 0L, null, null, null));
+            "override", "ovr_1", "acct_1", "seats.limit", "HOLD", new ValueDto("QUANTITY", null, 0L, null, null, null));
 
         var override = WireMapper.toOverride(line);
 
@@ -1707,11 +1707,11 @@ class DeltaApplierTest {
     @Test
     void capabilityUpsertReadsTheNestedDescriptorNotAFlatLine() {
         var applied = DeltaApplier.apply(base, delta(100, 101, """
-            {"version":101,"kind":"capability.upserted","capability":{"key":"seats","area":"seats",\
+            {"version":101,"kind":"capability.upserted","capability":{"key":"seats.limit","area":"seats",\
             "displayName":"Seats","valueType":"QUANTITY","default":{"type":"QUANTITY","amount":5},\
             "status":"ACTIVE"}}"""));
 
-        assertThat(applied.snapshot().capability(new CapabilityKey("seats"))).isPresent();
+        assertThat(applied.snapshot().capability(new CapabilityKey("seats.limit"))).isPresent();
     }
 
     @Test
