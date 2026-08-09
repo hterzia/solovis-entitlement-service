@@ -159,6 +159,12 @@ public class AccountAdminService {
             return null; // not among this capability's candidates at all — shouldn't happen for a live override, defensive only
         }
         var outcome = entry.get().outcome().orElseThrow();
+        // effectNow answers "what is this override doing to the result", which only has an answer
+        // for one that is counting. An override that has not begun, has ended, or was removed is
+        // described by its standing instead (002 c18) — the field Phase 5 adds beside this one.
+        if (outcome.isNotInForce()) {
+            return null;
+        }
         if (isGrant) {
             return switch (outcome) {
                 case WON -> trace.holdWinner().isPresent() ? "OVERRIDDEN_BY_HOLD" : "WINNING";
@@ -166,6 +172,8 @@ public class AccountAdminService {
                 case LOST_NOT_MORE_GENEROUS_THAN_WINNING_GRANT -> "SUPERSEDED_BY_GRANT";
                 case LOST_NOT_MORE_RESTRICTIVE_THAN_WINNING_HOLD ->
                     throw new IllegalStateException("A GRANT candidate cannot carry a HOLD-only outcome.");
+                case NOT_IN_FORCE_PENDING, NOT_IN_FORCE_ENDED, NOT_IN_FORCE_REMOVED ->
+                    throw new IllegalStateException("Not-in-force outcomes return above, before this switch.");
             };
         }
         return switch (outcome) {
@@ -173,6 +181,8 @@ public class AccountAdminService {
             case LOST_NOT_MORE_RESTRICTIVE_THAN_WINNING_HOLD -> "SUPERSEDED_BY_STRICTER_HOLD";
             case LOST_NOT_MORE_GENEROUS_THAN_PLAN, LOST_NOT_MORE_GENEROUS_THAN_WINNING_GRANT ->
                 throw new IllegalStateException("A HOLD candidate cannot carry a GRANT-only outcome.");
+            case NOT_IN_FORCE_PENDING, NOT_IN_FORCE_ENDED, NOT_IN_FORCE_REMOVED ->
+                throw new IllegalStateException("Not-in-force outcomes return above, before this switch.");
         };
     }
 

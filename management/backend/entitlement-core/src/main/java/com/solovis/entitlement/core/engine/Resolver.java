@@ -9,6 +9,8 @@ import com.solovis.entitlement.core.model.CapabilityKey;
 import com.solovis.entitlement.core.model.EntitlementValue;
 import com.solovis.entitlement.core.model.AccountOverride;
 import com.solovis.entitlement.core.model.OverrideKind;
+import com.solovis.entitlement.core.model.OverrideStanding;
+import com.solovis.entitlement.core.model.StandingOverride;
 import com.solovis.entitlement.core.order.Generosity;
 import com.solovis.entitlement.core.view.EntitlementView;
 import java.time.Instant;
@@ -53,7 +55,20 @@ public final class Resolver {
     public static Explanation explain(
         EntitlementView view, String accountExternalId, CapabilityKey capabilityKey, Instant evaluatedAt) {
 
-        var lookup = lookUp(view, accountExternalId, capabilityKey);
+        // Every override that existed at this moment, in force or not (c19). Only the in-force ones
+        // enter the arithmetic below — which is byte-for-byte what resolve() does — so the value can
+        // never disagree with resolve()'s. The rest become trace entries and nothing more.
+        var known = view.knownOverrides(accountExternalId, capabilityKey);
+        var inForce = new ArrayList<AccountOverride>();
+        var notInForce = new ArrayList<StandingOverride>();
+        for (var standingOverride : known) {
+            if (standingOverride.counts()) {
+                inForce.add(standingOverride.override());
+            } else {
+                notInForce.add(standingOverride);
+            }
+        }
+        var lookup = lookUp(view, accountExternalId, capabilityKey, inForce);
 
         var baselineEntry = new TraceEntry(
             lookup.baselineSource, OptionalLong.empty(), lookup.baselinePlanKey,
@@ -80,8 +95,11 @@ public final class Resolver {
             (isTop, applied) -> isTop ? Outcome.WON : Outcome.LOST_NOT_MORE_RESTRICTIVE_THAN_WINNING_HOLD);
 
         boolean allowed = computeAllowed(lookup.capability, result);
-        var trace = new Trace(baselineEntry, grantResult.entries(), grantResult.winnerEntry(),
-            holdResult.entries(), holdResult.winnerEntry(), result, allowed);
+        var trace = new Trace(baselineEntry,
+            withNotInForce(grantResult.entries(), notInForce, OverrideKind.GRANT, TraceSource.GRANT),
+            grantResult.winnerEntry(),
+            withNotInForce(holdResult.entries(), notInForce, OverrideKind.HOLD, TraceSource.HOLD),
+            holdResult.winnerEntry(), result, allowed);
         var decision = new Decision(accountExternalId, capabilityKey.value(), allowed, result, view.snapshotVersion(), evaluatedAt);
         return new Explanation(decision, trace);
     }
@@ -90,7 +108,48 @@ public final class Resolver {
         return capability.effectiveOffValue().map(off -> !off.equals(result)).orElse(true);
     }
 
+    /**
+     * Appends the overrides of this kind that took no part, after the ones that did, so the chain
+     * reads as "what counted, then what did not and why" (c19, c20). Winner selection has already
+     * happened over the in-force candidates alone, so nothing here can move a value.
+     */
+    private static List<TraceEntry> withNotInForce(List<TraceEntry> counted,
+        List<StandingOverride> notInForce, OverrideKind kind, TraceSource source) {
+
+        if (notInForce.isEmpty()) {
+            return counted;
+        }
+        var entries = new ArrayList<>(counted);
+        for (var standingOverride : notInForce) {
+            var override = standingOverride.override();
+            if (override.kind() != kind) {
+                continue;
+            }
+            entries.add(new TraceEntry(source, override.id(), Optional.empty(), override.value(),
+                override.reason(), override.createdBy(), override.createdAt(),
+                Optional.of(outcomeOf(standingOverride.standing())),
+                override.startsOn(), override.expiresOn(), standingOverride.notInForceSince()));
+        }
+        return List.copyOf(entries);
+    }
+
+    private static Outcome outcomeOf(OverrideStanding standing) {
+        return switch (standing) {
+            case PENDING -> Outcome.NOT_IN_FORCE_PENDING;
+            case ENDED -> Outcome.NOT_IN_FORCE_ENDED;
+            case REMOVED -> Outcome.NOT_IN_FORCE_REMOVED;
+            case IN_FORCE -> throw new IllegalStateException(
+                "An in-force override belongs in the arithmetic, not in the not-in-force list.");
+        };
+    }
+
     private static Lookup lookUp(EntitlementView view, String accountExternalId, CapabilityKey capabilityKey) {
+        return lookUp(view, accountExternalId, capabilityKey,
+            view.liveOverrides(accountExternalId, capabilityKey));
+    }
+
+    private static Lookup lookUp(EntitlementView view, String accountExternalId, CapabilityKey capabilityKey,
+        List<AccountOverride> overrides) {
         AccountAssignment account = view.account(accountExternalId)
             .orElseThrow(() -> new UnknownAccountException(accountExternalId));
         Capability capability = view.capability(capabilityKey)
@@ -104,7 +163,6 @@ public final class Resolver {
         TraceSource baselineSource = planEntitlement.isPresent() ? TraceSource.PLAN : TraceSource.CAPABILITY_DEFAULT;
         Optional<String> baselinePlanKey = planEntitlement.isPresent() ? Optional.of(account.planKey()) : Optional.empty();
 
-        List<AccountOverride> overrides = view.liveOverrides(accountExternalId, capabilityKey);
         return new Lookup(capability, baseline, baselineSource, baselinePlanKey, overrides);
     }
 
@@ -167,9 +225,12 @@ public final class Resolver {
     }
 
     private static TraceEntry toTraceEntry(AccountOverride candidate, TraceSource source, Outcome outcome) {
+        // An in-force override may still carry a window — "200 reports, until 31 December" is worth
+        // reading in the chain, not only once it has lapsed.
         return new TraceEntry(
             source, candidate.id(), Optional.empty(), candidate.value(),
-            candidate.reason(), candidate.createdBy(), candidate.createdAt(), Optional.of(outcome));
+            candidate.reason(), candidate.createdBy(), candidate.createdAt(), Optional.of(outcome),
+            candidate.startsOn(), candidate.expiresOn(), Optional.empty());
     }
 
     private record Lookup(
