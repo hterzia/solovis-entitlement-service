@@ -50,4 +50,12 @@ class CheckerControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.trace.baseline.source").value("CAPABILITY_DEFAULT"));
     }
+
+    @Test
+    void checkWithAMalformedOverrideRefIsRejectedAsValidationFailedNotA500() throws Exception {
+        mockMvc.perform(get("/admin/v1/check").param("override", "nope"))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+            .andExpect(jsonPath("$.type").value("entitlement/validation-failed"));
+    }
 }

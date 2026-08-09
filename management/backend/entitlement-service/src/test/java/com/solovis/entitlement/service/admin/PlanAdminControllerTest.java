@@ -97,6 +97,40 @@ class PlanAdminControllerTest {
     }
 
     @Test
+    void previewThenApplyWithUnsetEntirelyOmittedFromTheBodySucceeds() throws Exception {
+        mockMvc.perform(post("/admin/v1/capabilities").contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {"key":"t6c.omitted-unset.count","displayName":"Omitted unset","valueType":"QUANTITY",
+                 "default":{"type":"QUANTITY","amount":0}}
+                """))
+            .andExpect(status().isCreated());
+        mockMvc.perform(post("/admin/v1/plans").contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {"key":"plan6c-golf","name":"Plan6c Golf"}
+                """))
+            .andExpect(status().isCreated());
+
+        // "unset" is entirely absent from the JSON body (not an empty array) — admin-api.md's own
+        // example shows set/unset as independently optional; this must not 500.
+        String previewBody = """
+            {"set":{"t6c.omitted-unset.count":{"type":"QUANTITY","amount":10}}}
+            """;
+        String previewResponse = mockMvc.perform(post("/admin/v1/plans/plan6c-golf/entitlements/preview")
+                .contentType(MediaType.APPLICATION_JSON).content(previewBody))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        String token = JsonPath.read(previewResponse, "$.previewToken");
+
+        String applyBody = """
+            {"set":{"t6c.omitted-unset.count":{"type":"QUANTITY","amount":10}},"previewToken":"%s"}
+            """.formatted(token);
+        mockMvc.perform(put("/admin/v1/plans/plan6c-golf/entitlements")
+                .contentType(MediaType.APPLICATION_JSON).content(applyBody))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.planKey").value("plan6c-golf"));
+    }
+
+    @Test
     void archiveASimplePlanSucceeds() throws Exception {
         mockMvc.perform(post("/admin/v1/plans").contentType(MediaType.APPLICATION_JSON)
             .content("""

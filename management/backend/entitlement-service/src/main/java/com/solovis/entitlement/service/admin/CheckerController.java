@@ -3,6 +3,7 @@ package com.solovis.entitlement.service.admin;
 import com.solovis.entitlement.service.api.DecisionController;
 import com.solovis.entitlement.service.error.EntitlementApiException;
 import com.solovis.entitlement.service.error.ErrorCode;
+import com.solovis.entitlement.service.error.RefId;
 import com.solovis.entitlement.service.store.AccountOverrideRepository;
 import com.solovis.entitlement.service.store.AccountRepository;
 import com.solovis.entitlement.service.store.CapabilityRepository;
@@ -31,7 +32,7 @@ public class CheckerController {
         @RequestParam(required = false) String account, @RequestParam(required = false) String capability,
         @RequestParam(required = false) String override) {
         if (override != null) {
-            long id = Long.parseLong(override.replace("ovr_", ""));
+            long id = RefId.parse(override, "ovr_");
             var row = accountOverrideRepository.findById(id)
                 .orElseThrow(() -> new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "No override '" + override + "'."));
             var accountRow = accountRepository.findById(row.accountId()).orElseThrow();

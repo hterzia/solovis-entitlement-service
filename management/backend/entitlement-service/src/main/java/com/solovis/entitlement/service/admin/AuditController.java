@@ -2,6 +2,7 @@ package com.solovis.entitlement.service.admin;
 
 import com.solovis.entitlement.service.admin.dto.AuditEventDto;
 import com.solovis.entitlement.service.admin.dto.AuditListResponseDto;
+import com.solovis.entitlement.service.error.RefId;
 import com.solovis.entitlement.service.store.AccountRepository;
 import com.solovis.entitlement.service.store.AuditEventFilter;
 import com.solovis.entitlement.service.store.AuditEventRepository;
@@ -40,7 +41,7 @@ public class AuditController {
 
         Long accountId = account == null ? null : accountRepository.findByExternalId(account).map(a -> a.id()).orElse(-1L);
         Long planId = planKey == null ? null : planRepository.findByKey(planKey).map(p -> p.id()).orElse(-1L);
-        Long beforeSeq = cursor == null ? null : Long.valueOf(cursor.replace("aud_", ""));
+        Long beforeSeq = cursor == null ? null : RefId.parse(cursor, "aud_");
 
         var rows = auditEventRepository.find(new AuditEventFilter(accountId, planId, actor, entityType, from, to,
             beforeSeq, limit > 0 ? limit : DEFAULT_LIMIT));

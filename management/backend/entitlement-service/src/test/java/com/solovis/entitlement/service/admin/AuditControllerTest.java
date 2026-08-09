@@ -58,4 +58,12 @@ class AuditControllerTest {
                 .value(org.hamcrest.Matchers.hasItem("CREATE")))
             .andExpect(jsonPath("$.events[*].entityType", org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is("CAPABILITY"))));
     }
+
+    @Test
+    void listWithAMalformedCursorIsRejectedAsValidationFailedNotA500() throws Exception {
+        mockMvc.perform(get("/admin/v1/audit").param("cursor", "xyz"))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+            .andExpect(jsonPath("$.type").value("entitlement/validation-failed"));
+    }
 }

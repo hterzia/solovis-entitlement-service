@@ -86,6 +86,18 @@ class AccountAdminServiceTest {
     }
 
     @Test
+    void reassignPlanRejectsAnUnknownSourceInsteadOfThrowingUnhandled() {
+        planService.create(new PlanCreateRequest("t7-bad-source-plan", "T7 Bad Source Plan", null));
+        planService.designateDefault("t7-bad-source-plan");
+        accountService.create(new AccountCreateRequest("acct_bad_source", null));
+
+        assertThatThrownBy(() -> accountService.reassignPlan("acct_bad_source",
+            new PlanReassignRequest("t7-bad-source-plan", "UI", "someone", "bad source value")))
+            .isInstanceOf(EntitlementApiException.class)
+            .extracting("errorCode").isEqualTo(ErrorCode.VALIDATION_FAILED);
+    }
+
+    @Test
     void effectNowLabelsALoneGrantThatDoesNotBeatThePlanBaseline() {
         planService.create(new PlanCreateRequest("t7-baseline-plan", "T7 Baseline Plan", null));
         planService.designateDefault("t7-baseline-plan");

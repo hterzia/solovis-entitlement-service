@@ -51,6 +51,17 @@ class OverrideAdminServiceTest {
     }
 
     @Test
+    void deleteRejectsAMalformedOverrideRefInsteadOfThrowingUnhandled() {
+        planService.create(new PlanCreateRequest("t7-malformed-ref-plan", "T7 Malformed Ref Plan", null));
+        planService.designateDefault("t7-malformed-ref-plan");
+        accountService.create(new AccountCreateRequest("acct_malformed_ref", null));
+
+        assertThatThrownBy(() -> overrideService.delete("acct_malformed_ref", "ovr_not-a-number", null))
+            .isInstanceOf(EntitlementApiException.class)
+            .extracting("errorCode").isEqualTo(ErrorCode.VALIDATION_FAILED);
+    }
+
+    @Test
     void deleteRejectsAnOverrideThatBelongsToAnotherAccount() {
         planService.create(new PlanCreateRequest("t7-owner-plan", "T7 Owner Plan", null));
         planService.designateDefault("t7-owner-plan");
