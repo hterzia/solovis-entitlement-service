@@ -183,8 +183,8 @@ export const handlers = [
   http.get('/admin/v1/accounts', ({ request }) => {
     const url = new URL(request.url)
     const q = url.searchParams.get('q')?.toLowerCase()
-    const all = [db.account, ...db.createdAccounts].map((a) => ({ external: a.account, name: a.name, planKey: a.plan.key }))
-    const filtered = q ? all.filter((a) => a.external.toLowerCase().includes(q) || a.name?.toLowerCase().includes(q)) : all
+    const all = [db.account, ...db.createdAccounts].map((a) => ({ account: a.account, name: a.name, planKey: a.plan.key, status: a.status }))
+    const filtered = q ? all.filter((a) => a.account.toLowerCase().includes(q) || a.name?.toLowerCase().includes(q)) : all
     return HttpResponse.json({ accounts: filtered, nextCursor: null })
   }),
 
