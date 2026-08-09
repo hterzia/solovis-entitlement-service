@@ -50,7 +50,7 @@ class PlanAdminServiceTest {
     }
 
     @Test
-    void archiveRejectsAPlanWithAccounts() {
+    void archiveAnEmptyPlanSucceeds() {
         planService.create(new PlanCreateRequest("plan6-has-accounts", "Plan6 Has accounts", null));
         // account creation is Task 7; this test only needs the plan-in-use branch reachable once
         // Task 7 exists — see Task 7's AccountAdminServiceTest for the account-bearing case. Here,
