@@ -169,6 +169,31 @@ class CapabilityAdminServiceTest {
         assertThat(result.capability().status()).isEqualTo("RETIRED");
         assertThat(result.usage().plans()).isEmpty();
         assertThat(result.usage().liveOverrides()).isZero();
+
+        var afterward = service.get("export.parquet");
+        assertThat(afterward.descriptor().status()).isEqualTo("RETIRED");
+        assertThat(afterward.descriptor().key()).isEqualTo("export.parquet");
+        assertThat(afterward.descriptor().displayName()).isEqualTo("Export");
+    }
+
+    @Test
+    void appendTierRejectsADuplicateTierKeyButAcceptsANewOne() {
+        var create = new CapabilityCreateRequest("t26cap.support.tier", "Support", null, "TIER",
+            new ValueDto("TIER", null, null, null, "community", null), null,
+            List.of(new CapabilityCreateRequest.TierRequest("community", "Community"),
+                    new CapabilityCreateRequest.TierRequest("standard", "Standard")));
+        service.create(create);
+
+        assertThatThrownBy(() -> service.appendTier("t26cap.support.tier",
+                new com.solovis.entitlement.service.admin.dto.TierAppendRequest("community", "Community Again")))
+            .isInstanceOf(EntitlementApiException.class)
+            .extracting("errorCode").isEqualTo(ErrorCode.IMMUTABLE_FIELD);
+
+        var updated = service.appendTier("t26cap.support.tier",
+            new com.solovis.entitlement.service.admin.dto.TierAppendRequest("platinum", "Platinum"));
+
+        assertThat(updated.tiers()).extracting(t -> t.tier()).containsExactly("community", "standard", "platinum");
+        assertThat(updated.tiers().get(2).ordinal()).isEqualTo(2);
     }
 
     @Test
