@@ -13,10 +13,15 @@ export function HistoryRoute() {
   const [entityType, setEntityType] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+  const [cursor, setCursor] = useState<string | undefined>(undefined)
+
+  function updateFilter(setter: (value: string) => void) {
+    return (value: string) => { setter(value); setCursor(undefined) }
+  }
 
   const params = {
     account: account || undefined, planKey: planKey || undefined, actor: actor || undefined,
-    entityType: entityType || undefined, from: from || undefined, to: to || undefined,
+    entityType: entityType || undefined, from: from || undefined, to: to || undefined, cursor,
   }
   const query = useQuery({ queryKey: queryKeys.audit(params), queryFn: () => listAuditEvents(params) })
 
@@ -25,25 +30,25 @@ export function HistoryRoute() {
       <h1 className="app-page-title">Change history</h1>
       <form onSubmit={(e) => e.preventDefault()}>
         <label className="sv-label">Account
-          <input className="sv-field" aria-label="Account" value={account} onChange={(e) => setAccount(e.target.value)} />
+          <input className="sv-field" aria-label="Account" value={account} onChange={(e) => updateFilter(setAccount)(e.target.value)} />
         </label>
         <label className="sv-label">Plan
-          <input className="sv-field" aria-label="Plan" value={planKey} onChange={(e) => setPlanKey(e.target.value)} />
+          <input className="sv-field" aria-label="Plan" value={planKey} onChange={(e) => updateFilter(setPlanKey)(e.target.value)} />
         </label>
         <label className="sv-label">Actor
-          <input className="sv-field" aria-label="Actor" value={actor} onChange={(e) => setActor(e.target.value)} />
+          <input className="sv-field" aria-label="Actor" value={actor} onChange={(e) => updateFilter(setActor)(e.target.value)} />
         </label>
         <label className="sv-label">Entity type
-          <select className="sv-field" aria-label="Entity type" value={entityType} onChange={(e) => setEntityType(e.target.value)}>
+          <select className="sv-field" aria-label="Entity type" value={entityType} onChange={(e) => updateFilter(setEntityType)(e.target.value)}>
             <option value="">All</option>
             {ENTITY_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </label>
         <label className="sv-label">From
-          <input className="sv-field" type="date" aria-label="From" value={from} onChange={(e) => setFrom(e.target.value)} />
+          <input className="sv-field" type="date" aria-label="From" value={from} onChange={(e) => updateFilter(setFrom)(e.target.value)} />
         </label>
         <label className="sv-label">To
-          <input className="sv-field" type="date" aria-label="To" value={to} onChange={(e) => setTo(e.target.value)} />
+          <input className="sv-field" type="date" aria-label="To" value={to} onChange={(e) => updateFilter(setTo)(e.target.value)} />
         </label>
       </form>
 
@@ -65,6 +70,11 @@ export function HistoryRoute() {
           ))}
         </tbody>
       </table>
+      {query.data?.nextCursor && (
+        <button type="button" className="sv-btn--secondary" onClick={() => setCursor(query.data!.nextCursor!)}>
+          Load more
+        </button>
+      )}
     </div>
   )
 }
