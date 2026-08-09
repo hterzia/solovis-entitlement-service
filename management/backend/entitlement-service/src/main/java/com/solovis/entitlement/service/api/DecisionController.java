@@ -15,6 +15,7 @@ import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.time.Clock;
+import java.time.Instant;
 import com.solovis.entitlement.service.time.Timestamps;
 import java.time.Duration;
 import java.util.Comparator;
@@ -37,7 +38,7 @@ public class DecisionController {
         @PathVariable String accountExternalId, @PathVariable String capabilityKey,
         @RequestParam(required = false) Long minSnapshotVersion) {
         Snapshot snapshot = snapshotAtLeast(minSnapshotVersion);
-        var key = new CapabilityKey(capabilityKey);
+        var key = parseKey(capabilityKey);
         var explanation = Resolver.explain(snapshot, accountExternalId, key, clock.instant());
         var capability = snapshot.capability(key).orElseThrow();
         var body = DecisionMapper.toResponse(explanation, capability);
@@ -51,21 +52,26 @@ public class DecisionController {
     public ResponseEntity<WholeAccountResponseDto> whole(@PathVariable String accountExternalId) {
         Snapshot snapshot = snapshotHolder.current();
         var account = snapshot.account(accountExternalId).orElseThrow(() -> new UnknownAccountException(accountExternalId));
+        Instant evaluatedAt = clock.instant();
         var entitlements = snapshot.activeCapabilities().stream()
             .sorted(Comparator.comparing(c -> c.key().value()))
             .map(capability -> {
-                var decision = Resolver.resolve(snapshot, accountExternalId, capability.key(), clock.instant());
+                var decision = Resolver.resolve(snapshot, accountExternalId, capability.key(), evaluatedAt);
                 return new WholeAccountResponseDto.Entitlement(capability.key().value(), decision.allowed(), ValueMapper.toDto(decision.value()));
             }).toList();
         var body = new WholeAccountResponseDto(accountExternalId, account.planKey(), snapshot.snapshotVersion(),
-            Timestamps.iso(clock.instant()), entitlements);
+            Timestamps.iso(evaluatedAt), entitlements);
         return ResponseEntity.ok().header("X-Entitlement-Snapshot-Version", String.valueOf(snapshot.snapshotVersion())).body(body);
     }
 
     @GetMapping("/capabilities")
-    public CapabilityListResponseDto list(
+    public ResponseEntity<CapabilityListResponseDto> list(
         @RequestParam(required = false) String area,
         @RequestParam(required = false, defaultValue = "ACTIVE") String status) {
+        if (!status.equals("ACTIVE") && !status.equals("RETIRED") && !status.equals("ALL")) {
+            throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "status must be one of ACTIVE, RETIRED, ALL",
+                Map.of("violations", java.util.List.of("status: must be one of ACTIVE, RETIRED, ALL")));
+        }
         Snapshot snapshot = snapshotHolder.current();
         var stream = status.equals("ALL") ? snapshot.capabilities().stream()
             : status.equals("RETIRED") ? snapshot.capabilities().stream().filter(c -> c.isRetired())
@@ -75,15 +81,29 @@ public class DecisionController {
         }
         var descriptors = stream.sorted(Comparator.comparing(c -> c.key().value()))
             .map(CapabilityDescriptorMapper::toDescriptor).toList();
-        return new CapabilityListResponseDto(descriptors, snapshot.snapshotVersion());
+        var body = new CapabilityListResponseDto(descriptors, snapshot.snapshotVersion());
+        return ResponseEntity.ok()
+            .header("X-Entitlement-Snapshot-Version", String.valueOf(snapshot.snapshotVersion()))
+            .body(body);
     }
 
     @GetMapping("/capabilities/{capabilityKey}")
-    public com.solovis.entitlement.service.dto.CapabilityDescriptorDto one(@PathVariable String capabilityKey) {
+    public ResponseEntity<com.solovis.entitlement.service.dto.CapabilityDescriptorDto> one(@PathVariable String capabilityKey) {
         Snapshot snapshot = snapshotHolder.current();
-        var capability = snapshot.capability(new CapabilityKey(capabilityKey))
+        var capability = snapshot.capability(parseKey(capabilityKey))
             .orElseThrow(() -> new com.solovis.entitlement.core.error.UnknownCapabilityException(capabilityKey));
-        return CapabilityDescriptorMapper.toDescriptor(capability);
+        var body = CapabilityDescriptorMapper.toDescriptor(capability);
+        return ResponseEntity.ok()
+            .header("X-Entitlement-Snapshot-Version", String.valueOf(snapshot.snapshotVersion()))
+            .body(body);
+    }
+
+    private static CapabilityKey parseKey(String raw) {
+        try {
+            return new CapabilityKey(raw);
+        } catch (IllegalArgumentException e) {
+            throw new com.solovis.entitlement.core.error.UnknownCapabilityException(raw);
+        }
     }
 
     private Snapshot snapshotAtLeast(Long minSnapshotVersion) {

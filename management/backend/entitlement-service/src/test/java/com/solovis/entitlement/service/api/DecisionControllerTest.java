@@ -88,9 +88,40 @@ class DecisionControllerTest {
     void registryDefaultsToActiveOnly() throws Exception {
         mockMvc.perform(get("/v1/capabilities"))
             .andExpect(status().isOk())
+            .andExpect(header().exists("X-Entitlement-Snapshot-Version"))
             .andExpect(jsonPath("$.capabilities[?(@.key=='reports.t4.monthly')].key").value("reports.t4.monthly"))
             .andExpect(jsonPath("$.capabilities[?(@.key=='reports.t4.monthly')].area").value("reports"))
             .andExpect(jsonPath("$.capabilities[?(@.key=='reports.t4.monthly')].status").value("ACTIVE"))
             .andExpect(jsonPath("$.snapshotVersion").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)));
+    }
+
+    @Test
+    void malformedCapabilityKeyInSingleDecisionRouteIsUnknownCapabilityNotA500() throws Exception {
+        mockMvc.perform(get("/v1/accounts/acct_t4_1/capabilities/Reports.monthly"))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.type").value("entitlement/unknown-capability"));
+    }
+
+    @Test
+    void registryRejectsUnrecognizedStatusValue() throws Exception {
+        mockMvc.perform(get("/v1/capabilities").param("status", "BOGUS"))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.type").value("entitlement/validation-failed"))
+            .andExpect(jsonPath("$.violations").exists());
+    }
+
+    @Test
+    void registryRejectsWrongCaseStatusValue() throws Exception {
+        mockMvc.perform(get("/v1/capabilities").param("status", "retired"))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.type").value("entitlement/validation-failed"))
+            .andExpect(jsonPath("$.violations").exists());
+    }
+
+    @Test
+    void singleCapabilityDescriptorCarriesSnapshotVersionHeader() throws Exception {
+        mockMvc.perform(get("/v1/capabilities/reports.t4.monthly"))
+            .andExpect(status().isOk())
+            .andExpect(header().exists("X-Entitlement-Snapshot-Version"));
     }
 }
