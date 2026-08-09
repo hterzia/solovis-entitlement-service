@@ -5,6 +5,7 @@ import com.solovis.entitlement.service.admin.service.*;
 import com.solovis.entitlement.service.dto.ValueDto;
 import com.solovis.entitlement.service.error.EntitlementApiException;
 import com.solovis.entitlement.service.error.ErrorCode;
+import com.solovis.entitlement.service.store.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -19,6 +20,10 @@ class OverrideAdminServiceTest {
     @Autowired AccountAdminService accountService;
     @Autowired PlanAdminService planService;
     @Autowired CapabilityAdminService capabilityService;
+    @Autowired AccountRepository accountRepository;
+    @Autowired AccountOverrideRepository accountOverrideRepository;
+    @Autowired AuditEventRepository auditEventRepository;
+    @Autowired SnapshotVersionRepository snapshotVersionRepository;
 
     @Test
     void createRejectsAnEmptyReason() {
@@ -80,5 +85,74 @@ class OverrideAdminServiceTest {
         var stillLive = accountService.get("acct_owner_a").overrides().stream()
             .anyMatch(o -> o.id().equals(created.overrideId()));
         assertThat(stillLive).isTrue();
+    }
+
+    @Test
+    void deleteAnOverrideOnARetiredCapabilitySucceeds() {
+        planService.create(new PlanCreateRequest("tovr-retired-plan", "Tovr Retired Plan", null));
+        planService.designateDefault("tovr-retired-plan");
+        capabilityService.create(new CapabilityCreateRequest("tovr.export.parquet", "Export Parquet", null, "SWITCH",
+            new ValueDto("SWITCH", false, null, null, null, null), null, null));
+        accountService.create(new AccountCreateRequest("acct_tovr_1", null));
+
+        var created = overrideService.create("acct_tovr_1", new OverrideCreateRequest("tovr.export.parquet", "HOLD",
+            new ValueDto("SWITCH", false, null, null, null, null), "block export pending review"));
+
+        capabilityService.retire("tovr.export.parquet");
+
+        var response = overrideService.delete("acct_tovr_1", created.overrideId(), "cleanup after retire");
+
+        assertThat(response.decision()).isNull();
+
+        long accountId = accountRepository.findByExternalId("acct_tovr_1").orElseThrow().id();
+        var stillLive = accountOverrideRepository.findLiveForAccount(accountId).stream()
+            .anyMatch(o -> ("ovr_" + o.id()).equals(created.overrideId()));
+        assertThat(stillLive).isFalse();
+
+        var removeEvent = auditEventRepository.find(new AuditEventFilter(accountId, null, null, "OVERRIDE", null, null, null, 50))
+            .stream()
+            .filter(e -> "REMOVE".equals(e.action()) && created.overrideId().equals(e.entityId()))
+            .findFirst();
+        assertThat(removeEvent).isPresent();
+    }
+
+    @Test
+    void deleteRecordsTheCanonicalRefOnTheDeltaFeed() {
+        planService.create(new PlanCreateRequest("tovr-canon-plan", "Tovr Canon Plan", null));
+        planService.designateDefault("tovr-canon-plan");
+        capabilityService.create(new CapabilityCreateRequest("tovr.canon.check", "Canon check", null, "SWITCH",
+            new ValueDto("SWITCH", false, null, null, null, null), null, null));
+        accountService.create(new AccountCreateRequest("acct_tovr_canon", null));
+
+        var created = overrideService.create("acct_tovr_canon", new OverrideCreateRequest("tovr.canon.check", "GRANT",
+            new ValueDto("SWITCH", true, null, null, null, null), "canon ref test"));
+        overrideService.delete("acct_tovr_canon", created.overrideId(), null);
+
+        var latest = snapshotVersionRepository.findLatest().orElseThrow();
+        assertThat(latest.deltaJson()).contains(created.overrideId());
+    }
+
+    @Test
+    void deleteRecordsWhatWasRemoved() {
+        planService.create(new PlanCreateRequest("tovr-before-plan", "Tovr Before Plan", null));
+        planService.designateDefault("tovr-before-plan");
+        capabilityService.create(new CapabilityCreateRequest("tovr.before.check", "Before check", null, "SWITCH",
+            new ValueDto("SWITCH", false, null, null, null, null), null, null));
+        accountService.create(new AccountCreateRequest("acct_tovr_before", null));
+
+        var created = overrideService.create("acct_tovr_before", new OverrideCreateRequest("tovr.before.check", "GRANT",
+            new ValueDto("SWITCH", true, null, null, null, null), "before-payload test reason"));
+        overrideService.delete("acct_tovr_before", created.overrideId(), null);
+
+        long accountId = accountRepository.findByExternalId("acct_tovr_before").orElseThrow().id();
+        var removeEvent = auditEventRepository.find(new AuditEventFilter(accountId, null, null, "OVERRIDE", null, null, null, 50))
+            .stream()
+            .filter(e -> "REMOVE".equals(e.action()) && created.overrideId().equals(e.entityId()))
+            .findFirst()
+            .orElseThrow();
+
+        assertThat(removeEvent.beforeJson()).isNotNull();
+        assertThat(removeEvent.beforeJson()).contains("GRANT");
+        assertThat(removeEvent.beforeJson()).contains("before-payload test reason");
     }
 }

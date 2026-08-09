@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import com.solovis.entitlement.service.time.Timestamps;
+import java.util.LinkedHashMap;
 import java.util.Optional;
 
 @Service
@@ -92,6 +93,7 @@ public class OverrideAdminService {
     @Transactional
     public OverrideMutationResponseDto delete(String external, String overrideRef, String removeReason) {
         long id = RefId.parse(overrideRef, "ovr_");
+        String canonicalRef = "ovr_" + id;
         var overrideRow = accountOverrideRepository.findById(id)
             .orElseThrow(() -> new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "No override '" + overrideRef + "'."));
         var accountRow = accountRepository.findByExternalId(external)
@@ -100,6 +102,20 @@ public class OverrideAdminService {
             throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "No override '" + overrideRef + "'.");
         }
         var capRow = capabilityRepository.findById(overrideRow.capabilityId()).orElseThrow();
+        var capability = RowMappers.toCapability(capRow, capabilityRepository.findTiers(capRow.id()));
+        var capabilityKey = capability.key();
+
+        // c32: capture what is about to be removed before the soft-delete write, so the REMOVE
+        // audit event carries a before-snapshot (not just the removal reason).
+        var decodedValue = ValueColumnCodec.toValue(capability.valueType(), overrideRow.boolValue(), overrideRow.qtyValue(),
+            overrideRow.qtyUnlimited(), overrideRow.tierValue(), capability.tierOrder());
+        var beforeMap = new LinkedHashMap<String, Object>();
+        beforeMap.put("capability", capabilityKey.value());
+        beforeMap.put("kind", overrideRow.kind());
+        beforeMap.put("value", ValueMapper.toDto(decodedValue));
+        beforeMap.put("reason", overrideRow.reason());
+        beforeMap.put("createdBy", overrideRow.createdBy());
+        beforeMap.put("createdAt", overrideRow.createdAt());
 
         String now = Timestamps.iso(clock.instant());
         var actor = actorResolver.currentActor();
@@ -107,17 +123,21 @@ public class OverrideAdminService {
         if (!removed) {
             throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "Override '" + overrideRef + "' is already removed.");
         }
-        var capability = RowMappers.toCapability(capRow, capabilityRepository.findTiers(capRow.id()));
-        var capabilityKey = capability.key();
 
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actor).source("UI").entityType("OVERRIDE")
-            .entityId(overrideRef).action("REMOVE").accountId(accountRow.id()).capabilityId(capRow.id())
-            .reason(removeReason).build());
+            .entityId(canonicalRef).action("REMOVE").accountId(accountRow.id()).capabilityId(capRow.id())
+            .reason(removeReason).beforeJson(auditJson.write(beforeMap)).build());
         var base = snapshotHolder.current();
         var next = SnapshotMutator.withOverrideRemoved(base, base.snapshotVersion() + 1, external, capabilityKey, id);
-        long newVersion = snapshotPublisher.publish((b, v) -> next, auditSeq, new DeltaChange.OverrideRemoved(overrideRef));
+        long newVersion = snapshotPublisher.publish((b, v) -> next, auditSeq, new DeltaChange.OverrideRemoved(canonicalRef));
 
+        // A retired capability's referent still needs its stale overrides cleared (spec §3.4) —
+        // but Resolver.lookUp/explain refuses to evaluate a retired capability at all, so the
+        // response carries no decision in that case rather than rolling back the removal.
+        if (capability.isRetired()) {
+            return new OverrideMutationResponseDto(canonicalRef, null, newVersion, 60);
+        }
         var explanation = Resolver.explain(next, external, capabilityKey, clock.instant());
-        return new OverrideMutationResponseDto(overrideRef, DecisionMapper.toResponse(explanation, capability), newVersion, 60);
+        return new OverrideMutationResponseDto(canonicalRef, DecisionMapper.toResponse(explanation, capability), newVersion, 60);
     }
 }
