@@ -801,7 +801,10 @@ export const handlers = [
   http.get('/admin/v1/capabilities/:key', ({ params }) => {
     const cap = db.capabilities.find((c) => c.key === params.key)
     if (!cap) return problem(404, 'entitlement/unknown-capability', `No capability '${params.key}'.`)
-    return HttpResponse.json(cap)
+    // admin-api.md: "One capability, plus where it is used" — the same usage shape the retire
+    // route returns, since retiring is the only way to LEARN usage otherwise, which would force
+    // an operator-facing retire confirmation to fire the irreversible call before showing it.
+    return HttpResponse.json({ ...cap, usage: { plans: ['pro'], liveOverrides: 1 } })
   }),
 
   http.patch('/admin/v1/capabilities/:key', async ({ params, request }) => {
@@ -1296,7 +1299,7 @@ git commit -m "frontend: typed fetch wrapper, RFC 9457 error model, service meta
 - Consumes: `apiGet/apiPost/apiPatch/apiPut/apiDelete` from `./http` (Task 4); `Capability`, `Plan`, `PlanEntitlementDiffEntry`, `AccountDetail`, `AccountSummary`, `Override`, `Decision`, `AuditEvent` from `../types/domain` (Task 2); MSW fixtures/handlers from Task 3.
 - Produces every function screen tasks (10–20) call directly — their exact names and signatures below are load-bearing for those tasks:
   - `listCapabilities(params?) => Promise<{capabilities: Capability[]; snapshotVersion: number}>`
-  - `getCapability(key) => Promise<Capability>`
+  - `getCapability(key) => Promise<Capability & {usage: {plans: string[]; liveOverrides: number}}>` — the single-capability GET is documented as returning "the capability, plus where it is used" (admin-api.md), so Task 12's retire confirmation can show usage from data already on the page instead of learning it only by calling the (destructive) retire endpoint first
   - `createCapability(input) => Promise<Capability>`
   - `updateCapability(key, patch) => Promise<Capability>`
   - `addCapabilityTier(key, tier) => Promise<Capability>`
@@ -1375,7 +1378,7 @@ export function listCapabilities(params?: { area?: string; q?: string; status?: 
 }
 
 export function getCapability(key: string) {
-  return apiGet<Capability>(`/capabilities/${key}`)
+  return apiGet<Capability & { usage: { plans: string[]; liveOverrides: number } }>(`/capabilities/${key}`)
 }
 
 export interface CreateCapabilityInput {
@@ -2861,6 +2864,21 @@ describe('CapabilityDetailRoute', () => {
     })
   })
 
+  it('does not retire on the initial click — Cancel truly cancels', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<CapabilityDetailRoute capabilityKey="reports.monthly" />)
+    await waitFor(() => expect(screen.getByText('Monthly reports')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'Retire capability' }))
+    expect(screen.getByText(/used by 1 plan/i)).toBeInTheDocument()
+    // The confirmation must be shown from data already on the page (the capability GET's own
+    // usage field), not by having already called the destructive retire endpoint to learn it —
+    // so the capability must still be ACTIVE at this point, before any confirmation.
+    await expect(getCapability('reports.monthly')).resolves.toMatchObject({ status: 'ACTIVE' })
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByText(/used by 1 plan/i)).not.toBeInTheDocument()
+    await expect(getCapability('reports.monthly')).resolves.toMatchObject({ status: 'ACTIVE' })
+  })
+
   it('retires with a confirmation naming usage, and offers no delete control', async () => {
     const user = userEvent.setup()
     renderWithProviders(<CapabilityDetailRoute capabilityKey="reports.monthly" />)
@@ -2909,7 +2927,6 @@ export function CapabilityDetailRoute({ capabilityKey }: { capabilityKey?: strin
   const [newTierKey, setNewTierKey] = useState('')
   const [newTierName, setNewTierName] = useState('')
   const [confirmingRetire, setConfirmingRetire] = useState(false)
-  const [usage, setUsage] = useState<{ plans: string[]; liveOverrides: number } | null>(null)
 
   useEffect(() => {
     if (capability.data) {
@@ -2929,16 +2946,13 @@ export function CapabilityDetailRoute({ capabilityKey }: { capabilityKey?: strin
     mutationFn: () => addCapabilityTier(key, { tier: newTierKey, displayName: newTierName }),
     onSuccess: () => { invalidate(); setNewTierKey(''); setNewTierName('') },
   })
-  const retireMutation = useMutation({ mutationFn: () => retireCapability(key), onSuccess: invalidate })
+  const retireMutation = useMutation({
+    mutationFn: () => retireCapability(key),
+    onSuccess: () => { invalidate(); setConfirmingRetire(false) },
+  })
 
   if (!capability.data || !defaultValue) return <p>Loading…</p>
   const cap = capability.data
-
-  async function startRetire() {
-    const result = await retireCapability(key)
-    setUsage(result.usage)
-    setConfirmingRetire(true)
-  }
 
   return (
     <div className="app-panel">
@@ -2972,11 +2986,14 @@ export function CapabilityDetailRoute({ capabilityKey }: { capabilityKey?: strin
       )}
 
       {cap.status === 'ACTIVE' && !confirmingRetire && (
-        <button type="button" className="sv-btn--secondary" onClick={startRetire}>Retire capability</button>
+        <button type="button" className="sv-btn--secondary" onClick={() => setConfirmingRetire(true)}>Retire capability</button>
       )}
-      {confirmingRetire && usage && (
+      {confirmingRetire && (
         <div className="app-panel">
-          <p>Used by {usage.plans.length} plan{usage.plans.length === 1 ? '' : 's'}, {usage.liveOverrides} live overrides.</p>
+          {/* cap.usage comes from the same GET that loaded this page — retiring is the only
+              other route that reports usage, so learning it that way would mean the irreversible
+              call has already fired before an operator ever sees "Confirm retirement". */}
+          <p>Used by {cap.usage.plans.length} plan{cap.usage.plans.length === 1 ? '' : 's'}, {cap.usage.liveOverrides} live overrides.</p>
           <p>Retirement is permanent. This capability stays visible in history.</p>
           <button type="button" className="sv-btn" onClick={() => retireMutation.mutate()}>Confirm retirement</button>
           <button type="button" className="sv-btn--secondary" onClick={() => setConfirmingRetire(false)}>Cancel</button>
