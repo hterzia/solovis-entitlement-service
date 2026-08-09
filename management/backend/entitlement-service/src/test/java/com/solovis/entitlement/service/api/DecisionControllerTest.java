@@ -2,20 +2,32 @@ package com.solovis.entitlement.service.api;
 
 import com.solovis.entitlement.service.snapshot.SnapshotHolder;
 import com.solovis.entitlement.service.store.*;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.transaction.annotation.Transactional;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+/**
+ * Deliberately not {@code @Transactional}: {@code snapshotHolder.set(assembler.assembleFull())}
+ * below reads real committed rows and publishes them straight into the shared {@link SnapshotHolder}
+ * singleton, bypassing {@code SnapshotPublisher}'s commit-gated {@code afterCommit()} swap. Under
+ * a rolled-back test transaction that would leak a phantom capability into the snapshot that no
+ * longer exists in the database once the transaction rolls back (every read route resolves against
+ * that same singleton across the whole shared Spring context, per {@link SnapshotHolder}'s javadoc).
+ * Fixture keys are namespaced ("*.t4.*"/"t4-*"/"acct_t4_*") so this class's permanent writes don't collide with other
+ * non-transactional {@code @SpringBootTest} classes sharing this JVM fork's SQLite file. Seeding runs
+ * once via {@code @BeforeAll} (not {@code @BeforeEach}) since the unique key/external_id indexes would
+ * reject a second insert of the same fixtures once nothing rolls them back between test methods.
+ */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Transactional
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class DecisionControllerTest {
 
     @Autowired MockMvc mockMvc;
@@ -27,24 +39,24 @@ class DecisionControllerTest {
     @Autowired SnapshotVersionRepository snapshotVersionRepository;
     @Autowired AuditEventRepository auditEventRepository;
 
-    @BeforeEach
+    @BeforeAll
     void seedAndRefreshSnapshot() {
-        long capId = capabilityRepository.insert(new CapabilityRow(null, "reports.monthly", "reports",
+        long capId = capabilityRepository.insert(new CapabilityRow(null, "reports.t4.monthly", "reports",
             "Monthly reports", null, "QUANTITY", null, 0L, false, null, false, null, null, "ACTIVE", null,
             "2026-08-09T00:00:00.000Z", "2026-08-09T00:00:00.000Z"));
-        long planId = planRepository.insert(new PlanRow(null, "free", "Free", null, "ACTIVE", true,
+        long planId = planRepository.insert(new PlanRow(null, "t4-free", "Free", null, "ACTIVE", true,
             "2026-08-09T00:00:00.000Z", "2026-08-09T00:00:00.000Z"));
-        accountRepository.insert(new AccountRow(null, "acct_1", null, planId, "2026-08-09T00:00:00.000Z",
+        accountRepository.insert(new AccountRow(null, "acct_t4_1", null, planId, "2026-08-09T00:00:00.000Z",
             "PERSON", "dev-operator", "ACTIVE", "2026-08-09T00:00:00.000Z", "2026-08-09T00:00:00.000Z"));
         long auditSeq = auditEventRepository.insert(new AuditEventRow(null, "2026-08-09T00:00:00.000Z", "PERSON",
-            "dev-operator", "UI", "PLAN", "free", "CREATE", null, null, null, null, null, null, null));
+            "dev-operator", "UI", "PLAN", "t4-free", "CREATE", null, null, null, null, null, null, null));
         snapshotVersionRepository.insert(new SnapshotVersionRow(null, "2026-08-09T00:00:00.000Z", auditSeq, "{}"));
         snapshotHolder.set(assembler.assembleFull());
     }
 
     @Test
     void singleCapabilityReturnsFullTrace() throws Exception {
-        mockMvc.perform(get("/v1/accounts/acct_1/capabilities/reports.monthly"))
+        mockMvc.perform(get("/v1/accounts/acct_t4_1/capabilities/reports.t4.monthly"))
             .andExpect(status().isOk())
             .andExpect(header().exists("X-Entitlement-Snapshot-Version"))
             .andExpect(jsonPath("$.allowed").value(true))
@@ -55,16 +67,16 @@ class DecisionControllerTest {
 
     @Test
     void unknownAccountIsAnErrorNeverADenial() throws Exception {
-        mockMvc.perform(get("/v1/accounts/acct_missing/capabilities/reports.monthly"))
+        mockMvc.perform(get("/v1/accounts/acct_missing/capabilities/reports.t4.monthly"))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.type").value("entitlement/unknown-account"));
     }
 
     @Test
     void wholeAccountOmitsTraces() throws Exception {
-        mockMvc.perform(get("/v1/accounts/acct_1/entitlements"))
+        mockMvc.perform(get("/v1/accounts/acct_t4_1/entitlements"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.entitlements[0].capability").value("reports.monthly"))
+            .andExpect(jsonPath("$.entitlements[0].capability").value("reports.t4.monthly"))
             .andExpect(jsonPath("$.entitlements[0].trace").doesNotExist());
     }
 
@@ -72,9 +84,9 @@ class DecisionControllerTest {
     void registryDefaultsToActiveOnly() throws Exception {
         mockMvc.perform(get("/v1/capabilities"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.capabilities[?(@.key=='reports.monthly')].key").value("reports.monthly"))
-            .andExpect(jsonPath("$.capabilities[?(@.key=='reports.monthly')].area").value("reports"))
-            .andExpect(jsonPath("$.capabilities[?(@.key=='reports.monthly')].status").value("ACTIVE"))
+            .andExpect(jsonPath("$.capabilities[?(@.key=='reports.t4.monthly')].key").value("reports.t4.monthly"))
+            .andExpect(jsonPath("$.capabilities[?(@.key=='reports.t4.monthly')].area").value("reports"))
+            .andExpect(jsonPath("$.capabilities[?(@.key=='reports.t4.monthly')].status").value("ACTIVE"))
             .andExpect(jsonPath("$.snapshotVersion").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)));
     }
 }

@@ -4,6 +4,7 @@ import com.solovis.entitlement.core.model.*;
 import com.solovis.entitlement.core.view.SnapshotBuilder;
 import com.solovis.entitlement.service.store.AuditEventRepository;
 import com.solovis.entitlement.service.store.AuditEventRow;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -16,13 +17,29 @@ import static org.assertj.core.api.Assertions.assertThat;
 // snapshot_version.last_audit_seq carries a hard FK to audit_event(seq) (V1__baseline.sql) — every
 // publish() call here must reference a real row, so each test seeds one via AuditEventRepository
 // rather than passing an arbitrary literal as the brief's illustrative code did.
+//
+// Not @Transactional, same reasoning as CapabilityAdminServiceTest: the manual TransactionTemplate
+// commit below needs a real commit for SnapshotPublisher's afterCommit() swap to fire at all. But
+// that means holder.set(seed) and the synthetic "api.access" Capability this test publishes — which
+// is never backed by an actual capability table row — become permanent state in the shared
+// SnapshotHolder singleton (reused across every @SpringBootTest class in this JVM fork, per
+// SnapshotHolder's javadoc). Left alone, any later non-transactional admin-service test that iterates
+// snapshot.activeCapabilities() and looks each one up by key hits a phantom "api.access" with no row
+// to find. Restore the holder to the real, DB-backed snapshot afterward, same as
+// PlanAdminControllerTest's default-plan cleanup.
 @SpringBootTest
 class SnapshotPublisherTest {
 
     @Autowired SnapshotPublisher publisher;
     @Autowired SnapshotHolder holder;
+    @Autowired SnapshotAssembler assembler;
     @Autowired PlatformTransactionManager entitlementTransactionManager;
     @Autowired AuditEventRepository auditEventRepository;
+
+    @AfterEach
+    void restoreHolderFromDatabase() {
+        holder.set(assembler.assembleFull());
+    }
 
     private long seedAuditEvent() {
         return auditEventRepository.insert(new AuditEventRow(null, "2026-08-09T00:00:00.000Z", "SYSTEM",
