@@ -127,4 +127,28 @@ class FeedHttpClientTest {
 
         assertThatThrownBy(() -> client.delta(1L)).isInstanceOf(FeedUnavailableException.class);
     }
+
+    @Test
+    void closingLeavesACallerSuppliedHttpClientOpenForTheCallerToReuseOrCloseItself() {
+        var supplied = HttpClient.newHttpClient();
+        var suppliedClientOwner = new FeedHttpClient(stub.baseUri(), supplied, Duration.ofSeconds(5));
+
+        suppliedClientOwner.close();
+
+        assertThat(supplied.isTerminated()).isFalse();
+        supplied.close();
+    }
+
+    @Test
+    void closingShutsDownTheHttpClientTheConvenienceConstructorCreatedForItself() {
+        var owner = new FeedHttpClient(stub.baseUri(), Duration.ofSeconds(5));
+        stub.respondVersion(1L, "2026-08-09T14:00:00.000Z", 1, 1);
+        assertThat(owner.version().version()).isEqualTo(1L);   // works while open
+
+        owner.close();
+
+        // The stub server is still up; only the owned HttpClient was shut down, so the next
+        // request fails at the transport layer rather than reaching the server.
+        assertThatThrownBy(owner::version).isInstanceOf(FeedUnavailableException.class);
+    }
 }
