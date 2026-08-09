@@ -4,6 +4,7 @@ import com.solovis.entitlement.core.model.AccountAssignment;
 import com.solovis.entitlement.core.model.Capability;
 import com.solovis.entitlement.core.model.CapabilityKey;
 import com.solovis.entitlement.core.model.AccountOverride;
+import com.solovis.entitlement.core.model.Plan;
 import com.solovis.entitlement.core.model.PlanEntitlement;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -59,8 +60,19 @@ public final class SnapshotMutator {
         var remaining = overrides.getOrDefault(key, List.of()).stream()
             .filter(o -> !o.id().equals(java.util.OptionalLong.of(overrideId)))
             .toList();
-        overrides.put(key, remaining);
+        if (remaining.isEmpty()) {
+            overrides.remove(key);
+        } else {
+            overrides.put(key, remaining);
+        }
         return new Snapshot(newVersion, base.capabilitiesMap(), base.plansMap(),
             base.planEntitlementsMap(), base.accountsMap(), Map.copyOf(overrides));
+    }
+
+    public static Snapshot withPlan(Snapshot base, long newVersion, Plan plan) {
+        var plans = new HashMap<>(base.plansMap());
+        plans.put(plan.key(), plan);
+        return new Snapshot(newVersion, base.capabilitiesMap(), Map.copyOf(plans),
+            base.planEntitlementsMap(), base.accountsMap(), base.liveOverridesMap());
     }
 }

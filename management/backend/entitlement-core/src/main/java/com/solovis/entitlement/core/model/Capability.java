@@ -72,17 +72,25 @@ public record Capability(
                 throw new IllegalArgumentException("A TIER capability must declare at least two tiers.");
             }
             var defaultTier = (EntitlementValue.Tier) defaultValue;
-            if (!tierOrder.declares(defaultTier.tierKey())) {
-                throw new IllegalArgumentException("Default tier '" + defaultTier.tierKey() + "' is not declared.");
-            }
+            requireDeclaredWithMatchingOrdinal(tierOrder, defaultTier, "Default");
             offValue.ifPresent(off -> {
                 var offTier = (EntitlementValue.Tier) off.value();
-                if (!tierOrder.declares(offTier.tierKey())) {
-                    throw new IllegalArgumentException("Off-value tier '" + offTier.tierKey() + "' is not declared.");
-                }
+                requireDeclaredWithMatchingOrdinal(tierOrder, offTier, "Off-value");
             });
         } else if (!tierOrder.tiers().isEmpty()) {
             throw new IllegalArgumentException("Only a TIER capability may declare tiers.");
+        }
+    }
+
+    private static void requireDeclaredWithMatchingOrdinal(TierOrder tierOrder, EntitlementValue.Tier tier, String label) {
+        var declaredOrdinal = tierOrder.ordinalOf(tier.tierKey());
+        if (declaredOrdinal.isEmpty()) {
+            throw new IllegalArgumentException(label + " tier '" + tier.tierKey() + "' is not declared.");
+        }
+        if (declaredOrdinal.getAsInt() != tier.ordinal()) {
+            throw new IllegalArgumentException(
+                label + " tier '" + tier.tierKey() + "' carries ordinal " + tier.ordinal()
+                    + " but the capability declares it as " + declaredOrdinal.getAsInt() + ".");
         }
     }
 

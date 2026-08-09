@@ -89,6 +89,24 @@ class SnapshotMutatorTest {
         assertThat(updated.accountsMap()).isSameAs(withOverride.accountsMap());
         assertThat(updated.planEntitlementsMap()).isSameAs(withOverride.planEntitlementsMap());
         assertThat(updated.liveOverridesMap()).isNotSameAs(withOverride.liveOverridesMap());
+        assertThat(updated.liveOverridesMap()).doesNotContainKey(
+            new Snapshot.AccountCapabilityKey("acct_1", REPORTS));
+    }
+
+    @Test
+    void withPlanReplacesTheStatusAndReusesUnrelatedMapsByReference() {
+        var base = baseSnapshot();
+        var archived = new Plan("pro", "Pro", Plan.Status.ARCHIVED, false);
+
+        var updated = SnapshotMutator.withPlan(base, 2, archived);
+
+        assertThat(updated.plan("pro")).contains(archived);
+        assertThat(base.plan("pro")).get().extracting(Plan::status).isEqualTo(Plan.Status.ACTIVE);
+        assertThat(updated.capabilitiesMap()).isSameAs(base.capabilitiesMap());
+        assertThat(updated.planEntitlementsMap()).isSameAs(base.planEntitlementsMap());
+        assertThat(updated.accountsMap()).isSameAs(base.accountsMap());
+        assertThat(updated.liveOverridesMap()).isSameAs(base.liveOverridesMap());
+        assertThat(updated.plansMap()).isNotSameAs(base.plansMap());
     }
 
     @Test

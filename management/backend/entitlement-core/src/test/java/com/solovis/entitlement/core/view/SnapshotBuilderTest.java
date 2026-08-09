@@ -57,6 +57,16 @@ class SnapshotBuilderTest {
     }
 
     @Test
+    void looksUpPlansByKeyAndListsAll() {
+        var pro = new Plan("pro", "Pro", Plan.Status.ACTIVE, true);
+        var snapshot = new SnapshotBuilder().plan(pro).build(1);
+
+        assertThat(snapshot.plan("pro")).contains(pro);
+        assertThat(snapshot.plans()).containsExactly(pro);
+        assertThat(snapshot.plan("missing")).isEmpty();
+    }
+
+    @Test
     void unknownLookupsReturnEmptyRatherThanThrowing() {
         var snapshot = new SnapshotBuilder().build(1);
         assertThat(snapshot.capability(REPORTS)).isEmpty();

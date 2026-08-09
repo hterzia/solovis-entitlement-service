@@ -98,6 +98,15 @@ class CapabilityTest {
     }
 
     @Test
+    void tierDefaultOrdinalMustMatchTheDeclaredOrdinal() {
+        assertThatThrownBy(() -> new Capability(
+            new CapabilityKey("support.level"), "Support", null, ValueType.TIER,
+            new EntitlementValue.Tier("community", 5), Optional.empty(), SUPPORT_TIERS,
+            Capability.Status.ACTIVE, null))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void tierOffValueMustBeADeclaredTier() {
         assertThatThrownBy(() -> new Capability(
             new CapabilityKey("support.level"), "Support", null, ValueType.TIER,

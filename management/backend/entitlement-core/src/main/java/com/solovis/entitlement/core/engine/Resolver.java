@@ -65,10 +65,9 @@ public final class Resolver {
         var topGrant = pickWinner(grantCandidates, true);
         boolean grantApplied = topGrant.isPresent() && Generosity.compare(topGrant.get().value(), lookup.baseline) > 0;
         EntitlementValue afterGrants = grantApplied ? topGrant.get().value() : lookup.baseline;
-        var grants = grantTraceEntries(grantCandidates, topGrant, grantApplied);
-        Optional<TraceEntry> grantWinnerEntry = grantApplied
-            ? grants.stream().filter(e -> e.overrideId().equals(topGrant.get().id())).findFirst()
-            : Optional.empty();
+        var grantResult = groupTraceEntries(grantCandidates, topGrant, grantApplied, TraceSource.GRANT,
+            (isTop, applied) -> isTop ? (applied ? Outcome.WON : Outcome.LOST_NOT_MORE_GENEROUS_THAN_PLAN)
+                                       : Outcome.LOST_NOT_MORE_GENEROUS_THAN_WINNING_GRANT);
 
         // Holds: the most restrictive candidate is always marked WON in its own list, even when
         // it does not change the result — holdWinner (below) being empty is what records that it
@@ -77,13 +76,12 @@ public final class Resolver {
         var topHold = pickWinner(holdCandidates, false);
         boolean holdApplied = topHold.isPresent() && Generosity.compare(topHold.get().value(), afterGrants) < 0;
         EntitlementValue result = holdApplied ? topHold.get().value() : afterGrants;
-        var holds = holdTraceEntries(holdCandidates, topHold);
-        Optional<TraceEntry> holdWinnerEntry = holdApplied
-            ? holds.stream().filter(e -> e.overrideId().equals(topHold.get().id())).findFirst()
-            : Optional.empty();
+        var holdResult = groupTraceEntries(holdCandidates, topHold, holdApplied, TraceSource.HOLD,
+            (isTop, applied) -> isTop ? Outcome.WON : Outcome.LOST_NOT_MORE_RESTRICTIVE_THAN_WINNING_HOLD);
 
         boolean allowed = computeAllowed(lookup.capability, result);
-        var trace = new Trace(baselineEntry, grants, grantWinnerEntry, holds, holdWinnerEntry, result, allowed);
+        var trace = new Trace(baselineEntry, grantResult.entries(), grantResult.winnerEntry(),
+            holdResult.entries(), holdResult.winnerEntry(), result, allowed);
         var decision = new Decision(accountExternalId, capabilityKey.value(), allowed, result, view.snapshotVersion(), evaluatedAt);
         return new Explanation(decision, trace);
     }
@@ -146,40 +144,31 @@ public final class Resolver {
     }
 
     /**
-     * A grant has two distinct ways to lose: to another grant, or to the plan itself. The top
-     * candidate gets {@code WON} only if it actually beat the plan ({@code applied}); every other
-     * candidate lost to it and is marked accordingly (c23 — denial explained as fully as a grant).
+     * Builds one group's (grants' or holds') trace entries and identifies the winner's entry —
+     * in a single pass, using reference equality against {@code top} (not id equality, which
+     * breaks when multiple candidates carry an absent id — the model permits this for a
+     * replica's answer-only projection). {@code outcomeOf} receives (isTop, applied) and returns
+     * the Outcome for that candidate; grants and holds compute this differently (see call sites).
      */
-    private static List<TraceEntry> grantTraceEntries(List<AccountOverride> candidates, Optional<AccountOverride> top, boolean applied) {
+    private static GroupResult groupTraceEntries(
+        List<AccountOverride> candidates, Optional<AccountOverride> top, boolean applied,
+        TraceSource source, java.util.function.BiFunction<Boolean, Boolean, Outcome> outcomeOf) {
         var entries = new ArrayList<TraceEntry>();
+        TraceEntry winnerEntry = null;
         for (var candidate : candidates) {
-            boolean isTop = top.isPresent() && top.get().id().equals(candidate.id());
-            Outcome outcome = isTop
-                ? (applied ? Outcome.WON : Outcome.LOST_NOT_MORE_GENEROUS_THAN_PLAN)
-                : Outcome.LOST_NOT_MORE_GENEROUS_THAN_WINNING_GRANT;
-            entries.add(toTraceEntry(candidate, outcome));
+            boolean isTop = top.isPresent() && top.get() == candidate;
+            var entry = toTraceEntry(candidate, source, outcomeOf.apply(isTop, applied));
+            entries.add(entry);
+            if (isTop) {
+                winnerEntry = entry;
+            }
         }
-        return entries;
+        return new GroupResult(entries, applied ? Optional.ofNullable(winnerEntry) : Optional.empty());
     }
 
-    /**
-     * The most restrictive HOLD is always {@code WON} within its own list, even when it does not
-     * change the result — {@code holdWinner} being empty on {@link Trace} is what records that it
-     * did not apply (decision-api.md, "Ties are deterministic").
-     */
-    private static List<TraceEntry> holdTraceEntries(List<AccountOverride> candidates, Optional<AccountOverride> top) {
-        var entries = new ArrayList<TraceEntry>();
-        for (var candidate : candidates) {
-            boolean isTop = top.isPresent() && top.get().id().equals(candidate.id());
-            Outcome outcome = isTop ? Outcome.WON : Outcome.LOST_NOT_MORE_RESTRICTIVE_THAN_WINNING_HOLD;
-            entries.add(toTraceEntry(candidate, outcome));
-        }
-        return entries;
-    }
-
-    private static TraceEntry toTraceEntry(AccountOverride candidate, Outcome outcome) {
+    private static TraceEntry toTraceEntry(AccountOverride candidate, TraceSource source, Outcome outcome) {
         return new TraceEntry(
-            TraceSource.PLAN, candidate.id(), Optional.empty(), candidate.value(),
+            source, candidate.id(), Optional.empty(), candidate.value(),
             candidate.reason(), candidate.createdBy(), candidate.createdAt(), Optional.of(outcome));
     }
 
@@ -189,4 +178,6 @@ public final class Resolver {
         TraceSource baselineSource,
         Optional<String> baselinePlanKey,
         List<AccountOverride> overrides) {}
+
+    private record GroupResult(List<TraceEntry> entries, Optional<TraceEntry> winnerEntry) {}
 }

@@ -71,8 +71,14 @@ public final class Snapshot implements EntitlementView {
         return liveOverrides.getOrDefault(new AccountCapabilityKey(accountExternalId, capabilityKey), List.of());
     }
 
-    Optional<Plan> plan(String planKey) {
+    @Override
+    public Optional<Plan> plan(String planKey) {
         return Optional.ofNullable(plans.get(planKey));
+    }
+
+    @Override
+    public Collection<Plan> plans() {
+        return plans.values();
     }
 
     // Package-visible accessors SnapshotMutator uses to rebuild only the maps a change touches.

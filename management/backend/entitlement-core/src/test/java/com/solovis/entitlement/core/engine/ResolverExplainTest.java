@@ -66,6 +66,8 @@ class ResolverExplainTest {
         assertThat(explanation.trace().holdWinner().get().overrideId()).isEqualTo(OptionalLong.of(7788));
 
         assertThat(explanation.trace().result()).isEqualTo(EntitlementValue.Quantity.of(0));
+        assertThat(explanation.trace().grantWinner().get().source()).isEqualTo(TraceSource.GRANT);
+        assertThat(explanation.trace().holdWinner().get().source()).isEqualTo(TraceSource.HOLD);
         assertThat(explanation.decision().value()).isEqualTo(explanation.trace().result()); // resolve()/explain() agree
         assertThat(explanation.decision().allowed()).isEqualTo(explanation.trace().allowed());
     }
@@ -150,6 +152,33 @@ class ResolverExplainTest {
         assertThat(explanation.trace().holds()).singleElement()
             .extracting(TraceEntry::outcome).isEqualTo(Optional.of(Outcome.WON)); // the entry itself is still WON
         assertThat(explanation.trace().result()).isEqualTo(EntitlementValue.Quantity.of(50));
+    }
+
+    @Test
+    void winnerIdentificationIsCorrectEvenWhenOverrideIdsAreAbsent() {
+        var weaker = new AccountOverride(OptionalLong.empty(), "acct_1", REPORTS, OverrideKind.GRANT,
+            EntitlementValue.Quantity.of(100), Optional.empty(), Optional.empty(), Optional.empty());
+        var stronger = new AccountOverride(OptionalLong.empty(), "acct_1", REPORTS, OverrideKind.GRANT,
+            EntitlementValue.Quantity.of(200), Optional.empty(), Optional.empty(), Optional.empty());
+
+        var snapshot = new SnapshotBuilder()
+            .capability(new Capability(REPORTS, "Monthly reports", null, ValueType.QUANTITY,
+                EntitlementValue.Quantity.of(0), Optional.empty(), TierOrder.NONE, Capability.Status.ACTIVE, null))
+            .plan(new Plan("pro", "Pro", Plan.Status.ACTIVE, false))
+            .planEntitlement(new PlanEntitlement("pro", REPORTS, EntitlementValue.Quantity.of(50)))
+            .account(new AccountAssignment("acct_1", "pro"))
+            .override(weaker)
+            .override(stronger)
+            .build(1);
+
+        var explanation = Resolver.explain(snapshot, "acct_1", REPORTS, NOW);
+
+        assertThat(explanation.trace().result()).isEqualTo(EntitlementValue.Quantity.of(200));
+        assertThat(explanation.trace().grantWinner()).isPresent();
+        assertThat(explanation.trace().grantWinner().get().value()).isEqualTo(EntitlementValue.Quantity.of(200));
+        var weakerEntry = explanation.trace().grants().stream()
+            .filter(e -> e.value().equals(EntitlementValue.Quantity.of(100))).findFirst().orElseThrow();
+        assertThat(weakerEntry.outcome()).contains(Outcome.LOST_NOT_MORE_GENEROUS_THAN_WINNING_GRANT);
     }
 
     @Test

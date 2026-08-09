@@ -2,6 +2,7 @@ package com.solovis.entitlement.core.engine;
 
 import com.solovis.entitlement.core.model.EntitlementValue;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -18,4 +19,14 @@ public record Trace(
     Optional<TraceEntry> holdWinner,
     EntitlementValue result,
     boolean allowed
-) {}
+) {
+
+    public Trace {
+        Objects.requireNonNull(baseline, "baseline");
+        grants = List.copyOf(grants);
+        Objects.requireNonNull(grantWinner, "grantWinner");
+        holds = List.copyOf(holds);
+        Objects.requireNonNull(holdWinner, "holdWinner");
+        Objects.requireNonNull(result, "result");
+    }
+}

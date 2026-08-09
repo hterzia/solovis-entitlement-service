@@ -4,6 +4,7 @@ import com.solovis.entitlement.core.model.AccountAssignment;
 import com.solovis.entitlement.core.model.Capability;
 import com.solovis.entitlement.core.model.CapabilityKey;
 import com.solovis.entitlement.core.model.AccountOverride;
+import com.solovis.entitlement.core.model.Plan;
 import com.solovis.entitlement.core.model.PlanEntitlement;
 import java.util.Collection;
 import java.util.List;
@@ -29,4 +30,10 @@ public interface EntitlementView {
 
     /** Every LIVE override of either kind for this account and capability (§4). */
     List<AccountOverride> liveOverrides(String accountExternalId, CapabilityKey capabilityKey);
+
+    /** A single plan by key, for the operator UI's plan list and editor. */
+    Optional<Plan> plan(String planKey);
+
+    /** Every plan, for the operator UI's plan list. */
+    Collection<Plan> plans();
 }
