@@ -3506,6 +3506,21 @@ describe('PlanEditorRoute', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(screen.getByText('Saved. Active everywhere within 60 seconds.')).toBeInTheDocument())
   })
+
+  it('clears the previous save confirmation when a new edit is made', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<PlanEditorRoute planKey="pro" />)
+    await makeAChange(user)
+    await user.type(screen.getByLabelText('Preview account'), 'acct_9931')
+    await user.click(screen.getByRole('button', { name: 'Review changes' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(screen.getByText('Saved. Active everywhere within 60 seconds.')).toBeInTheDocument())
+    // A fresh edit must not leave the previous save's confirmation sitting next to unsaved
+    // work — that would read as if this new, unreviewed edit were already live too.
+    await makeAChange(user)
+    expect(screen.queryByText('Saved. Active everywhere within 60 seconds.')).not.toBeInTheDocument()
+  })
 })
 ```
 
@@ -3590,6 +3605,12 @@ export function PlanEditorRoute({ planKey }: { planKey?: string } = {}) {
     setPendingSet((prev) => ({ ...prev, [cap.key]: value }))
     setPendingUnset((prev) => { const next = new Set(prev); next.delete(cap.key); return next })
     setPreview(null)
+    // Also clear the previous save's confirmation: it stays visible after a successful save
+    // (that's the point of the hasPendingChanges||applyResult guard above), but a *new* edit
+    // must not let that stale "Saved." banner sit next to unsaved work and read as if this
+    // edit were live too — the liveness promise loses all meaning if it can be mistaken for
+    // a stale echo of a previous save.
+    setApplyResult(null)
   }
 
   function clearCapabilityValue(cap: Capability) {
@@ -3597,6 +3618,7 @@ export function PlanEditorRoute({ planKey }: { planKey?: string } = {}) {
     setPendingSet((prev) => { const next = { ...prev }; delete next[cap.key]; return next })
     setEditing(null)
     setPreview(null)
+    setApplyResult(null)
   }
 
   const canSave = preview !== null && Boolean(preview.previewAccount)
