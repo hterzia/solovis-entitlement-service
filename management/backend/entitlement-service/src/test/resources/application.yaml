@@ -1,0 +1,3 @@
+spring:
+  datasource:
+    url: "jdbc:sqlite:${java.io.tmpdir}/entitlement-test-${random.uuid}.db?journal_mode=WAL&synchronous=NORMAL&foreign_keys=on&busy_timeout=5000&temp_store=MEMORY"
