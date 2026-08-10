@@ -174,12 +174,14 @@ final class SnapshotPoller implements AutoCloseable {
                 return succeed();
             }
             Replica candidate;
+            boolean fullFetch;   // whether candidate came from feed.full() rather than a delta
             if (ungated) {
                 // The seeded replica has never passed the gate (a cache load — DiskCache does not
                 // persist conformance vectors). A delta would not give the gate anything complete
                 // to evaluate, and would also skip evaluation entirely at a matching version — so
                 // go straight to a full snapshot regardless of what the version poll reported.
                 candidate = feed.full();
+                fullFetch = true;
             } else {
                 try {
                     // Scoped to the delta path only: the version endpoint is deliberately trivial
@@ -189,16 +191,21 @@ final class SnapshotPoller implements AutoCloseable {
                     // DeltaApplier.apply's inspection of the batch it returns, so both are covered
                     // by wrapping this one statement.
                     candidate = DeltaApplier.apply(current, feed.delta(current.version()));
+                    fullFetch = false;
                 } catch (SnapshotTooOldException | DeltaApplier.OutOfOrderDeltaException e) {
                     metrics.fullResync();
                     candidate = feed.full();
+                    fullFetch = true;
                 } catch (DeltaApplier.UnknownChangeKindException e) {
                     halt("Feed delivered an unknown change kind '" + e.kind()
                         + "'. Replication has stopped; the last good replica keeps serving.");
                     return false;
                 }
             }
-            var gate = ConformanceGate.evaluate(candidate);
+            // requireVectors only for a candidate that came straight off the wire as a full
+            // snapshot; a delta-derived candidate inherits current.vectors() (DeltaApplier.apply)
+            // and was never supposed to carry its own.
+            var gate = ConformanceGate.evaluate(candidate, fullFetch);
             if (!gate.passed()) {
                 metrics.conformanceFailed();
                 LOG.severe("Discarding a snapshot that failed the conformance gate; keeping version "

@@ -65,10 +65,25 @@ class ConformanceGateTest {
     }
 
     @Test
-    void aSnapshotCarryingNoVectorsPassesRatherThanBecomingAnOutage() {
+    void aDeltaDerivedCandidateCarryingNoVectorsPassesRatherThanBecomingAnOutage() {
+        var result = ConformanceGate.evaluate(replica(1, ResolverContract.VERSION, List.of()), false);
+
+        assertThat(result.passed()).isTrue();
+    }
+
+    @Test
+    void theSingleArgumentFormDoesNotRequireVectorsEitherSoExistingCallSitesKeepWorking() {
         var result = ConformanceGate.evaluate(replica(1, ResolverContract.VERSION, List.of()));
 
         assertThat(result.passed()).isTrue();
+    }
+
+    @Test
+    void aFullSnapshotCandidateCarryingNoVectorsFailsTheGateRatherThanDisablingTheDriftDefenceSilently() {
+        var result = ConformanceGate.evaluate(replica(1, ResolverContract.VERSION, List.of()), true);
+
+        assertThat(result.passed()).isFalse();
+        assertThat(result.reason()).contains("conformance vectors");
     }
 
     @Test

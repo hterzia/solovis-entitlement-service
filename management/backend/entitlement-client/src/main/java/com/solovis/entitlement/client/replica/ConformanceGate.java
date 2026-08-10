@@ -26,7 +26,25 @@ public final class ConformanceGate {
         }
     }
 
+    /**
+     * Equivalent to {@link #evaluate(Replica, boolean) evaluate(candidate, false)} — does not
+     * require the candidate to carry vectors. Kept so a delta-derived candidate (which inherits
+     * {@code current.vectors()} rather than fetching its own) keeps passing through unchanged.
+     */
     public static GateResult evaluate(Replica candidate) {
+        return evaluate(candidate, false);
+    }
+
+    /**
+     * @param requireVectors when {@code true}, a candidate carrying zero conformance vectors
+     *     fails the gate instead of passing vacuously. Pass {@code true} only for a candidate that
+     *     came straight from {@code GET /v1/snapshot/full} — a delta-derived candidate inherits its
+     *     predecessor's vectors and was never supposed to carry its own (see {@code
+     *     DeltaApplier.apply}), so it must never be held to this. Without this, a service-side
+     *     regression that stopped emitting {@code conformance} lines would silently disable this
+     *     module's primary drift defence, with no signal that it had gone quiet.
+     */
+    public static GateResult evaluate(Replica candidate, boolean requireVectors) {
         if (candidate.format() != SUPPORTED_FORMAT) {
             return new GateResult(false, "Unsupported feed format " + candidate.format()
                 + "; this SDK reads format " + SUPPORTED_FORMAT + ".");
@@ -35,6 +53,11 @@ public final class ConformanceGate {
             return new GateResult(false, "Unsupported resolverContract " + candidate.resolverContract()
                 + "; this SDK implements " + ResolverContract.VERSION
                 + ". The resolution rule itself changed — this needs a coordinated rollout.");
+        }
+        if (requireVectors && candidate.vectors().isEmpty()) {
+            return new GateResult(false,
+                "A full snapshot carried zero conformance vectors; refusing to serve a replica "
+                    + "whose drift defence cannot be evaluated rather than passing vacuously.");
         }
 
         // Evaluated one vector at a time, not via ConformanceCheck.run(candidate.vectors()): core's

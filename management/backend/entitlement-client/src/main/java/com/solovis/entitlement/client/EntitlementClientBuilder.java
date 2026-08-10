@@ -260,7 +260,7 @@ public final class EntitlementClientBuilder {
         while (true) {
             try {
                 var candidate = feed.full();
-                var gate = ConformanceGate.evaluate(candidate);
+                var gate = ConformanceGate.evaluate(candidate, true);   // a full snapshot must carry vectors
                 if (!gate.passed()) {
                     throw new EntitlementClientStartupException(
                         "Entitlement replica failed the conformance gate at startup: " + gate.reason());

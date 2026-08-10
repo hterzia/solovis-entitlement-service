@@ -43,6 +43,23 @@ class SnapshotPollerTest {
         }
     }
 
+    /**
+     * A conformance vector this engine agrees with, matching {@link #feedAt}'s built-in fixture
+     * (capability {@code api.access}, plan {@code pro} granting it, account {@code acct_9931}).
+     * The gate now refuses to serve a full snapshot carrying zero vectors (Finding 3), so every
+     * full-fetch fixture below that is not itself testing gate failure needs one of these.
+     */
+    private static final String GOOD_VECTOR = "{\"kind\":\"conformance\",\"id\":\"api.access: plan grants it\","
+        + "\"model\":{\"account\":\"acct_9931\",\"capability\":\"api.access\","
+        + "\"capabilities\":[{\"kind\":\"capability\",\"key\":\"api.access\",\"area\":\"api\","
+        + "\"valueType\":\"SWITCH\",\"default\":{\"type\":\"SWITCH\",\"enabled\":false},"
+        + "\"status\":\"ACTIVE\"}],"
+        + "\"plans\":[{\"kind\":\"plan\",\"key\":\"pro\",\"status\":\"ACTIVE\","
+        + "\"isDefaultForNewAccounts\":true,\"entitlements\":{\"api.access\":{\"type\":\"SWITCH\",\"enabled\":true}}}],"
+        + "\"accounts\":[{\"kind\":\"account\",\"external\":\"acct_9931\",\"planKey\":\"pro\"}],"
+        + "\"overrides\":[]},"
+        + "\"expect\":{\"allowed\":true,\"value\":{\"type\":\"SWITCH\",\"enabled\":true}}}";
+
     private static String feedAt(long version, String extraLine) {
         var lines = new java.util.ArrayList<String>();
         lines.add("{\"kind\":\"header\",\"version\":" + version + ",\"format\":1,\"resolverContract\":1,"
@@ -132,7 +149,7 @@ class SnapshotPollerTest {
         stub.failNextDeltaWith(410, """
             {"type":"entitlement/snapshot-too-old","title":"Snapshot too old","status":410,\
             "currentVersion":200}""");
-        stub.respondFull(feedAt(200L, null));
+        stub.respondFull(feedAt(200L, GOOD_VECTOR));
 
         assertThat(poller().syncOnce()).isTrue();
         assertThat(holder.get().version()).isEqualTo(200L);
@@ -360,7 +377,7 @@ class SnapshotPollerTest {
     @Test
     void aReplicaSeededUngatedForcesAFullFetchAndGatesEvenWhenTheServiceReportsTheSameVersion() {
         stub.respondVersion(100L, "2026-08-09T14:03:10.900Z", 1, 1);
-        stub.respondFull(feedAt(100L, null));
+        stub.respondFull(feedAt(100L, GOOD_VECTOR));
         var before = holder.get();
         var poller = poller();
         poller.markUngatedAtStartup();
@@ -404,7 +421,7 @@ class SnapshotPollerTest {
     @Test
     void afterOneSuccessfulGatedSyncFromAnUngatedSeedASubsequentSameVersionPollTakesTheFastPath() {
         stub.respondVersion(100L, "2026-08-09T14:03:10.900Z", 1, 1);
-        stub.respondFull(feedAt(100L, null));
+        stub.respondFull(feedAt(100L, GOOD_VECTOR));
         var poller = poller();
         poller.markUngatedAtStartup();
         assertThat(poller.syncOnce()).isTrue();

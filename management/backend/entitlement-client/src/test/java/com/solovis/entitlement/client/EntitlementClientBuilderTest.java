@@ -23,6 +23,20 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class EntitlementClientBuilderTest {
 
+    /** A conformance vector this engine agrees with, matching {@link #FEED}'s own fixture. Every
+     * full snapshot must carry at least one vector or the gate refuses it outright (Finding 3). */
+    private static final String GOOD_VECTOR =
+        "{\"kind\":\"conformance\",\"id\":\"api.access: plan grants it\","
+            + "\"model\":{\"account\":\"acct_9931\",\"capability\":\"api.access\","
+            + "\"capabilities\":[{\"kind\":\"capability\",\"key\":\"api.access\",\"area\":\"api\","
+            + "\"valueType\":\"SWITCH\",\"default\":{\"type\":\"SWITCH\",\"enabled\":false},"
+            + "\"status\":\"ACTIVE\"}],"
+            + "\"plans\":[{\"kind\":\"plan\",\"key\":\"pro\",\"status\":\"ACTIVE\","
+            + "\"isDefaultForNewAccounts\":true,\"entitlements\":{\"api.access\":{\"type\":\"SWITCH\",\"enabled\":true}}}],"
+            + "\"accounts\":[{\"kind\":\"account\",\"external\":\"acct_9931\",\"planKey\":\"pro\"}],"
+            + "\"overrides\":[]},"
+            + "\"expect\":{\"allowed\":true,\"value\":{\"type\":\"SWITCH\",\"enabled\":true}}}";
+
     private static final String FEED = String.join("\n",
         """
         {"kind":"header","version":48211,"format":1,"resolverContract":1,\
@@ -36,8 +50,9 @@ class EntitlementClientBuilderTest {
         "entitlements":{"api.access":{"type":"SWITCH","enabled":true}}}""",
         """
         {"kind":"account","external":"acct_9931","planKey":"pro"}""",
+        GOOD_VECTOR,
         """
-        {"kind":"footer","version":48211,"recordCount":5}""");
+        {"kind":"footer","version":48211,"recordCount":6}""");
 
     /**
      * Same fixture as {@code SnapshotPollerTest}'s bad-vector: a conformance line whose expectation
@@ -58,8 +73,8 @@ class EntitlementClientBuilderTest {
     /** {@link #FEED} with one extra line spliced in before the footer, and the record count bumped. */
     private static String feedWithExtraLine(String extraLine) {
         return FEED.replace(
-            "{\"kind\":\"footer\",\"version\":48211,\"recordCount\":5}",
-            extraLine + "\n{\"kind\":\"footer\",\"version\":48211,\"recordCount\":6}");
+            "{\"kind\":\"footer\",\"version\":48211,\"recordCount\":6}",
+            extraLine + "\n{\"kind\":\"footer\",\"version\":48211,\"recordCount\":7}");
     }
 
     /** A URI nothing is listening on: opened and immediately closed to obtain a free, refusing port. */
