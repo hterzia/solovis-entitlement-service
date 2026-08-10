@@ -32,6 +32,11 @@ import java.util.Optional;
  */
 public interface EntitlementClient extends AutoCloseable {
 
+    /** Configures and constructs a client. {@code build()} blocks until the first snapshot loads. */
+    static EntitlementClientBuilder builder() {
+        return new EntitlementClientBuilder();
+    }
+
     /** One capability. Local, lock-free, microseconds. Never throws on service failure. */
     Decision check(String accountExternalId, String capabilityKey);
 

@@ -1,0 +1,204 @@
+package com.solovis.entitlement.client;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.solovis.entitlement.client.error.EntitlementClientStartupException;
+import com.solovis.entitlement.client.replica.DiskCache;
+import com.solovis.entitlement.client.replica.FullSnapshotReader;
+import com.solovis.entitlement.client.testing.StubFeedServer;
+import java.io.ByteArrayInputStream;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.time.Duration;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+/**
+ * Covers {@link EntitlementClientBuilder#build()}: the startup gate (fetch, conformance, disk
+ * cache fallback), validation, and the documented defaults.
+ */
+class EntitlementClientBuilderTest {
+
+    private static final String FEED = String.join("\n",
+        """
+        {"kind":"header","version":48211,"format":1,"resolverContract":1,\
+        "publishedAt":"2026-08-09T14:03:10.900Z",\
+        "counts":{"capabilities":1,"plans":1,"accounts":1,"overrides":0}}""",
+        """
+        {"kind":"capability","key":"api.access","area":"api","valueType":"SWITCH",\
+        "default":{"type":"SWITCH","enabled":false},"status":"ACTIVE"}""",
+        """
+        {"kind":"plan","key":"pro","status":"ACTIVE","isDefaultForNewAccounts":true,\
+        "entitlements":{"api.access":{"type":"SWITCH","enabled":true}}}""",
+        """
+        {"kind":"account","external":"acct_9931","planKey":"pro"}""",
+        """
+        {"kind":"footer","version":48211,"recordCount":5}""");
+
+    /**
+     * Same fixture as {@code SnapshotPollerTest}'s bad-vector: a conformance line whose expectation
+     * the real resolver cannot satisfy, so the startup gate must reject it.
+     */
+    private static final String BAD_VECTOR =
+        "{\"kind\":\"conformance\",\"id\":\"a vector this engine disagrees with\","
+            + "\"model\":{\"account\":\"acct_c1\",\"capability\":\"api.access\","
+            + "\"capabilities\":[{\"kind\":\"capability\",\"key\":\"api.access\",\"area\":\"api\","
+            + "\"valueType\":\"SWITCH\",\"default\":{\"type\":\"SWITCH\",\"enabled\":false},"
+            + "\"status\":\"ACTIVE\"}],"
+            + "\"plans\":[{\"kind\":\"plan\",\"key\":\"p\",\"status\":\"ACTIVE\","
+            + "\"isDefaultForNewAccounts\":true,\"entitlements\":{}}],"
+            + "\"accounts\":[{\"kind\":\"account\",\"external\":\"acct_c1\",\"planKey\":\"p\"}],"
+            + "\"overrides\":[]},"
+            + "\"expect\":{\"allowed\":true,\"value\":{\"type\":\"SWITCH\",\"enabled\":true}}}";
+
+    /** {@link #FEED} with one extra line spliced in before the footer, and the record count bumped. */
+    private static String feedWithExtraLine(String extraLine) {
+        return FEED.replace(
+            "{\"kind\":\"footer\",\"version\":48211,\"recordCount\":5}",
+            extraLine + "\n{\"kind\":\"footer\",\"version\":48211,\"recordCount\":6}");
+    }
+
+    /** A URI nothing is listening on: opened and immediately closed to obtain a free, refusing port. */
+    private static URI deadEnd() throws Exception {
+        try (var stub = new StubFeedServer()) {
+            return stub.baseUri();
+        }
+    }
+
+    @Test
+    void buildReturnsAClientAlreadyServingHavingFetchedAFullSnapshot() throws Exception {
+        try (var stub = new StubFeedServer()) {
+            stub.respondFull(FEED);
+            stub.respondVersion(48211L, "2026-08-09T14:03:10.900Z", 1, 1);
+
+            try (var client = EntitlementClient.builder()
+                    .serviceUrl(stub.baseUri().toString())
+                    .build()) {
+                assertThat(stub.fullCalls()).isGreaterThanOrEqualTo(1);
+                assertThat(client.health().snapshotVersion()).isEqualTo(48211L);
+                assertThat(client.check("acct_9931", "api.access").allowed()).isTrue();
+            }
+        }
+    }
+
+    @Test
+    void buildWithoutAServiceUrlThrowsIllegalStateExceptionNamingTheMissingSetting() {
+        assertThatThrownBy(() -> EntitlementClient.builder().build())
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("serviceUrl");
+    }
+
+    @Test
+    void buildAgainstAnUnreachableServiceUnderRequireSnapshotThrowsOnceStartupTimeoutElapses()
+            throws Exception {
+        var unreachable = deadEnd();
+
+        assertThatThrownBy(() -> EntitlementClient.builder()
+                .serviceUrl(unreachable.toString())
+                .startupTimeout(Duration.ofMillis(300))
+                .build())
+            .isInstanceOf(EntitlementClientStartupException.class);
+    }
+
+    @Test
+    void buildAgainstAnUnreachableServiceUnderAllowDiskCacheWithAPopulatedCacheSucceedsAndStartsStale(
+            @TempDir Path cacheDir) throws Exception {
+        new DiskCache(cacheDir).store(FullSnapshotReader.read(
+            new ByteArrayInputStream(FEED.getBytes(StandardCharsets.UTF_8))));
+        var unreachable = deadEnd();
+
+        try (var client = EntitlementClient.builder()
+                .serviceUrl(unreachable.toString())
+                .startupMode(StartupMode.ALLOW_DISK_CACHE)
+                .diskCache(cacheDir)
+                .startupTimeout(Duration.ofMillis(300))
+                .build()) {
+            assertThat(client.health().snapshotVersion()).isEqualTo(48211L);
+            assertThat(client.health().stale())
+                .as("a cache-loaded replica has not synced with the service yet")
+                .isTrue();
+        }
+    }
+
+    @Test
+    void buildAgainstAnUnreachableServiceUnderAllowDiskCacheWithAnEmptyCacheStillThrows(
+            @TempDir Path cacheDir) throws Exception {
+        var unreachable = deadEnd();
+
+        assertThatThrownBy(() -> EntitlementClient.builder()
+                .serviceUrl(unreachable.toString())
+                .startupMode(StartupMode.ALLOW_DISK_CACHE)
+                .diskCache(cacheDir)
+                .startupTimeout(Duration.ofMillis(300))
+                .build())
+            .isInstanceOf(EntitlementClientStartupException.class);
+    }
+
+    @Test
+    void buildOnASnapshotWhoseVectorsFailTheGateThrowsMentioningConformance() throws Exception {
+        try (var stub = new StubFeedServer()) {
+            stub.respondFull(feedWithExtraLine(BAD_VECTOR));
+
+            assertThatThrownBy(() -> EntitlementClient.builder()
+                    .serviceUrl(stub.baseUri().toString())
+                    .startupTimeout(Duration.ofMillis(300))
+                    .build())
+                .isInstanceOf(EntitlementClientStartupException.class)
+                .hasMessageContaining("conformance");
+        }
+    }
+
+    @Test
+    void buildOnAFeedAdvertisingAnUnknownResolverContractThrowsMentioningResolverContract()
+            throws Exception {
+        try (var stub = new StubFeedServer()) {
+            stub.respondFull(FEED.replace("\"resolverContract\":1", "\"resolverContract\":99"));
+
+            assertThatThrownBy(() -> EntitlementClient.builder()
+                    .serviceUrl(stub.baseUri().toString())
+                    .startupTimeout(Duration.ofMillis(300))
+                    .build())
+                .isInstanceOf(EntitlementClientStartupException.class)
+                .hasMessageContaining("resolverContract");
+        }
+    }
+
+    @Test
+    void defaultsArePollIntervalFiveSecondsAndStaleAfterSixtySeconds() throws Exception {
+        try (var stub = new StubFeedServer()) {
+            stub.respondFull(FEED);
+            stub.respondVersion(48211L, "2026-08-09T14:03:10.900Z", 1, 1);
+
+            try (var client = (DefaultEntitlementClient) EntitlementClient.builder()
+                    .serviceUrl(stub.baseUri().toString())
+                    .build()) {
+                assertThat(client.pollInterval()).isEqualTo(Duration.ofSeconds(5));
+                assertThat(client.staleAfter()).isEqualTo(Duration.ofSeconds(60));
+            }
+        }
+    }
+
+    @Test
+    void closeStopsThePollerSoVersionCallsStopRising() throws Exception {
+        try (var stub = new StubFeedServer()) {
+            stub.respondFull(FEED);
+            stub.respondVersion(48211L, "2026-08-09T14:03:10.900Z", 1, 1);
+
+            var client = EntitlementClient.builder()
+                .serviceUrl(stub.baseUri().toString())
+                .pollInterval(Duration.ofMillis(20))
+                .build();
+            Thread.sleep(100);
+
+            var callsAtClose = stub.versionCalls();
+            client.close();
+            Thread.sleep(200);
+
+            assertThat(stub.versionCalls())
+                .as("a sync already in flight when close() runs may still land once")
+                .isLessThanOrEqualTo(callsAtClose + 1);
+        }
+    }
+}

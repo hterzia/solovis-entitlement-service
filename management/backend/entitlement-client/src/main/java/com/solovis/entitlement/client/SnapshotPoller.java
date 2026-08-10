@@ -67,6 +67,25 @@ final class SnapshotPoller implements AutoCloseable {
         return stopped;
     }
 
+    Duration pollInterval() {
+        return pollInterval;
+    }
+
+    Duration staleAfter() {
+        return staleAfter;
+    }
+
+    /**
+     * Called once, before {@link #start()}, when the replica this poller was constructed with came
+     * from disk rather than a successful sync (an {@code ALLOW_DISK_CACHE} startup during an
+     * outage). {@code health()} must report stale immediately rather than waiting out {@code
+     * staleAfter} from a fabricated "just synced" timestamp — the whole point of surfacing
+     * staleness is so a caller can tell a cache-loaded replica from a freshly synced one.
+     */
+    void markStaleAtStartup() {
+        state.set(new SyncState(clock.instant(), null, true));
+    }
+
     void start() {
         var t = new Thread(this::loop, "entitlement-snapshot-poller");
         t.setDaemon(true);

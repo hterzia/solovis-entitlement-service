@@ -2,6 +2,7 @@ package com.solovis.entitlement.client;
 
 import com.solovis.entitlement.client.error.ExplanationUnavailableException;
 import com.solovis.entitlement.client.error.ReplicaUnknownAccountException;
+import com.solovis.entitlement.client.error.SnapshotBehindException;
 import com.solovis.entitlement.client.metrics.ClientMetrics;
 import com.solovis.entitlement.client.replica.Replica;
 import com.solovis.entitlement.client.transport.FeedHttpClient;
@@ -28,6 +29,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * point of the module.
  */
 final class DefaultEntitlementClient implements EntitlementClient {
+
+    private static final Duration POLL_STEP = Duration.ofMillis(25);
 
     private final AtomicReference<Replica> holder;
     private final SnapshotPoller poller;   // nullable: forTesting() supplies none
@@ -116,7 +119,16 @@ final class DefaultEntitlementClient implements EntitlementClient {
 
     @Override
     public Decision check(String accountExternalId, String capabilityKey, long minSnapshotVersion) {
-        throw new UnsupportedOperationException("Task 12/13");
+        var replica = holder.get();
+        if (replica.version() < minSnapshotVersion) {
+            // Throw rather than block: turning a microsecond lookup into a multi-second wait is not
+            // a trade to make on a caller's behalf. awaitVersion() is the opt-in blocking form.
+            // Checked before resolving anything, so an unknown capability on a stale replica cannot
+            // masquerade as a domain error when the real problem is that the replica has not caught
+            // up yet.
+            throw new SnapshotBehindException(minSnapshotVersion, replica.version());
+        }
+        return check(accountExternalId, capabilityKey);
     }
 
     /**
@@ -168,9 +180,36 @@ final class DefaultEntitlementClient implements EntitlementClient {
             state.lastSuccessfulSync(), Optional.ofNullable(state.lastError()));
     }
 
+    /**
+     * Polled against a deadline measured from {@link System#nanoTime()}, not the injected {@link
+     * Clock}: tests freeze the clock for deterministic timestamps elsewhere, and a frozen clock
+     * would make this deadline never arrive.
+     */
     @Override
     public boolean awaitVersion(long snapshotVersion, Duration timeout) {
-        throw new UnsupportedOperationException("Task 12/13");
+        var deadline = System.nanoTime() + timeout.toNanos();
+        while (holder.get().version() < snapshotVersion) {
+            if (System.nanoTime() >= deadline) {
+                return false;
+            }
+            try {
+                Thread.sleep(POLL_STEP.toMillis());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Package-private: {@code EntitlementClientBuilder} tests the documented default against this. */
+    Duration pollInterval() {
+        return poller == null ? null : poller.pollInterval();
+    }
+
+    /** Package-private: {@code EntitlementClientBuilder} tests the documented default against this. */
+    Duration staleAfter() {
+        return poller == null ? null : poller.staleAfter();
     }
 
     @Override
