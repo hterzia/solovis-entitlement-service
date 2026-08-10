@@ -43,6 +43,23 @@ structural — one component produces traces because one component holds the rec
 The cost: two disagreeing replicas can't be diagnosed by diffing explanations, since replicas have
 none. Which is why the startup gate isn't optional.
 
+**2026-08-10 — the corollary, made explicit: the operator UI computes nothing.** It renders what the
+service returns, maps enum values to labels, and stops there. This came to a head over one control.
+`ui-screens.md` requires the remove-override confirmation to state what the value returns to
+*before* the operator commits, "computed from the same resolver"; `admin-api.md` had assigned the
+same two criteria to the trace returned *after* the `DELETE`, and defined no route for the former.
+The confirmation was therefore a fixed sentence — accurate, but not an answer.
+
+Closing it in the client would have meant re-running §4's combining rule in TypeScript to work out
+what the remaining overrides produce. That is precisely the scattered-logic problem this service
+exists to delete, and it would have put a second implementation of the rule in the one place least
+able to defend itself. So the preview became a read-only endpoint,
+`GET /admin/v1/accounts/{external}/overrides/{id}/removal-preview`, resolving through the same
+`Resolver.explain()` as everything else and returning the same decision shape the UI already knows
+how to render. One more route, no new arithmetic anywhere — and the rule that made the choice
+obvious is worth more than the route: **if the UI would have to reason about entitlement values to
+answer it, it is the service's question.**
+
 ## 3. The combining rule
 
 Baseline (plan value, else the capability's default) → raised by the **most generous GRANT** → capped
@@ -173,3 +190,32 @@ starts in.
   irreversible decisions live. The cost is that the API and UI layers came last and are the least
   settled part of the repository. Whoever inherits this gets an unusually well-documented system with
   an unfinished edge — which I'd take over the reverse.
+
+## 11. The service reads SQLite; only clients hold snapshots (2026-08-10)
+
+§1's posture is untouched — replicas still answer locally and survive an outage, and not one line of
+the SDK changes. What this revises is §1's *mechanism* on the management side: the service no longer
+holds an in-memory snapshot behind an atomic reference. Every `/v1` read resolves from the record in
+one WAL read transaction; the snapshot becomes purely the replication artifact, assembled per feed
+request. The plan of record, down to call sites and commit order, is
+`.specs/002-time-bound-override/plan-read-path.md`.
+
+Two things tipped it. First, 002 needs the record at the moment of asking three times over —
+explanations that name overrides *not in force* without retaining every dead override in heap for
+seven years, point-in-time as the same view-building code with a different date, and window standing
+that is exact when asked. Second, the holder carried the codebase's subtlest invariants: a version
+counter kept in two places that agreed only by convention, a publish shape correct only because the
+write pool is size 1, and a one-publish-per-transaction rule nothing enforced. Its stated
+justification — criteria 25–27 — was never evidenced, so I was defending a measurement that had
+never been taken.
+
+| Rejected | Why |
+|---|---|
+| Keep the holder; retain not-in-force overrides in the management snapshot | 002's own top-listed risk: heap that grows for seven years, and the data-governance boundary stays a serialisation-time filter instead of becoming structural. |
+| Keep the holder for decisions; explain and point-in-time read the record | The closest contender, with one real merit — `/v1` would lapse window boundaries in step with the replicas rather than ahead of them. But it leaves two read paths and two meanings of "snapshot" in one process forever, and the merit is a roller-cadence subtlety; the confusion is permanent. |
+
+**The trade I accepted:** criteria 25–27 reopen, because the path they were designed around no longer
+exists. That is the honest version of where they already were — designed for, never evidenced — and
+004 now measures the path that actually ships, with the read pool size and, only if measurement
+demands it, new indexes as the knobs. 004 runs after this lands, not before; latency evidence is
+path-specific.
