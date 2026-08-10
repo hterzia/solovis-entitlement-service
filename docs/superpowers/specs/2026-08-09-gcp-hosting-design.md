@@ -26,7 +26,7 @@ That framing decides the rest of this document. It is not a production deploymen
 
 ## 2. Non-goals
 
-- **Meeting spec §7's throughput targets.** 5,000 decisions/sec never reaches this service. Under spec §11, decisions resolve inside SDK replicas embedded in consuming products; the management service only distributes the model. A single small instance is the correct size for a management plane, not a compromise made for cost.
+- **Meeting a throughput target.** There is no longer one to meet: spec §7's decisions-per-second and latency rubric was withdrawn on 2026-08-10 with the client base settled at 300. Even when it existed it never reached this service — under spec §11, decisions resolve inside SDK replicas embedded in consuming products, and the management service only distributes the model. A single small instance is the correct size for a management plane, not a compromise made for cost.
 - **High availability.** SQLite permits one writer host, so the service does not horizontally scale. This is a property of the architecture, not of the hosting.
 - **Disaster recovery.** Litestream is here so a redeploy does not wipe the demo, not so data can be recovered after a catastrophe.
 - **Authentication.** v1 has none by decision. §8 addresses the consequence.

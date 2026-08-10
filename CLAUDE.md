@@ -67,13 +67,13 @@ Baseline (plan entitlement, else capability default) → raised by the **most ge
 ```
 .specs/                                 # one self-contained folder per feature; no top-level specs/
 ├── future-spec.md                      # deliberately deferred scope, with triggers and dependencies
-├── 001-entitlement-service/            # v1: spec.md (source of truth, 41 acceptance criteria),
+├── 001-entitlement-service/            # v1: spec.md (source of truth; criteria numbered to 41,
+│   │                                   #   with 25-27 withdrawn and the gap kept on purpose)
 │   ├── plan.md research.md data-model.md frontend-plan.md
 │   └── contracts/                      # README (shared conventions) + decision-api, admin-api,
 │                                       #   snapshot-feed, java-client-sdk, ui-screens
 ├── 002-time-bound-override/            # override expiry + point-in-time answers
-├── 003-natural-language-procesing/     # plain-English checker
-└── 004-load-demonstration/             # the evidence for 001's criteria 25–31 (not yet run)
+└── 003-natural-language-procesing/     # plain-English checker
 DECISIONS.md                            # running log of decisions taken during spec/plan review
 docs/superpowers/plans/                 # task-by-task implementation plans (checkbox steps)
 ```
@@ -142,6 +142,6 @@ Built and tested as of 2026-08-10, all green: **524 backend** (core 105, client 
 
 Not built:
 
-- **`entitlement-loadtest`** — not a reactor module yet. Now owned by its own feature, `.specs/004-load-demonstration/`, rather than by 001. Until it runs, criteria 25–31 (5k decisions/s, p99 ≤ 10 ms, 60 s freshness, all under concurrent writes) are **designed for but not evidenced**. Don't describe them as met. Note that seeding 100k accounts needs a bulk path: `AccountAdminService.create` publishes a snapshot version per account, so the ordinary route would produce 100k snapshot versions before the run began (004's `plan.md` covers this).
+- **No load-test module, and no throughput target.** Criteria 25–27 were withdrawn on 2026-08-10 when the supported client base was settled at 300 (spec §7; `future-spec.md` item 13). **The criterion numbering keeps its gap on purpose** — `(cNN)` identifiers are cited throughout the code, so renumbering would silently repoint every citation. Criteria 28–31 (freshness, the reuse bound, read-your-writes, one coherent moment) remain and hold at any size.
 
 A plain-English walkthrough of the whole v1 service — resolution rule, module split, read/write paths, schema, surfaces — is at `docs/entitlement-service-explained.html`.
