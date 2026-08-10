@@ -6,6 +6,7 @@ import com.solovis.entitlement.core.view.SnapshotMutator;
 import com.solovis.entitlement.service.admin.dto.OverrideCreateRequest;
 import com.solovis.entitlement.service.admin.dto.OverrideMutationResponseDto;
 import com.solovis.entitlement.service.api.DecisionMapper;
+import com.solovis.entitlement.service.api.dto.DecisionResponseDto;
 import com.solovis.entitlement.service.audit.ActorResolver;
 import com.solovis.entitlement.service.audit.AuditEntry;
 import com.solovis.entitlement.service.audit.AuditJson;
@@ -91,6 +92,36 @@ public class OverrideAdminService {
 
         var explanation = Resolver.explain(next, external, capability.key(), clock.instant());
         return new OverrideMutationResponseDto("ovr_" + id, DecisionMapper.toResponse(explanation, capability), newVersion, 60);
+    }
+
+    /**
+     * What the answer becomes if this override were removed — the confirmation screen 3 shows before
+     * the operator commits (ui-screens.md, c14/c15). It is a read: no soft-delete, no audit event, no
+     * published version. The hypothetical is the current snapshot minus this one override, produced by
+     * the same {@link SnapshotMutator#withOverrideRemoved} the real removal uses and answered by the
+     * same {@link Resolver#explain}, so a preview and the removal that follows it cannot disagree.
+     *
+     * <p>The version stays at the current one rather than {@code +1}: nothing was published, so
+     * "as of version N" is the only honest thing the payload can say.
+     */
+    public DecisionResponseDto previewRemoval(String external, String overrideRef) {
+        // Account first, so an unknown account is answered as such (§6.3) rather than as a bad ref.
+        var accountRow = accountRepository.findByExternalId(external)
+            .orElseThrow(() -> new com.solovis.entitlement.core.error.UnknownAccountException(external));
+        long id = RefId.parse(overrideRef, "ovr_");
+        var overrideRow = accountOverrideRepository.findById(id)
+            .filter(row -> row.accountId() == accountRow.id())
+            .orElseThrow(() -> new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "No override '" + overrideRef + "'."));
+        if (overrideRow.removedAt() != null) {
+            throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "Override '" + overrideRef + "' is already removed.");
+        }
+        var capRow = capabilityRepository.findById(overrideRow.capabilityId()).orElseThrow();
+        var capability = RowMappers.toCapability(capRow, capabilityRepository.findTiers(capRow.id()));
+
+        var base = snapshotHolder.current();
+        var without = SnapshotMutator.withOverrideRemoved(base, base.snapshotVersion(), external, capability.key(), id);
+        var explanation = Resolver.explain(without, external, capability.key(), clock.instant());
+        return DecisionMapper.toResponse(explanation, capability);
     }
 
     @Transactional
