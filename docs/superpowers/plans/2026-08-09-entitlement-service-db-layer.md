@@ -1,5 +1,7 @@
 # Entitlement Service — Database Layer Implementation Plan
 
+> **Status: complete and merged.** Every task below is implemented and covered by the test suite. The `- [ ]` checkboxes were never ticked back — this file is an archived record of how the `store/` layer was built, not outstanding work. Verify against the code, not the boxes.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the complete database-access layer for `entitlement-service` — the dual-pool SQLite connection configuration and a hand-written `JdbcClient` repository for every table in `V1__baseline.sql` — so that a future service/controller layer has a tested, correct persistence API to build on.

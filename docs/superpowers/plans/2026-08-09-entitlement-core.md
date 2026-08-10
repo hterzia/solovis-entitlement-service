@@ -1,5 +1,7 @@
 # Entitlement Core Implementation Plan
 
+> **Status: complete and merged.** Every task below is implemented and covered by the test suite. The `- [ ]` checkboxes were never ticked back — this file is an archived record of how `entitlement-core` was built, not outstanding work. Verify against the code, not the boxes.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build `entitlement-core` — the pure Java, dependency-free library holding the domain model, the total order over entitlement values, and the resolution engine (`resolve()`/`explain()`) that both `entitlement-service` and `entitlement-client` will embed.

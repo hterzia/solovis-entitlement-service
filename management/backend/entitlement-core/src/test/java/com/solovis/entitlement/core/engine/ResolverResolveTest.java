@@ -212,6 +212,7 @@ class ResolverResolveTest {
             .isInstanceOf(RetiredCapabilityException.class);
     }
 
+    /** c15 — the plan value returns on its own; nothing has to be re-applied by hand. */
     @Test
     void removingAGrantRestoresThePlanValueWithNoFurtherAction() {
         var withGrant = reportsSnapshotWithPlanValue(50).override(grant(REPORTS, 1, EntitlementValue.Quantity.of(200))).build(1);
@@ -221,6 +222,7 @@ class ResolverResolveTest {
         assertThat(Resolver.resolve(withoutGrant, "acct_1", REPORTS, NOW).value()).isEqualTo(EntitlementValue.Quantity.of(50));
     }
 
+    /** c14 — lifting a HOLD leaves the GRANT underneath intact, so the concession is not destroyed. */
     @Test
     void removingAHoldRestoresTheGrantValueWithNoFurtherAction() {
         var withHold = reportsSnapshotWithPlanValue(50)

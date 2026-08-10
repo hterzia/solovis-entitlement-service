@@ -22,6 +22,11 @@ class CheckerControllerTest {
     @Autowired AccountAdminService accountService;
     @Autowired OverrideAdminService overrideService;
 
+    /**
+     * c38 — the checker answers for any account and capability, and c24 — byte for byte the same
+     * payload the evaluation interface returns, because it is the same call and not a second
+     * implementation.
+     */
     @Test
     void checkByAccountAndCapabilityMatchesTheDecisionApiPayload() throws Exception {
         planService.create(new PlanCreateRequest("t8-check-plan", "Check plan", null));
