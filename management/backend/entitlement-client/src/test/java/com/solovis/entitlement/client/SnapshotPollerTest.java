@@ -370,6 +370,55 @@ class SnapshotPollerTest {
         assertThat(stub.versionCalls()).isLessThanOrEqualTo(calls + 1);
     }
 
+    /**
+     * Pins the fix for the finding that {@code nudge()} used to interrupt the poller thread
+     * unconditionally: an interrupt landing inside an in-flight {@code http.send} (rather than the
+     * idle sleep) surfaced as {@link com.solovis.entitlement.client.transport.FeedUnavailableException}
+     * and was recorded through {@code fail()} — a nudge manufacturing the very reachability alarm it
+     * exists to avoid. {@code nudge()} now releases a permit instead, so a nudge arriving mid-sync
+     * must leave that sync alone and simply be remembered for afterwards.
+     */
+    @Test
+    void aNudgeDeliveredWhileASyncIsInFlightDoesNotRecordAFailureAndThePollerStillSyncsPromptlyAfterward()
+            throws Exception {
+        stub.respondVersion(100L, "2026-08-09T14:03:10.900Z", 1, 1);
+        var syncFailures = new java.util.concurrent.atomic.AtomicInteger();
+        var metrics = new ClientMetrics() {
+            @Override public void syncFailed() {
+                syncFailures.incrementAndGet();
+            }
+        };
+        var poller = new SnapshotPoller(feed, holder, Duration.ofMinutes(10), Duration.ofSeconds(60),
+            null, metrics, clock);
+
+        poller.start();
+        Thread.sleep(50);   // let the first (no-op) sync finish and the thread settle into its sleep
+
+        stub.respondVersion(101L, "2026-08-09T14:03:10.900Z", 1, 1);
+        stub.respondDelta("""
+            {"format":1,"fromVersion":100,"toVersion":101,"publishedAt":"2026-08-09T14:03:10.900Z",\
+            "changes":[{"version":101,"kind":"account.upserted","external":"acct_new","planKey":"pro"}]}""");
+        stub.delayNextVersionResponseBy(Duration.ofMillis(300));
+
+        poller.nudge();               // wakes the poller; it enters feed.version(), which now blocks
+        Thread.sleep(100);            // comfortably inside the 300ms delay: that sync is in flight now
+        poller.nudge();               // the nudge under test — must not disturb the in-flight HTTP call
+
+        Thread.sleep(400);            // outlast the delayed response and let the sync complete
+
+        assertThat(poller.state().lastError())
+            .as("a nudge delivered mid-sync must not surface as a sync failure")
+            .isNull();
+        assertThat(syncFailures.get())
+            .as("a nudge delivered mid-sync must not increment entitlement.client.sync.failures")
+            .isZero();
+        assertThat(holder.get().version())
+            .as("the in-flight sync must still have completed and swapped in the new version")
+            .isEqualTo(101L);
+
+        poller.close();
+    }
+
     // markUngatedAtStartup(): a replica seeded from disk cache (DiskCache does not persist
     // conformance vectors) must not be treated as verified just because the service happens to
     // report the same version — the equality fast path below must not let it dodge the gate.

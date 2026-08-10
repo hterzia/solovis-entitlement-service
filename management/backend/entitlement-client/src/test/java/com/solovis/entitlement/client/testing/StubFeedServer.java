@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -36,6 +37,7 @@ public final class StubFeedServer implements AutoCloseable {
     private final List<String> paths = new CopyOnWriteArrayList<>();
     private volatile boolean truncateFull = false;
     private volatile boolean invalidGzip = false;
+    private volatile long versionResponseDelayMillis = 0;
 
     public StubFeedServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -54,6 +56,16 @@ public final class StubFeedServer implements AutoCloseable {
     public void respondVersion(long version, String publishedAt, int format, int resolverContract) {
         versionBody.set("{\"version\":" + version + ",\"publishedAt\":\"" + publishedAt
             + "\",\"format\":" + format + ",\"resolverContract\":" + resolverContract + "}");
+    }
+
+    /**
+     * The next call (only) to {@code /v1/snapshot/version} blocks inside the server handler for
+     * this long before responding, keeping the calling thread's socket read parked exactly as it
+     * would be mid-request against a slow real service. Lets a test land a {@code nudge()} while a
+     * sync is genuinely in flight rather than sleeping.
+     */
+    public void delayNextVersionResponseBy(Duration delay) {
+        versionResponseDelayMillis = delay.toMillis();
     }
 
     public void respondFull(String ndjson) {
@@ -135,6 +147,15 @@ public final class StubFeedServer implements AutoCloseable {
     private void handleVersion(HttpExchange exchange) throws IOException {
         versionCalls.incrementAndGet();
         paths.add(exchange.getRequestURI().toString());
+        var delay = versionResponseDelayMillis;
+        if (delay > 0) {
+            versionResponseDelayMillis = 0;   // one-shot
+            try {
+                Thread.sleep(delay);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
         if (servedFailure(exchange)) {
             return;
         }

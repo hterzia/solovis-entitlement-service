@@ -12,6 +12,8 @@ import com.solovis.entitlement.client.transport.SnapshotTooOldException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -36,6 +38,13 @@ final class SnapshotPoller implements AutoCloseable {
     private final ClientMetrics metrics;
     private final Clock clock;
     private final Backoff backoff;
+
+    // Wakes a sleeping loop() on demand. nudge() releases a permit rather than interrupting the
+    // thread directly: an interrupt can land inside an in-flight HTTP call (FeedHttpClient turns
+    // that into a FeedUnavailableException) and get recorded by fail() as a real sync failure —
+    // exactly the reachability alarm a nudge must not cause, since it fires most often when
+    // replicas are already lagging. See nudge() and loop().
+    private final Semaphore nudgeSignal = new Semaphore(0);
 
     private final AtomicReference<SyncState> state;
     private volatile boolean stopped;           // a contract violation was seen; stop syncing
@@ -117,6 +126,11 @@ final class SnapshotPoller implements AutoCloseable {
      * interval to find out. A no-op if replication has permanently halted ({@link #stopped}) or
      * the poller was never started; {@code DefaultEntitlementClient} additionally guards the case
      * where no poller exists at all (a client built via {@code forTesting}).
+     *
+     * <p>Releases a permit on {@link #nudgeSignal} rather than interrupting the poller thread. A
+     * nudge that arrives while a sync is already in flight is not lost — it sits as a permit,
+     * drained in {@link #loop()} so a burst of nudges cannot cause a run of immediate no-wait
+     * iterations once the in-flight sync finishes.
      */
     void nudge() {
         if (stopped) {
@@ -124,7 +138,7 @@ final class SnapshotPoller implements AutoCloseable {
         }
         var t = thread;
         if (t != null) {
-            t.interrupt();
+            nudgeSignal.release();
         }
     }
 
@@ -140,16 +154,20 @@ final class SnapshotPoller implements AutoCloseable {
                 wait = backoff.nextDelay();
             }
             try {
-                Thread.sleep(wait.toMillis());
+                nudgeSignal.tryAcquire(wait.toMillis(), TimeUnit.MILLISECONDS);
             } catch (InterruptedException e) {
                 if (closed) {
                     Thread.currentThread().interrupt();
                     return;
                 }
-                // Not a close: this was nudge() cutting the sleep short. closed is volatile and
-                // close() sets it before interrupting, so seeing it false here means the interrupt
-                // really was a nudge — loop back around and sync immediately instead of exiting.
+                // nudge() no longer interrupts this thread — only close() does, and close() sets
+                // `closed` before interrupting. Reaching here with `closed` still false would mean
+                // something else interrupted this thread; there is nothing sensible to do but loop
+                // back around, same as before this fix.
             }
+            // Clears any permits left over from a burst of nudges during the sync just completed,
+            // so they cannot cause several immediate no-wait iterations in a row.
+            nudgeSignal.drainPermits();
         }
     }
 
@@ -265,6 +283,13 @@ final class SnapshotPoller implements AutoCloseable {
     @Override
     public void close() {
         closed = true;
+        nudgeSignal.release();
+        // Kept in addition to the release above: a sync could be inside an in-flight HTTP call
+        // rather than sleeping on nudgeSignal, and interrupting it aborts that call promptly
+        // instead of leaving close() waiting out the request timeout. A resulting spurious sync
+        // failure is harmless at shutdown — nothing will read health() again — so this is a
+        // deliberate trade against nudge()'s no-interrupt fix above, which only ever fires during
+        // normal operation, not shutdown.
         var t = thread;
         if (t != null) {
             t.interrupt();
