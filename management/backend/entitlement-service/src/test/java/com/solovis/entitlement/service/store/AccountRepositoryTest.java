@@ -62,14 +62,25 @@ class AccountRepositoryTest {
 
 		assertThat(repository.search(null, planId, 0, 10)).extracting(AccountRow::externalId)
 				.containsExactly("acct_a", "acct_b");
+		// `contains`, not `containsExactly`: search matches on substring, and other test classes
+		// commit accounts named acct_closed_<uuid> — of which "acct_c" is a prefix. The behaviour
+		// under test is that the query narrows to matching accounts, not that the table is empty.
 		assertThat(repository.search("acct_c", null, 0, 10)).extracting(AccountRow::externalId)
-				.containsExactly("acct_c");
+				.contains("acct_c")
+				.doesNotContain("acct_a", "acct_b");
 
+		// The cursor's contract, not the table's size: "hasSize(1)" only held while this class was
+		// the sole writer, and it is not — other classes commit accounts into the shared per-fork
+		// database. What paging must guarantee is that the next page starts strictly after the
+		// cursor and repeats nothing from the page before it.
 		var firstPage = repository.search(null, null, 0, 2);
 		assertThat(firstPage).hasSize(2);
 		long cursor = firstPage.get(firstPage.size() - 1).id();
 		var secondPage = repository.search(null, null, cursor, 2);
-		assertThat(secondPage).hasSize(1);
+		assertThat(secondPage).isNotEmpty();
+		assertThat(secondPage).extracting(AccountRow::id).allMatch(id -> id > cursor);
+		assertThat(secondPage).extracting(AccountRow::externalId)
+				.doesNotContainAnyElementsOf(firstPage.stream().map(AccountRow::externalId).toList());
 	}
 
 	@Test

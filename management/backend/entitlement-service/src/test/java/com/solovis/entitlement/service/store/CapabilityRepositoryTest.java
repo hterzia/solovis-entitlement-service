@@ -86,8 +86,14 @@ class CapabilityRepositoryTest {
 		assertThat(reportsOnly).extracting(CapabilityRow::key)
 				.containsExactlyInAnyOrder("reports.monthly", "reports.annual");
 
+		// Scoped, not exhaustive: DecisionReadDaoTest is deliberately not @Transactional, so its
+		// retired fixtures are committed and visible here. What this asserts is that the filter
+		// selects retired capabilities and excludes active ones — which is the behaviour — rather
+		// than that this test is the only writer in the JVM fork, which it is not.
 		List<CapabilityRow> retiredOnly = repository.findAll(null, "RETIRED", null);
-		assertThat(retiredOnly).extracting(CapabilityRow::key).containsExactly("export.parquet");
+		assertThat(retiredOnly).extracting(CapabilityRow::key)
+				.contains("export.parquet")
+				.doesNotContain("reports.monthly", "reports.annual");
 
 		List<CapabilityRow> searched = repository.findAll(null, null, "monthly");
 		assertThat(searched).extracting(CapabilityRow::key).containsExactly("reports.monthly");
