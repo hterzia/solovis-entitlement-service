@@ -15,7 +15,7 @@ import { copyText } from '../../lib/clipboard'
  * required wording. Every other failure is the service's own problem to describe: routing one
  * through here would replace a diagnosis with the word "error".
  */
-const ERROR_MESSAGES: Record<string, string> = {
+export const ERROR_MESSAGES: Record<string, string> = {
   'entitlement/unknown-account': 'No such account.',
   'entitlement/unknown-capability': 'No such capability.',
   'entitlement/retired-capability': 'That capability is retired and is no longer evaluated.',
@@ -27,7 +27,7 @@ const ERROR_MESSAGES: Record<string, string> = {
 }
 
 /** The service clock every date on this screen is read against (c5). */
-const SERVICE_CLOCK = 'US Eastern'
+export const SERVICE_CLOCK = 'US Eastern'
 
 export function CheckerRoute() {
   const [account, setAccount] = useState('')
