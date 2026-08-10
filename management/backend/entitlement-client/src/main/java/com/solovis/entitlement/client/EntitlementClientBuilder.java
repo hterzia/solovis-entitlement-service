@@ -30,6 +30,8 @@ public final class EntitlementClientBuilder {
     private static final Duration DEFAULT_POLL_INTERVAL = Duration.ofSeconds(5);   // keeps answers inside the 10s reuse bound (c29)
     private static final Duration DEFAULT_STALE_AFTER = Duration.ofSeconds(60);    // matches the §7 promise
     private static final Duration DEFAULT_STARTUP_TIMEOUT = Duration.ofSeconds(30);
+    // Bounds one HTTP call, not the whole startup attempt: startupTimeout above is the retry
+    // budget across as many of these individual requests as fit inside it.
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
     private static final Duration RETRY_INTERVAL = Duration.ofMillis(50);
 
@@ -111,19 +113,33 @@ public final class EntitlementClientBuilder {
      * Blocks until the client is ready to serve:
      * <ol>
      *   <li>Fetch a full snapshot, retrying until {@code startupTimeout} elapses.
-     *   <li>Run it through {@link ConformanceGate}. A failure here is a startup failure, not a
-     *       warning — this SDK does not serve a replica it cannot trust to agree with the service.
-     *   <li>If the timeout elapses with no snapshot: under {@link StartupMode#ALLOW_DISK_CACHE}
-     *       with a loadable cache, start from the cache — immediately {@code stale} — and keep
-     *       polling; otherwise throw {@link EntitlementClientStartupException}.
+     *   <li>Run it through {@link ConformanceGate}. A mismatch — including an unsupported {@code
+     *       format} or {@code resolverContract} — fails construction with {@link
+     *       EntitlementClientStartupException} <b>unconditionally</b>, regardless of {@code
+     *       startupMode} or whether a disk cache exists. See below for why.
+     *   <li>If {@code startupTimeout} elapses with the service simply unreachable (no candidate to
+     *       even gate): under {@link StartupMode#ALLOW_DISK_CACHE} with a loadable cache, start
+     *       from the cache — immediately {@code stale} — and keep polling; otherwise throw {@link
+     *       EntitlementClientStartupException}.
      *   <li>Only then start the background poller.
      * </ol>
      *
+     * <p><b>The disk cache never rescues a conformance-gate failure.</b> An unreachable service
+     * and a failed gate look similar (both end in {@link EntitlementClientStartupException}) but
+     * mean opposite things. Unreachable means this SDK's engine is fine and simply has no fresh
+     * data — the cache's last-known-good replica is a correct, if stale, answer, exactly what
+     * spec §11 asks for. A failed gate means this SDK computes different answers than the service
+     * does for the feed's own worked examples — the engines disagree. Loading the disk cache does
+     * not repair that disagreement; the cached replica would be resolved by the same disagreeing
+     * engine, so the result would be serving wrong answers from cache with no trace to diagnose
+     * them by, instead of refusing to start. That is precisely the failure the gate exists to
+     * catch proactively rather than after the fact.
+     *
      * <p>A cache-loaded replica is gated too, if it carries conformance vectors — but {@link
      * DiskCache} deliberately does not persist them, so in practice a cached replica starts
-     * ungated and the first successful sync gates it for real. That is the right trade: the
-     * alternative is refusing to start during an outage, which is the exact failure the cache
-     * exists to prevent.
+     * ungated and the first successful sync gates it for real. That is the right trade for the
+     * unreachable-service case: the alternative is refusing to start during an outage, which is
+     * the exact failure the cache exists to prevent.
      *
      * @throws IllegalStateException if {@code serviceUrl} was never set
      * @throws EntitlementClientStartupException if no snapshot could be loaded and trusted
@@ -147,12 +163,23 @@ public final class EntitlementClientBuilder {
         try {
             holder.set(fetchFullSnapshot(feed));
             startingFromCache = false;
-        } catch (EntitlementClientStartupException initialFailure) {
+        } catch (EntitlementClientStartupException gateFailure) {
+            // The engine itself disagrees with the service (or an unsupported format /
+            // resolverContract). The disk cache is resolved by this same disagreeing engine, so
+            // it is never a rescue here — see the build() javadoc. Unconditional, regardless of
+            // startupMode or whether a usable cache exists.
+            feed.close();
+            throw gateFailure;
+        } catch (SnapshotUnobtainableException transportExhausted) {
             var cached = startupMode == StartupMode.ALLOW_DISK_CACHE && cache != null
                 ? cache.load() : Optional.<Replica>empty();
             if (cached.isEmpty()) {
                 feed.close();
-                throw initialFailure;
+                throw new EntitlementClientStartupException(
+                    "Could not load an entitlement snapshot from " + serviceUrl + " within "
+                        + startupTimeout
+                        + (cache != null ? " and no usable disk cache was found." : "."),
+                    transportExhausted.getCause());
             }
             holder.set(cached.get());
             startingFromCache = true;
@@ -167,7 +194,15 @@ public final class EntitlementClientBuilder {
         return client;
     }
 
-    /** Retries {@code GET /v1/snapshot/full} until {@code startupTimeout} elapses, gating each candidate. */
+    /**
+     * Retries {@code GET /v1/snapshot/full} until {@code startupTimeout} elapses, gating each
+     * candidate as it arrives. A gate failure (or an unsupported format/resolverContract) throws
+     * {@link EntitlementClientStartupException} immediately — not retried, since a persistently
+     * untrustworthy snapshot is not a transient problem retrying fixes. Only a transport failure
+     * that never produces a gate-worthy candidate before the deadline throws {@link
+     * SnapshotUnobtainableException}, the signal {@link #build()} uses to decide whether the disk
+     * cache applies.
+     */
     private Replica fetchFullSnapshot(FeedHttpClient feed) {
         var deadline = System.nanoTime() + startupTimeout.toNanos();
         RuntimeException lastFailure = null;
@@ -176,7 +211,6 @@ public final class EntitlementClientBuilder {
                 var candidate = feed.full();
                 var gate = ConformanceGate.evaluate(candidate);
                 if (!gate.passed()) {
-                    // Not a transient transport failure a retry would fix - fail fast, not warn.
                     throw new EntitlementClientStartupException(
                         "Entitlement replica failed the conformance gate at startup: " + gate.reason());
                 }
@@ -187,10 +221,7 @@ public final class EntitlementClientBuilder {
                 lastFailure = transportFailure;
             }
             if (System.nanoTime() >= deadline) {
-                throw new EntitlementClientStartupException(
-                    "Could not load an entitlement snapshot from " + serviceUrl + " within "
-                        + startupTimeout + ".",
-                    lastFailure);
+                throw new SnapshotUnobtainableException(lastFailure);
             }
             sleepBriefly();
         }
@@ -201,6 +232,18 @@ public final class EntitlementClientBuilder {
             Thread.sleep(RETRY_INTERVAL.toMillis());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * Internal marker distinguishing "the service could not be reached in time" from a
+     * conformance-gate failure — {@link EntitlementClientStartupException} covers both from the
+     * outside, but only this one is eligible for the {@link StartupMode#ALLOW_DISK_CACHE}
+     * fallback in {@link #build()}.
+     */
+    private static final class SnapshotUnobtainableException extends RuntimeException {
+        SnapshotUnobtainableException(Throwable cause) {
+            super(cause);
         }
     }
 }

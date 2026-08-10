@@ -150,6 +150,33 @@ class EntitlementClientBuilderTest {
         }
     }
 
+    /**
+     * The combination the disk-cache fallback must never paper over: the service is reachable and
+     * answers, but this SDK's engine disagrees with what the feed's own worked examples expect. A
+     * populated, otherwise-usable cache sits right there — proving it is never consulted for this
+     * failure is the point, since the cached replica would be resolved by that same disagreeing
+     * engine and would silently serve wrong entitlements instead of refusing to start.
+     */
+    @Test
+    void buildOnASnapshotWhoseVectorsFailTheGateThrowsEvenUnderAllowDiskCacheWithAPopulatedCache(
+            @TempDir Path cacheDir) throws Exception {
+        new DiskCache(cacheDir).store(FullSnapshotReader.read(
+            new ByteArrayInputStream(FEED.getBytes(StandardCharsets.UTF_8))));
+
+        try (var stub = new StubFeedServer()) {
+            stub.respondFull(feedWithExtraLine(BAD_VECTOR));
+
+            assertThatThrownBy(() -> EntitlementClient.builder()
+                    .serviceUrl(stub.baseUri().toString())
+                    .startupMode(StartupMode.ALLOW_DISK_CACHE)
+                    .diskCache(cacheDir)
+                    .startupTimeout(Duration.ofMillis(300))
+                    .build())
+                .isInstanceOf(EntitlementClientStartupException.class)
+                .hasMessageContaining("conformance");
+        }
+    }
+
     @Test
     void buildOnAFeedAdvertisingAnUnknownResolverContractThrowsMentioningResolverContract()
             throws Exception {
