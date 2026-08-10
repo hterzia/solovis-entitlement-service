@@ -1,5 +1,17 @@
 # Fuller Demo Seed Implementation Plan
 
+> **Status: complete.** All eight tasks implemented and merged on `feat/fuller-demo-seed`.
+> The checkboxes below are still `- [ ]` — by this repo's convention boxes are never ticked back;
+> read this banner, not the boxes, and treat the file as a record of how the code got here.
+>
+> Three things the plan got wrong and the code corrected, all worth knowing:
+> **(1)** Jackson 3 (`tools.jackson`) ships with Spring Boot 4, so there is no
+> `com.fasterxml.jackson.databind.ObjectMapper` bean; `SeedDataset` owns a dedicated mapper, as
+> `DeltaJson` does and for the same reason. **(2)** Applying the dataset section-major put an early
+> `occurred_at` on a high `seq`; it takes one chronological pass. **(3)** The final day has to map to
+> *now*, or the current `snapshot_version.publishedAt` reads hours stale to every polling replica.
+> The last two were caught by `DemoDataSeederIT`, which is the test this plan added.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the four-capability, two-account demo seed with a ~60-account institutional dataset held as JSON, applied through the existing admin services across an authored eight-month timeline.
