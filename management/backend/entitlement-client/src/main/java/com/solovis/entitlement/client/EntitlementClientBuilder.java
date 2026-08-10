@@ -188,7 +188,14 @@ public final class EntitlementClientBuilder {
         }
 
         // The first replica is now loaded either way; the gauge tracks it live from here on, not
-        // a one-time snapshot of its age at this instant.
+        // a one-time snapshot of its age at this instant. snapshotVersion/resolverContract are
+        // otherwise only updated from SnapshotPoller's swap block, which never runs until a
+        // snapshot actually changes — on a quiet estate that left both gauges reading 0 forever.
+        // Seeding them here, from whichever replica just got loaded (fresh fetch or disk cache),
+        // covers both startup paths.
+        var seed = holder.get();
+        metrics.snapshotVersion(seed.version());
+        metrics.resolverContract(seed.resolverContract());
         metrics.snapshotAge(() -> Duration.between(holder.get().publishedAt(), clock.instant()));
 
         var poller = new SnapshotPoller(feed, holder, pollInterval, staleAfter, cache, metrics, clock);

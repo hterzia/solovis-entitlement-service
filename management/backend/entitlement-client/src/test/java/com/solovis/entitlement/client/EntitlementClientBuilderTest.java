@@ -7,6 +7,8 @@ import com.solovis.entitlement.client.error.EntitlementClientStartupException;
 import com.solovis.entitlement.client.replica.DiskCache;
 import com.solovis.entitlement.client.replica.FullSnapshotReader;
 import com.solovis.entitlement.client.testing.StubFeedServer;
+import com.solovis.entitlement.core.conformance.ResolverContract;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.ByteArrayInputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -237,6 +239,58 @@ class EntitlementClientBuilderTest {
             assertThat(stub.versionCalls())
                 .as("a sync already in flight when close() runs may still land once")
                 .isLessThanOrEqualTo(callsAtClose + 1);
+        }
+    }
+
+    /**
+     * Pins the fix for the finding that {@code entitlement.client.snapshot.version} and {@code
+     * entitlement.client.resolver.contract} were only ever updated from {@code SnapshotPoller}'s
+     * swap block, which never runs until the replica actually changes — leaving both gauges
+     * reading 0 indefinitely on a quiet estate. {@code build()} must now seed them itself from
+     * whichever replica it just loaded, before the poller has run a single sync.
+     */
+    @Test
+    void buildSeedsTheSnapshotVersionAndResolverContractGaugesFromTheFreshlyFetchedReplicaBeforeAnySyncSwapsAnything()
+            throws Exception {
+        try (var stub = new StubFeedServer()) {
+            stub.respondFull(FEED);
+            stub.respondVersion(48211L, "2026-08-09T14:03:10.900Z", 1, 1);
+            var registry = new SimpleMeterRegistry();
+
+            try (var client = EntitlementClient.builder()
+                    .serviceUrl(stub.baseUri().toString())
+                    .meterRegistry(registry)
+                    .build()) {
+                assertThat(registry.get("entitlement.client.snapshot.version").gauge().value())
+                    .as("must be seeded at build() time, not left at 0 until the first swap")
+                    .isEqualTo(48211.0);
+                assertThat(registry.get("entitlement.client.resolver.contract").gauge().value())
+                    .isEqualTo((double) ResolverContract.VERSION);
+            }
+        }
+    }
+
+    /** The other startup path Finding 1 must cover: a replica loaded from the disk cache. */
+    @Test
+    void buildFromDiskCacheAlsoSeedsTheSnapshotVersionAndResolverContractGauges(@TempDir Path cacheDir)
+            throws Exception {
+        new DiskCache(cacheDir).store(FullSnapshotReader.read(
+            new ByteArrayInputStream(FEED.getBytes(StandardCharsets.UTF_8))));
+        var unreachable = deadEnd();
+        var registry = new SimpleMeterRegistry();
+
+        try (var client = EntitlementClient.builder()
+                .serviceUrl(unreachable.toString())
+                .startupMode(StartupMode.ALLOW_DISK_CACHE)
+                .diskCache(cacheDir)
+                .startupTimeout(Duration.ofMillis(300))
+                .meterRegistry(registry)
+                .build()) {
+            assertThat(registry.get("entitlement.client.snapshot.version").gauge().value())
+                .as("the cache-loaded replica's version, seeded before the first (stale) sync attempt")
+                .isEqualTo(48211.0);
+            assertThat(registry.get("entitlement.client.resolver.contract").gauge().value())
+                .isEqualTo((double) ResolverContract.VERSION);
         }
     }
 }
