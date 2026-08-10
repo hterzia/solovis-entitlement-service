@@ -39,7 +39,10 @@ public final class DecisionMapper {
         return new DecisionResponseDto.TraceDto.CandidateDto(
             entry.overrideId().isPresent() ? "ovr_" + entry.overrideId().getAsLong() : null,
             ValueMapper.toDto(entry.value()), entry.reason().orElse(null), entry.createdBy().orElse(null),
-            entry.createdAt().map(Timestamps::iso).orElse(null), entry.outcome().map(Enum::name).orElse(null));
+            entry.createdAt().map(Timestamps::iso).orElse(null), entry.outcome().map(Enum::name).orElse(null),
+            entry.startsOn().map(Object::toString).orElse(null),
+            entry.expiresOn().map(Object::toString).orElse(null),
+            entry.notInForceSince().map(Object::toString).orElse(null));
     }
 
     private static DecisionResponseDto.TraceDto.GrantStepDto toGrantStepDto(Trace trace) {

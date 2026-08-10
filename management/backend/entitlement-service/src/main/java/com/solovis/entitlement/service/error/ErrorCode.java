@@ -20,6 +20,15 @@ public enum ErrorCode {
     PREVIEW_TOKEN_INVALID("entitlement/preview-token-invalid", HttpStatus.CONFLICT, "Preview token invalid or stale"),
     /** 002 c7 — start after expiry, a window wholly in the past, or a back-dated start. */
     INVALID_WINDOW("entitlement/invalid-window", HttpStatus.UNPROCESSABLE_ENTITY, "Invalid override window"),
+    // 002 c26/c27. Three refusals rather than one, because "we cannot know" and "you asked something
+    // that has no answer" are different facts and an operator acts on them differently. None of the
+    // three ever returns a value: a confident wrong answer about the past is worse than none (§6.5).
+    /** The date is before this account existed. */
+    BEFORE_ACCOUNT_EXISTED("entitlement/before-account-existed", HttpStatus.UNPROCESSABLE_ENTITY, "Before the account existed"),
+    /** The date is further back than the change history reaches. */
+    BEYOND_HISTORY("entitlement/beyond-history", HttpStatus.UNPROCESSABLE_ENTITY, "Beyond the recorded history"),
+    /** The date is in the future; the service reports what was, never what will be. */
+    FUTURE_DATE("entitlement/future-date", HttpStatus.UNPROCESSABLE_ENTITY, "Date is in the future"),
     INTERNAL_ERROR("entitlement/internal-error", HttpStatus.INTERNAL_SERVER_ERROR, "Internal error"),
     WRITE_CONFLICT("entitlement/conflict", HttpStatus.CONFLICT, "Conflict"),
     // Same `type` slug as VALIDATION_FAILED (contracts/README.md's error table has no dedicated
