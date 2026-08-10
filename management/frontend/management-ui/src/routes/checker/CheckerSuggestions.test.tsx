@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { renderWithProviders } from '../../test/testUtils'
 import { db } from '../../test/mocks/handlers'
+import { server } from '../../test/mocks/server'
 import { CheckerRoute } from './CheckerRoute'
 
 /**
@@ -56,5 +58,38 @@ describe('CheckerRoute suggestions', () => {
     // Suggesting is not constraining: the retired-capability error path (c19) must stay reachable.
     await user.type(screen.getByLabelText('Capability'), 'legacy.export')
     expect(screen.getByLabelText('Capability')).toHaveValue('legacy.export')
+  })
+
+  it('suggests accounts matching what has been typed, labelled by name', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<CheckerRoute />)
+
+    await waitFor(() => expect(screen.getByLabelText('Account')).toBeInTheDocument())
+    await user.type(screen.getByLabelText('Account'), 'north')
+
+    // The seeded account is Northwind Capital / acct_9931. The label follows the accounts
+    // screen's own convention so a nameless account still reads as something.
+    await waitFor(() =>
+      expect(optionsOf('checker-accounts')).toEqual([
+        { value: 'acct_9931', label: 'Northwind Capital (acct_9931)' },
+      ]),
+    )
+  })
+
+  it('asks the service for no accounts until something is typed', async () => {
+    let calls = 0
+    server.use(
+      http.get('/admin/v1/accounts', () => {
+        calls += 1
+        return HttpResponse.json({ accounts: [], nextCursor: null })
+      }),
+    )
+    renderWithProviders(<CheckerRoute />)
+
+    // Wait for the page to have settled on a query that *should* run, so "no call yet" means
+    // "never called" rather than "not called during the first tick".
+    await waitFor(() => expect(optionsOf('checker-capabilities').length).toBeGreaterThan(0))
+
+    expect(calls).toBe(0)
   })
 })

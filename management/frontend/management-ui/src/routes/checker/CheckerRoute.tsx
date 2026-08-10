@@ -2,6 +2,7 @@ import { useRef, useState, type FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { checkDecision, type CheckParams } from '../../api/checker'
 import { listCapabilities } from '../../api/capabilities'
+import { listAccounts } from '../../api/accounts'
 import { ApiError } from '../../api/http'
 import { queryKeys } from '../../queries/keys'
 import { TraceView } from '../../components/TraceView'
@@ -49,6 +50,15 @@ export function CheckerRoute() {
     queryFn: () => listCapabilities(),
   })
 
+  // Undebounced on purpose: `AccountsListRoute` — the screen that already runs this exact search
+  // — fires on every keystroke and lets the query cache absorb the repeats. Matching it keeps the
+  // codebase free of its first debounce abstraction.
+  const accountSuggestionsQuery = useQuery({
+    queryKey: queryKeys.accountSuggestions(account),
+    queryFn: () => listAccounts({ q: account }),
+    enabled: account !== '',
+  })
+
   // Keyed off the capability the *answer* is about, never the one in the search box: an override
   // reference resolves to a capability the operator never typed. Tier keys are declared with display
   // names, and this screen shows the operator what the capability calls them.
@@ -82,8 +92,15 @@ export function CheckerRoute() {
       <h1 className="app-page-title">Checker</h1>
       <form onSubmit={handleSubmit}>
         <label className="sv-label">Account
-          <input className="sv-field" aria-label="Account" value={account} disabled={overrideRef !== ''} onChange={(e) => setAccount(e.target.value)} />
+          <input list="checker-accounts" className="sv-field" aria-label="Account" value={account} disabled={overrideRef !== ''} onChange={(e) => setAccount(e.target.value)} />
         </label>
+        <datalist id="checker-accounts">
+          {(accountSuggestionsQuery.data?.accounts ?? []).map((a) => (
+            <option key={a.account} value={a.account}>
+              {a.name ? `${a.name} (${a.account})` : a.account}
+            </option>
+          ))}
+        </datalist>
         <label className="sv-label">Capability
           <input list="checker-capabilities" className="sv-field" aria-label="Capability" value={capability} disabled={overrideRef !== ''} onChange={(e) => setCapability(e.target.value)} />
         </label>
