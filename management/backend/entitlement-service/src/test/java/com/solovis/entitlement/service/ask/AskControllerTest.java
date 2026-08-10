@@ -8,6 +8,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.time.Clock;
 import java.util.List;
 
 import static org.mockito.Mockito.mock;
@@ -21,7 +22,7 @@ class AskControllerTest {
 
 	private MockMvc mockMvcWithUnconfiguredService() {
 		AskService unconfigured = new AskService(null, null,
-				mention -> new AccountMatch.None(), EMPTY_CATALOGS);
+				mention -> new AccountMatch.None(), EMPTY_CATALOGS, Clock.systemUTC());
 		// The handler's constructor takes DecisionReadDao only for the /v1/ snapshot-version
 		// header; /admin/v1/check/ask is not one of those paths, so an unstubbed mock is enough.
 		return MockMvcBuilders.standaloneSetup(new AskController(unconfigured))

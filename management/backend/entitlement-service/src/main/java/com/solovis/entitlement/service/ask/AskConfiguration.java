@@ -11,6 +11,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.time.Clock;
+
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(AskProperties.class)
 class AskConfiguration {
@@ -37,7 +39,8 @@ class AskConfiguration {
 	AskService askService(ObjectProvider<QuestionInterpreter> interpreter,
 			CheckerPort checker,
 			AccountMatcher accountMatcher,
-			CapabilityCatalogProvider catalogs) {
-		return new AskService(interpreter.getIfAvailable(), checker, accountMatcher, catalogs);
+			CapabilityCatalogProvider catalogs,
+			Clock clock) {
+		return new AskService(interpreter.getIfAvailable(), checker, accountMatcher, catalogs, clock);
 	}
 }

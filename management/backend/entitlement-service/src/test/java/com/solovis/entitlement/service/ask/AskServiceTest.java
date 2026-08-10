@@ -5,6 +5,9 @@ import com.solovis.entitlement.service.store.AccountRow;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -20,6 +23,8 @@ class AskServiceTest {
 
 	private static final Object CHECK_PAYLOAD = new Object();
 
+	private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-08-10T12:00:00Z"), ZoneOffset.UTC);
+
 	private static AccountRow account(String externalId, String name) {
 		return new AccountRow(1L, externalId, name, 1L, null, null, null, "ACTIVE", null, null);
 	}
@@ -28,10 +33,11 @@ class AskServiceTest {
 
 	private static AskService service(Proposal proposal, AccountMatch match) {
 		return new AskService(
-				(question, catalog) -> proposal,
+				(question, catalog, today) -> proposal,
 				(accountExternalId, capabilityKey, asAt) -> CHECK_PAYLOAD,
 				mention -> match,
-				CATALOGS);
+				CATALOGS,
+				FIXED_CLOCK);
 	}
 
 	@Test
@@ -159,7 +165,7 @@ class AskServiceTest {
 
 	@Test
 	void unconfiguredServiceThrowsAskUnavailable() {
-		AskService service = new AskService(null, null, mention -> new AccountMatch.None(), CATALOGS);
+		AskService service = new AskService(null, null, mention -> new AccountMatch.None(), CATALOGS, FIXED_CLOCK);
 
 		assertThat(service.available()).isFalse();
 		assertThatExceptionOfType(AskUnavailableException.class)

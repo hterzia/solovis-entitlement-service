@@ -3,6 +3,8 @@ package com.solovis.entitlement.service.ask;
 import com.solovis.entitlement.service.ask.dto.AskResponse;
 import com.solovis.entitlement.service.store.AccountRow;
 
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -16,13 +18,15 @@ public class AskService {
 	private final CheckerPort checker;             // null until the api-layer checker merges
 	private final AccountMatcher accountMatcher;
 	private final CapabilityCatalogProvider catalogs;
+	private final Clock clock; // zone-carrying (002's bean) — LocalDate.now(clock) is the Eastern date
 
 	public AskService(QuestionInterpreter interpreter, CheckerPort checker,
-			AccountMatcher accountMatcher, CapabilityCatalogProvider catalogs) {
+			AccountMatcher accountMatcher, CapabilityCatalogProvider catalogs, Clock clock) {
 		this.interpreter = interpreter;
 		this.checker = checker;
 		this.accountMatcher = accountMatcher;
 		this.catalogs = catalogs;
+		this.clock = clock;
 	}
 
 	public boolean available() {
@@ -34,8 +38,9 @@ public class AskService {
 			throw new AskUnavailableException("The plain-English checker is not configured");
 		}
 
+		LocalDate today = LocalDate.now(clock);
 		CapabilityCatalog catalog = catalogs.current();
-		Proposal proposal = interpreter.interpret(question, catalog);
+		Proposal proposal = interpreter.interpret(question, catalog, today);
 
 		// Criterion 10: keys the interpreter proposed but the registry does not know are dropped.
 		// The catalogue carries every status, so a retired key the interpreter names survives here —

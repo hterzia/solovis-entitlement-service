@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,9 +37,11 @@ class GeminiQuestionInterpreterSmokeTest {
 		return new GeminiQuestionInterpreter(model, new ObjectMapper());
 	}
 
+	private static final LocalDate TODAY = LocalDate.of(2026, 8, 10);
+
 	@Test
 	void extractsAccountAndCapabilityFromACanonicalQuestion() {
-		Proposal proposal = interpreter().interpret("Can Acme Corp export parquet?", CATALOG);
+		Proposal proposal = interpreter().interpret("Can Acme Corp export parquet?", CATALOG, TODAY);
 
 		assertThat(proposal.accountMention()).containsIgnoringCase("acme");
 		assertThat(proposal.capabilityKeys()).contains("export.parquet");
@@ -46,7 +49,7 @@ class GeminiQuestionInterpreterSmokeTest {
 
 	@Test
 	void reportsNoCapabilityWhenNothingInTheCatalogueFits() {
-		Proposal proposal = interpreter().interpret("Can Acme Corp use quantum synchronisation?", CATALOG);
+		Proposal proposal = interpreter().interpret("Can Acme Corp use quantum synchronisation?", CATALOG, TODAY);
 
 		assertThat(proposal.capabilityKeys()).isEmpty();
 	}

@@ -23,6 +23,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -78,7 +79,7 @@ class AskEndToEndTest {
 		volatile Proposal next;
 
 		@Override
-		public Proposal interpret(String question, CapabilityCatalog catalog) {
+		public Proposal interpret(String question, CapabilityCatalog catalog, LocalDate today) {
 			return next;
 		}
 	}

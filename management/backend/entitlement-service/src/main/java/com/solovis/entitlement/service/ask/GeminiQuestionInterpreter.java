@@ -12,6 +12,7 @@ import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.request.json.JsonSchema;
 import dev.langchain4j.model.chat.request.json.JsonStringSchema;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -24,14 +25,15 @@ public final class GeminiQuestionInterpreter implements QuestionInterpreter {
 
 	static final String TASK_PROMPT = """
 			You read one operator question about a customer entitlement system.
-			Extract which account and which capability the question asks about.
+			Extract which account, which capability, and (if any) which date the question asks about.
 			Reply as JSON with:
 			- accountMention: the exact words the operator used to name the account, or null if the question names none
 			- capabilityKeys: 0 to 3 keys from the catalogue below that plausibly match what is asked about, best match first
 			- capabilityMention: the words the operator used for the capability, or null
+			- dateMention: the operator's words for a moment in time, or null if the question names none
+			- resolvedDate: an ISO date (YYYY-MM-DD) if dateMention names one specific day, or null if it is too vague to pin down
 			Rules: only ever use keys that appear in the catalogue; never invent an account; when nothing in the catalogue fits, return an empty capabilityKeys list.
-
-			Capability catalogue:
+			Date rules: no time reference in the question means both dateMention and resolvedDate are null; a reference naming one specific day (e.g. "last month", "on 14 March") means both are set; a reference too vague to pin to a day (e.g. "recently", "a while back") means only dateMention is set; never invent a date the question does not imply.
 			""";
 
 	private static final ResponseFormat PROPOSAL_FORMAT = ResponseFormat.builder()
@@ -44,6 +46,8 @@ public final class GeminiQuestionInterpreter implements QuestionInterpreter {
 									.items(new JsonStringSchema())
 									.build())
 							.addStringProperty("capabilityMention")
+							.addStringProperty("dateMention")
+							.addStringProperty("resolvedDate")
 							.required("capabilityKeys")
 							.build())
 					.build())
@@ -58,10 +62,11 @@ public final class GeminiQuestionInterpreter implements QuestionInterpreter {
 	}
 
 	@Override
-	public Proposal interpret(String question, CapabilityCatalog catalog) {
+	public Proposal interpret(String question, CapabilityCatalog catalog, LocalDate today) {
+		String systemPrompt = "Today's date: " + today + ".\n\n" + TASK_PROMPT + "\nCapability catalogue:\n" + catalog.render();
 		ChatRequest request = ChatRequest.builder()
 				.messages(List.of(
-						SystemMessage.from(TASK_PROMPT + catalog.render()),
+						SystemMessage.from(systemPrompt),
 						UserMessage.from(question)))
 				.responseFormat(PROPOSAL_FORMAT)
 				.build();
