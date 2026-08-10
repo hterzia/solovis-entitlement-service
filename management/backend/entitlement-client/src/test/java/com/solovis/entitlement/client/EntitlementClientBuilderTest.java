@@ -103,7 +103,7 @@ class EntitlementClientBuilderTest {
     }
 
     @Test
-    void buildAgainstAnUnreachableServiceUnderAllowDiskCacheWithAPopulatedCacheSucceedsAndStartsStale(
+    void buildAgainstAnUnreachableServiceUnderAllowDiskCacheWithAPopulatedCacheSucceedsAndStaysStaleAcrossAFailedSync(
             @TempDir Path cacheDir) throws Exception {
         new DiskCache(cacheDir).store(FullSnapshotReader.read(
             new ByteArrayInputStream(FEED.getBytes(StandardCharsets.UTF_8))));
@@ -118,6 +118,17 @@ class EntitlementClientBuilderTest {
             assertThat(client.health().snapshotVersion()).isEqualTo(48211L);
             assertThat(client.health().stale())
                 .as("a cache-loaded replica has not synced with the service yet")
+                .isTrue();
+
+            // The poller's first sync attempt fires immediately on start() and fails fast against
+            // an unreachable service. This is the assertion that actually proves the fix, not the
+            // one above: the one above can pass on a race alone (checked before the background
+            // thread's first sync completes). Before the fix, that failed sync recomputed
+            // staleness from the fabricated "just seeded" timestamp and reported fresh again
+            // within milliseconds.
+            Thread.sleep(200);
+            assertThat(client.health().stale())
+                .as("staleness must survive a failed sync, not just the initial build() race")
                 .isTrue();
         }
     }

@@ -239,7 +239,13 @@ final class SnapshotPoller implements AutoCloseable {
         metrics.syncFailed();
         var previous = state.get();
         var since = Duration.between(previous.lastSuccessfulSync(), clock.instant());
-        boolean stale = since.compareTo(staleAfter) > 0;
+        // Sticky: a replica already known stale (by elapsed time, or because it was seeded from
+        // disk cache via markStaleAtStartup() and has never actually synced) cannot be made fresher
+        // by a failed sync. Recomputing purely from elapsed-since-lastSuccessfulSync would let a
+        // near-instant failure right after a fabricated "just seeded" timestamp report fresh again
+        // within milliseconds — exactly the lie §7's "surface staleness" promise exists to prevent.
+        // Only succeed() may clear staleness.
+        boolean stale = previous.stale() || since.compareTo(staleAfter) > 0;
         if (stale && !warnedStale) {
             warnedStale = true;   // once per transition, not once per call
             LOG.warning("Entitlement replica has not synced for " + since

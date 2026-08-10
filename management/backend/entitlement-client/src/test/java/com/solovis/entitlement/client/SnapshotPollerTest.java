@@ -249,6 +249,44 @@ class SnapshotPollerTest {
         }
     }
 
+    /**
+     * Pins the fix: {@code fail()} used to recompute {@code stale} purely from elapsed time since
+     * {@code lastSuccessfulSync}. {@code markStaleAtStartup()} stamps that field as "now" for lack
+     * of a real sync, so the very first failed attempt right after seeding — elapsed time ~0 —
+     * used to conclude "not stale yet" and silently clear the deliberately-set flag. Stale must be
+     * sticky: once known stale, only a real {@code succeed()} may clear it.
+     */
+    @Test
+    void aFailedSyncCannotMakeAReplicaThatStartedStaleReportFreshAgain() {
+        stub.close();
+        var poller = poller();
+        poller.markStaleAtStartup();
+        assertThat(poller.state().stale()).isTrue();
+
+        // Fails almost instantly (connection refused); elapsed time since the fabricated "just
+        // seeded" timestamp is nowhere near staleAfter.
+        assertThat(poller.syncOnce()).isFalse();
+
+        assertThat(poller.state().stale())
+            .as("a failed sync must never make an already-stale replica report fresh")
+            .isTrue();
+    }
+
+    /** The other half of the fix's contract: stickiness must not become "stale forever." */
+    @Test
+    void aSuccessfulSyncStillClearsStalenessEvenAfterMarkStaleAtStartup() {
+        stub.respondVersion(100L, "2026-08-09T14:03:10.900Z", 1, 1);
+        var poller = poller();
+        poller.markStaleAtStartup();
+        assertThat(poller.state().stale()).isTrue();
+
+        assertThat(poller.syncOnce()).isTrue();
+
+        assertThat(poller.state().stale())
+            .as("succeed() must still clear staleness — stickiness only stops fail() from doing so")
+            .isFalse();
+    }
+
     @Test
     void aConfiguredDiskCacheIsWrittenOnEverySuccessfulSwap(@org.junit.jupiter.api.io.TempDir
             java.nio.file.Path dir) {
