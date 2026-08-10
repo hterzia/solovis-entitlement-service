@@ -8,7 +8,9 @@ Backs the five operator screens of §9. Every route in this file mutates or read
 
 **Upstream-system integration is deferred with it** (decision 2026-08-09): in v1 every write comes from the operator SPA — no external system, billing included, integrates against these routes yet, and a `source: SYSTEM` assignment change *(c36)* is demonstrated with a simulated caller. Which routes billing eventually gets, and under what stability promise, is designed when authentication lands; the `billing-sync` examples below show the intended shape, not a live integration.
 
-**Write semantics common to every mutating route**: the change, its audit event and the new snapshot version are committed in **one** transaction, and the in-memory snapshot is swapped before the response returns. An operator's next read therefore always shows their own change *(c30)*. Every mutating response carries the resulting `snapshotVersion` and `changeVisibleEverywhereWithinSeconds: 60`, which is the value the UI states wherever a change is saved *(c41)*.
+**Write semantics common to every mutating route**: the change, its audit event and the new snapshot version are committed in **one** transaction, and the in-memory snapshot is swapped before the response returns. An operator's next read therefore always shows their own change *(c30)*.
+
+`changeVisibleEverywhereWithinSeconds: 60` — the number the UI states wherever a change is saved *(c41)* — is carried by the **override mutations and the plan-entitlement apply**, and read from `GET /admin/v1/meta` everywhere else. An earlier draft of this paragraph claimed every mutating response carried it; it does not, and the UI is built for what is actually sent (corrected 2026-08-10). The consequence is worth stating because it caused a real defect: a save whose number comes from `meta` must not be *reported* through `meta`, or an unavailable `meta` turns a successful write into a blank screen. The confirmation therefore always states that the change saved, and adds the propagation window only when it is known.
 
 That `snapshotVersion` is also the read-your-writes token for **other services**. A system caller that writes here and then needs a downstream product to see the change should carry the version forward as `minSnapshotVersion` — see [`java-client-sdk.md`](./java-client-sdk.md), "Read-your-writes across services". Criterion 30 covers the operator; nothing else does.
 
@@ -183,6 +185,7 @@ Recorded as a `DEFAULT_PLAN` / `DESIGNATE` audit event like any other change *(c
 | `GET /admin/v1/accounts/{external}` | Viewer | Plan, effective entitlements with source marking, overrides *(c39)* |
 | `PUT /admin/v1/accounts/{external}/plan` | Administrator | Reassign *(c36)* |
 | `POST /admin/v1/accounts/{external}/overrides` | Exception manager | Create a GRANT or HOLD *(c9)* |
+| `GET /admin/v1/accounts/{external}/overrides/{id}/removal-preview` | Viewer | What the decision becomes if this override were removed *(c14, c15)* |
 | `DELETE /admin/v1/accounts/{external}/overrides/{id}` | Exception manager | Remove *(c14, c15)* |
 
 ### `GET /admin/v1/accounts/{external}` — the account view
@@ -253,6 +256,25 @@ No uniqueness check and no conflict error: an account may hold any number of GRA
 There is deliberately no edit route: **an override is immutable from creation to removal** (decision 2026-08-09). Correcting one is a `DELETE` and a fresh `POST`, each with its own reason and audit event — so no override's stated reason can ever drift from the value it justifies.
 
 > Warning the operator about overrides that already exist on the same account and capability is **not** in v1, and was withdrawn from `future-spec.md` on 2026-08-09, so it is not planned scope either. The returned trace is the standing mitigation: an operator whose GRANT is being capped by an existing HOLD sees that in the response to their own write.
+
+### `GET /admin/v1/accounts/{external}/overrides/{id}/removal-preview`
+
+Read-only. Returns the decision that *would* result if this override were removed, in the same shape
+`GET /admin/v1/check` returns — `allowed`, `value`, `snapshotVersion`, `evaluatedAt` and the full
+`trace` — so the operator sees what the value returns to **before** confirming, and the UI renders it
+with the same trace component as everywhere else *(c14, c15)*.
+
+It mutates nothing: no soft-delete, no audit event, no snapshot publish. It resolves through the same
+`Resolver.explain()` as every other answer, with that one override excluded.
+
+This route exists because the confirmation in [`ui-screens.md`](./ui-screens.md) must state what the
+value returns to "computed from the same resolver". The only alternative was for the SPA to re-run
+§4's combining rule over the remaining overrides — a second implementation of the one rule this
+service exists to centralise. The operator console computes nothing; when a question needs the
+resolver, it is the service's question (decision 2026-08-10, `DECISIONS.md` §2).
+
+Unknown account → `entitlement/unknown-account`. Unknown or already-removed override id → the same
+problem the `DELETE` raises for one.
 
 ### `DELETE /admin/v1/accounts/{external}/overrides/{id}`
 
