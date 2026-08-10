@@ -1,6 +1,8 @@
 package com.solovis.entitlement.service.api;
 
-import com.solovis.entitlement.service.snapshot.SnapshotHolder;
+import com.solovis.entitlement.service.admin.dto.*;
+import com.solovis.entitlement.service.admin.service.*;
+import com.solovis.entitlement.service.dto.ValueDto;
 import com.solovis.entitlement.service.store.*;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -14,12 +16,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
- * Deliberately not {@code @Transactional}: {@code snapshotHolder.set(assembler.assembleFull())}
- * below reads real committed rows and publishes them straight into the shared {@link SnapshotHolder}
- * singleton, bypassing {@code SnapshotPublisher}'s commit-gated {@code afterCommit()} swap. Under
- * a rolled-back test transaction that would leak a phantom capability into the snapshot that no
- * longer exists in the database once the transaction rolls back (every read route resolves against
- * that same singleton across the whole shared Spring context, per {@link SnapshotHolder}'s javadoc).
+ * Deliberately not {@code @Transactional}: {@code @BeforeAll} below commits fixtures through the
+ * write-side repositories, and {@link DecisionController} now reads straight out of SQLite via
+ * {@link DecisionReadService} — only the read pool's own transaction sees committed rows, so this
+ * class's fixtures have to actually be committed, not rolled back at the end of each test method.
  * Fixture keys are namespaced ("*.t4.*"/"t4-*"/"acct_t4_*") so this class's permanent writes don't collide with other
  * non-transactional {@code @SpringBootTest} classes sharing this JVM fork's SQLite file. Seeding runs
  * once via {@code @BeforeAll} (not {@code @BeforeEach}) since the unique key/external_id indexes would
@@ -31,13 +31,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class DecisionControllerTest {
 
     @Autowired MockMvc mockMvc;
-    @Autowired SnapshotHolder snapshotHolder;
-    @Autowired com.solovis.entitlement.service.snapshot.SnapshotAssembler assembler;
     @Autowired CapabilityRepository capabilityRepository;
     @Autowired PlanRepository planRepository;
     @Autowired AccountRepository accountRepository;
     @Autowired SnapshotVersionRepository snapshotVersionRepository;
     @Autowired AuditEventRepository auditEventRepository;
+    @Autowired PlanAdminService planAdminService;
+    @Autowired CapabilityAdminService capabilityAdminService;
+    @Autowired AccountAdminService accountAdminService;
+    @Autowired OverrideAdminService overrideAdminService;
 
     @BeforeAll
     void seedAndRefreshSnapshot() {
@@ -55,7 +57,6 @@ class DecisionControllerTest {
         long auditSeq = auditEventRepository.insert(new AuditEventRow(null, "2026-08-09T00:00:00.000Z", "PERSON",
             "dev-operator", "UI", "PLAN", "t4-free", "CREATE", null, null, null, null, null, null, null));
         snapshotVersionRepository.insert(new SnapshotVersionRow(null, "2026-08-09T00:00:00.000Z", auditSeq, "{}"));
-        snapshotHolder.set(assembler.assembleFull());
     }
 
     @Test
@@ -92,5 +93,29 @@ class DecisionControllerTest {
             .andExpect(jsonPath("$.capabilities[?(@.key=='reports.t4.monthly')].area").value("reports"))
             .andExpect(jsonPath("$.capabilities[?(@.key=='reports.t4.monthly')].status").value("ACTIVE"))
             .andExpect(jsonPath("$.snapshotVersion").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)));
+    }
+
+    /**
+     * c30: a write committed on the write pool must be immediately visible to the read pool — never
+     * a 409 on the very next request. Drives a real admin write (an override create, through
+     * {@link OverrideAdminService}, the actual {@code @Transactional} write path admin controllers
+     * use) and asserts the {@code snapshotVersion} it returns is honoured, not just eventually reached.
+     */
+    @Test
+    void readYourWritesAcrossThePoolBoundary() throws Exception {
+        planAdminService.create(new PlanCreateRequest("t4-c30-plan", "T4 C30 Plan", null));
+        planAdminService.designateDefault("t4-c30-plan");
+        capabilityAdminService.create(new CapabilityCreateRequest("reports.t4.c30", "C30 probe", null, "SWITCH",
+            new ValueDto("SWITCH", false, null, null, null, null), null, null));
+        accountAdminService.create(new AccountCreateRequest("acct_t4_c30", null));
+
+        var created = overrideAdminService.create("acct_t4_c30", new OverrideCreateRequest("reports.t4.c30", "GRANT",
+            new ValueDto("SWITCH", true, null, null, null, null), "c30 read-your-writes probe"));
+        long publishedVersion = created.snapshotVersion();
+
+        mockMvc.perform(get("/v1/accounts/acct_t4_c30/capabilities/reports.t4.c30")
+                .param("minSnapshotVersion", String.valueOf(publishedVersion)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.allowed").value(true));
     }
 }
