@@ -376,7 +376,10 @@ test.describe('Closed gaps — verified end to end', () => {
 
     await page.getByRole('button', { name: 'Copy explanation' }).click()
 
-    await expect(page.getByRole('status')).toBeVisible()
+    // Scoped by text, not just role: 003's AskBox also renders a role="status" element on this
+    // screen (the "Ask is unavailable" notice, since this suite's backend carries no Gemini key),
+    // so a bare getByRole('status') is now ambiguous.
+    await expect(page.getByText('Copied.')).toBeVisible()
     expect(failures).toEqual([])
   })
 
