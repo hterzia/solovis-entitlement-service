@@ -58,7 +58,8 @@ constrains nothing — which preserves the retired-capability error path and the
 
 ### 2. Account suggestions, one new query
 
-A `useQuery` mirroring `AccountsListRoute.tsx:15-16`:
+Add `list="checker-accounts"` to the Account input, backed by a `useQuery` mirroring
+`AccountsListRoute.tsx:15-16`:
 
 - `queryFn: () => listAccounts({ q: account || undefined })`
 - `enabled: account !== ''`, so an untouched form and the override-reference flow fetch
@@ -78,11 +79,16 @@ It still sits under the `['accounts']` prefix, so the `invalidateQueries({ query
 ['accounts'] })` that `AccountsListRoute.tsx:26` fires after creating an account
 refreshes the suggestions too, which is the behaviour we want.
 
-Options show the account name and insert the external id:
+Options insert the external id and are labelled the way the accounts list already
+labels an account (`AccountsListRoute.tsx:38`), which handles the nullable name:
 
 ```
-<option value={a.externalId}>{a.name}</option>
+<option value={a.account}>{a.name ? `${a.name} (${a.account})` : a.account}</option>
 ```
+
+Note the field is `AccountSummary.account`, not `externalId` — `account` *is* the
+external id, and it is the value `checkDecision` sends. `name` is `string | null`, so
+the fallback above is required, not cosmetic.
 
 **No debounce.** `AccountsListRoute` — the screen that already does exactly this search
 — fires on every keystroke and lets TanStack Query's cache absorb the repeats. Matching
@@ -111,19 +117,37 @@ would add a dependency, a component, and a keyboard-and-ARIA surface to get righ
 
 ## Testing
 
-Every existing *test case* must pass with its body unchanged — that suite is the check
-on whether this stayed presentational. The only permitted edit to
-`CheckerRoute.test.tsx` is to its shared setup, which needs an MSW handler for `GET
-/accounts`; without one the new query hits an unhandled request. Changing an assertion
-means the change was not presentational after all, and is grounds to stop and re-open
-the design.
+**`CheckerRoute.test.tsx` is not edited at all** — not its cases, not its setup. That is
+the check on whether this stayed presentational, and it is a stronger guarantee than an
+earlier draft of this spec claimed: that draft called for adding an MSW handler for
+`GET /accounts`, but `handlers.ts:183` already serves one, complete with the `q`
+filtering this design relies on, and the checker suite already uses the shared server.
+No new handler is needed. Changing an assertion means the change was not presentational
+after all, and is grounds to stop and re-open the design.
 
-New coverage:
+`src/test/setup.ts:10` sets `onUnhandledRequest: 'error'`, so if the new query is ever
+pointed at a path the shared handlers do not cover, the suite fails loudly rather than
+silently returning nothing.
+
+New coverage, in a new file or an appended `describe`:
 
 - The capability datalist offers active capabilities by key, labelled by display name.
 - A retired capability is absent from the suggestions but still accepted when typed.
 - Typing an account queries `/accounts?q=` and offers the results.
 - An empty Account field issues no accounts request.
+
+**How to assert on a `<datalist>`.** The codebase has no precedent, and this is the one
+place the implementer would otherwise guess. Do not rely on `getByRole('option')`: ARIA
+maps `option` through a listbox context, and a `<datalist>`'s options are not reliably
+exposed in jsdom. Query the list by id and read its options directly:
+
+```
+const options = document.getElementById('checker-capabilities')!.querySelectorAll('option')
+```
+
+then assert over their `value` and `textContent`. If that proves awkward, the fallback
+is to assert the input carries the right `list` attribute and test the option set
+through the query layer instead — but do not weaken a test to "the datalist exists."
 
 ## Styling
 
