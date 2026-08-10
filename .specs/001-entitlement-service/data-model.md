@@ -518,12 +518,12 @@ CREATE INDEX ix_snapshot_version_published ON snapshot_version(published_at);
 | `ux_plan_single_default` | the schema-level guarantee of exactly one default plan *(c7)* |
 | `ix_plan_entitlement_capability` | "which plans set this capability", shown when retiring one |
 | `ix_account_plan` | the affected-account count before a plan edit *(c34)* |
-| `ix_override_live_account_cap` | the single-capability resolution path *(§4)* |
-| `ix_override_live_account` | the account view and whole-account resolution *(c20, c39)* |
+| `ix_override_live_account_cap` | the single-capability resolution path *(§4)* — queried directly on every decision |
+| `ix_override_live_account` | the account view and whole-account resolution *(c20, c39)* — queried directly on every decision |
 | `ix_override_live_capability` | snapshot assembly and capability-level operator queries |
 | `ix_audit_*` | the three required history filters plus retention queries *(c33)* |
 
-Note that none of these indexes is on a decision hot path in production — decisions read the in-memory snapshot. They serve snapshot assembly, the operator UI, and the admin API. This is deliberate: the schema is optimised for correctness and for operators, and the latency targets are met by not querying it.
+Several of these are on the decision hot path today: the resolution path (§4) queries SQLite directly per request, and it is exactly these point lookups — never a scan — that keep that query fast. `ux_capability_key` and the two `ix_override_live_*` rows above are read on every single-capability decision; `ix_capability_status` is read on every whole-account decision. The remainder serve snapshot assembly, the operator UI, and the admin API. The schema is optimised for correctness and for operators, and the latency targets are met by reading it well, not by avoiding it.
 
 ### Migration strategy
 

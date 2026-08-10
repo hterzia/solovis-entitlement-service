@@ -159,8 +159,9 @@ starts in.
 - **Authentication first.** Two deferred items are blocked on it outright and a third triggers on it;
   the §7 risk is the only one I wouldn't accept twice.
 - **Ship the load harness.** The performance criteria are designed for but not yet evidenced.
-  In-memory lookups behind an atomic reference make the targets easy in principle, and easy in
-  principle is not evidence — the widest gap between what the design claims and what it has proved.
+  Indexed SQLite reads inside a read-only transaction (see §11) make the targets easy in principle,
+  and easy in principle is not evidence — the widest gap between what the design claims and what it
+  has proved.
 - **Push instead of polling.** A 5 s poll of one integer lands ten times inside the freshness
   requirement, so it was right for v1, but SSE fits better before the consumer count grows.
 - **Override categories earlier.** Overrides can't be edited, so everything created before that
@@ -169,3 +170,30 @@ starts in.
   irreversible decisions live. The cost is that the API and UI layers came last and are the least
   settled part of the repository. Whoever inherits this gets an unusually well-documented system with
   an unfinished edge — which I'd take over the reverse.
+
+## 11. Deleting the in-memory snapshot holder
+
+I moved the service's own read path off the in-memory `SnapshotHolder` and onto SQLite directly: a
+decision now runs inside one read-only transaction against the read connection pool, and WAL mode
+gives that transaction the "one coherent moment" guarantee (c31) the holder used to give by being
+swapped atomically. The rejected alternative was to keep the holder as the service's own read path and
+build 002 on top of it anyway.
+
+The holder's original justification was criteria 25–27 — 5,000 decisions/s at p99 ≤ 10 ms, holding
+while writes happen — and that justification was never evidenced; the load harness never ran (§10).
+Meanwhile 002 has three concrete needs that fight a held snapshot: explaining overrides that are *not*
+in force without keeping them in heap for seven years (c19–c21), point-in-time answers that want to be
+the same view-building code with a different `asOf`, and window standing that has to be exact at the
+moment of asking. A held snapshot answers all three by growing new special cases; direct reads answer
+them by construction.
+
+The holder was also carrying invariants nobody had named: a version counter kept correct only by
+convention between two places, a publish shape that was safe only because the write pool is size 1,
+and a one-publish-per-transaction rule enforced by nothing. Deleting it deletes those along with it,
+and makes the data-governance boundary structural rather than disciplined — the object that leaves the
+process (the feed) can't leak what the process never assembles into memory in the first place.
+
+**§10's second bullet, fixed in the same commit**: "in-memory lookups behind an atomic reference make
+the targets easy in principle" described the deleted mechanism. It's now indexed SQLite reads inside a
+read-only transaction that make them easy in principle — the point of that bullet (easy in principle
+is not evidence, the load harness still hasn't run) is untouched, only the mechanism it pointed at.
