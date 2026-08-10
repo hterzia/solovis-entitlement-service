@@ -198,6 +198,26 @@ class AskServiceTest {
 	}
 
 	@Test
+	void aBlankDateMentionFromTheModelIsTreatedAsAbsentNotAsAMention() {
+		// A live model was observed to return "" rather than null for an absent field
+		// (GeminiQuestionInterpreterSmokeTest) — blank must mean absence, the same as it does for
+		// accountMention below, or a dateless question would spuriously NO_MATCH on an empty string.
+		AtomicReference<String> capturedAsAt = new AtomicReference<>("unset");
+		AtomicInteger checkerCalls = new AtomicInteger();
+
+		AskResponse response = serviceCapturingAsAt(
+				new Proposal("Acme Corp", List.of("export.parquet"), null, "", ""),
+				new AccountMatch.One(account("acme", "Acme Corp")), capturedAsAt, checkerCalls)
+				.ask("Can Acme export parquet?");
+
+		assertThat(response.status()).isEqualTo(AskResponse.ANSWERED);
+		assertThat(response.interpretation().asAt()).isNull();
+		assertThat(response.interpretation().dateMention()).isNull();
+		assertThat(capturedAsAt).hasValue(null);
+		assertThat(checkerCalls).hasValue(1);
+	}
+
+	@Test
 	void aResolvedDateReachesThePortAsAnIsoString() {
 		AtomicReference<String> capturedAsAt = new AtomicReference<>();
 		AtomicInteger checkerCalls = new AtomicInteger();

@@ -60,10 +60,14 @@ public class AskService {
 		// the local parse exists only to separate "the model could not pin this down" from "the
 		// model named a day"; once it has, every judgement about whether that day is answerable
 		// belongs to the checker's own point-in-time route (002's three refusals, delegated).
-		String dateMention = proposal.dateMention();
+		// A live model observed to return "" rather than null for an absent field (verified via
+		// GeminiQuestionInterpreterSmokeTest) — blank is absence, exactly as accountMention treats
+		// it below, or a dateless question would spuriously NO_MATCH on an empty mention.
+		String dateMention = blankToNull(proposal.dateMention());
+		String resolvedDate = blankToNull(proposal.resolvedDate());
 		String asAt = null;
-		if (dateMention != null || proposal.resolvedDate() != null) {
-			LocalDate day = parseIsoOrNull(proposal.resolvedDate());
+		if (dateMention != null || resolvedDate != null) {
+			LocalDate day = parseIsoOrNull(resolvedDate);
 			if (day == null) {
 				return AskResponse.noMatchDate(dateMention);
 			}
@@ -79,8 +83,8 @@ public class AskService {
 			return AskResponse.retired(keys.getFirst());
 		}
 
-		String accountMention = proposal.accountMention();
-		if (accountMention == null || accountMention.isBlank()) {
+		String accountMention = blankToNull(proposal.accountMention());
+		if (accountMention == null) {
 			return AskResponse.noMatch(null, null, "Tell me which account you mean.");
 		}
 		String mention = accountMention.trim();
@@ -115,7 +119,7 @@ public class AskService {
 		// proposed retired key already survived the filter above. The mention text is still worth
 		// checking against the catalogue: an operator's words ("legacy export") can name a retired
 		// capability the model failed to key, and retirement is a fact worth stating (criterion 7).
-		String mention = proposal.capabilityMention();
+		String mention = blankToNull(proposal.capabilityMention());
 		if (mention != null) {
 			for (CapabilityCatalog.Entry entry : catalog.entries()) {
 				boolean matchesText = entry.key().equalsIgnoreCase(mention)
@@ -128,6 +132,17 @@ public class AskService {
 		return AskResponse.noMatch(null, mention, mention == null
 				? "Tell me which capability you mean."
 				: "Nothing in the registry matches '%s'.".formatted(mention));
+	}
+
+	/**
+	 * A live model was observed, across separate calls, to represent an absent optional field
+	 * three different ways: JSON {@code null} (the schema's own contract), an empty string, and
+	 * the four-character literal {@code "null"} — all for the same question, same field, same
+	 * prompt. Any of the three must mean absence, or a dateless question spuriously fails to
+	 * pin a date down. Verified live in {@code GeminiQuestionInterpreterSmokeTest}.
+	 */
+	private static String blankToNull(String value) {
+		return value == null || value.isBlank() || value.trim().equalsIgnoreCase("null") ? null : value;
 	}
 
 	private static LocalDate parseIsoOrNull(String value) {
