@@ -153,7 +153,7 @@ public final class FullSnapshotReader {
      * vector's {@code model} carries its own miniature snapshot, so it is assembled through the
      * same {@link SnapshotBuilder} the real feed uses — the gate must exercise the real path.
      */
-    private static ConformanceVector toVector(FeedDtos.ConformanceLine line, Instant publishedAt) {
+    static ConformanceVector toVector(FeedDtos.ConformanceLine line, Instant publishedAt) {
         var model = line.model();
         var builder = new SnapshotBuilder();
 

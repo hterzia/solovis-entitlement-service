@@ -73,7 +73,7 @@ public class FullSnapshotWriter {
         writer.flush();
     }
 
-    private static Map<String, Object> capabilityLine(Capability capability) {
+    static Map<String, Object> capabilityLine(Capability capability) {
         var descriptor = CapabilityDescriptorMapper.toDescriptor(capability);
         var line = new LinkedHashMap<String, Object>();
         line.put("kind", "capability"); line.put("key", descriptor.key()); line.put("area", descriptor.area());
@@ -82,7 +82,7 @@ public class FullSnapshotWriter {
         return line;
     }
 
-    private static Map<String, Object> planLine(EntitlementView view, Plan plan) {
+    static Map<String, Object> planLine(EntitlementView view, Plan plan) {
         Map<String, Object> entitlements = new LinkedHashMap<>();
         for (var capability : view.capabilities()) {
             view.planEntitlement(plan.key(), capability.key())
@@ -94,7 +94,7 @@ public class FullSnapshotWriter {
         return line;
     }
 
-    private static Map<String, Object> accountLine(AccountAssignment account) {
+    static Map<String, Object> accountLine(AccountAssignment account) {
         var line = new LinkedHashMap<String, Object>();
         line.put("kind", "account"); line.put("external", account.accountExternalId()); line.put("planKey", account.planKey());
         return line;
@@ -103,7 +103,7 @@ public class FullSnapshotWriter {
     // "kind" is already the record-type discriminator every NDJSON line uses; the override's own
     // GRANT/HOLD kind is a different concept and must not collide on that key. "overrideKind" matches
     // the field name the delta stream already uses for the same concept (DeltaChange.OverrideCreated).
-    private static Map<String, Object> overrideLine(AccountOverride override) {
+    static Map<String, Object> overrideLine(AccountOverride override) {
         var line = new LinkedHashMap<String, Object>();
         line.put("kind", "override"); line.put("ref", "ovr_" + override.id().getAsLong());
         line.put("account", override.accountExternalId()); line.put("capability", override.capabilityKey().value());
@@ -117,7 +117,7 @@ public class FullSnapshotWriter {
     // javadoc). Projecting it with the same line-shapes used above is what makes the NDJSON record
     // "self-contained": a replica can evaluate it with its own engine without the real snapshot data
     // (snapshot-feed.md §2, "The conformance gate").
-    private static ConformanceVectorDto conformanceLine(ConformanceVector vector) {
+    static ConformanceVectorDto conformanceLine(ConformanceVector vector) {
         var fixture = vector.fixture();
         Map<String, Object> model = new LinkedHashMap<>();
         model.put("account", vector.accountExternalId());
