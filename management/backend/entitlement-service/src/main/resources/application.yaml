@@ -12,6 +12,19 @@ spring:
     # Flyway's. It reaches Flyway as a @Component: Boot collects JavaMigration beans and hands
     # them over, which works regardless of what package it sits in.
     locations: classpath:db/migration
+    # Required to bootstrap under Litestream, and load-bearing only there. Litestream attaches
+    # to the database and writes its own bookkeeping tables before the JVM ever connects, so on
+    # a brand-new deployment Flyway finds a non-empty schema with no history table and refuses
+    # to migrate at all. Without these two lines the service cannot start from an empty replica
+    # — which stayed hidden for as long as every deployment inherited a database created before
+    # Litestream was in front of it.
+    #
+    # baseline-version MUST be 0. Flyway's default baseline is 1, which would mark V1 as already
+    # applied and skip it, leaving a schema with none of the baseline tables in it. At 0 the
+    # history starts empty and V1, V3, V4 and V5 all run. On a database that already has a
+    # history table both settings are ignored, so this is inert for existing deployments.
+    baseline-on-migrate: true
+    baseline-version: 0
   jackson:
     default-property-inclusion: non_null
 
