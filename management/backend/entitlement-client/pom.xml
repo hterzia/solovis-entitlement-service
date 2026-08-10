@@ -21,8 +21,15 @@
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
-			<groupId>com.fasterxml.jackson.core</groupId>
+			<groupId>tools.jackson.core</groupId>
 			<artifactId>jackson-databind</artifactId>
+		</dependency>
+		<!-- Optional: the SDK emits metrics only when the embedding product supplies a registry.
+		     `optional` keeps Micrometer off every consumer's classpath that does not want it. -->
+		<dependency>
+			<groupId>io.micrometer</groupId>
+			<artifactId>micrometer-core</artifactId>
+			<optional>true</optional>
 		</dependency>
 
 		<dependency>
@@ -33,6 +40,11 @@
 		<dependency>
 			<groupId>org.assertj</groupId>
 			<artifactId>assertj-core</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>net.jqwik</groupId>
+			<artifactId>jqwik</artifactId>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>

@@ -76,6 +76,17 @@ public final class SnapshotMutator {
             base.planEntitlementsMap(), base.accountsMap(), Map.copyOf(overrides));
     }
 
+    /**
+     * The same model at a new version. A delta change that turns out to be a no-op on this replica —
+     * a removal it never saw, a redelivered creation — still advances the version, because the
+     * replica has genuinely caught up to it. Without this the version would stall and the replica
+     * would re-request the same change forever.
+     */
+    public static Snapshot withVersion(Snapshot base, long newVersion) {
+        return new Snapshot(newVersion, base.capabilitiesMap(), base.plansMap(),
+            base.planEntitlementsMap(), base.accountsMap(), base.liveOverridesMap());
+    }
+
     public static Snapshot withPlan(Snapshot base, long newVersion, Plan plan) {
         var plans = new HashMap<>(base.plansMap());
         plans.put(plan.key(), plan);
