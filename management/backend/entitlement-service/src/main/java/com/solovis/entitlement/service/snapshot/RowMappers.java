@@ -3,6 +3,7 @@ package com.solovis.entitlement.service.snapshot;
 import com.solovis.entitlement.core.model.*;
 import com.solovis.entitlement.service.store.*;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
@@ -40,8 +41,13 @@ public final class RowMappers {
     public static AccountOverride toOverride(AccountOverrideRow row, String accountExternalId, Capability capability) {
         var value = ValueColumnCodec.toValue(capability.valueType(), row.boolValue(), row.qtyValue(),
             row.qtyUnlimited(), row.tierValue(), capability.tierOrder());
+        // The window must travel with the override, not be re-read later: AccountOverride's
+        // shorter constructor defaults both dates to empty, so omitting them here would make every
+        // record-backed override look permanently in force (002 c2, c3).
         return new AccountOverride(OptionalLong.of(row.id()), accountExternalId, capability.key(),
             OverrideKind.valueOf(row.kind()), value, Optional.of(row.reason()), Optional.of(row.createdBy()),
-            Optional.of(Instant.parse(row.createdAt())));
+            Optional.of(Instant.parse(row.createdAt())),
+            Optional.ofNullable(row.startsOn()).map(LocalDate::parse),
+            Optional.ofNullable(row.expiresOn()).map(LocalDate::parse));
     }
 }

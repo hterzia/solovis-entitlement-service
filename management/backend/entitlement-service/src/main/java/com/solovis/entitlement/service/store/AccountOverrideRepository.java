@@ -38,8 +38,15 @@ public class AccountOverrideRepository {
 	 * and not yet expired. The expiry day is inclusive, which is why the comparison is {@code >=}
 	 * rather than {@code >} (c4). Dates are stored as ISO 'YYYY-MM-DD', so lexicographic comparison
 	 * is chronological.
+	 *
+	 * <p>Public because it must have exactly one copy. The service answers from SQLite through three
+	 * separate query sites — this repository, {@link DecisionReadDao}, and
+	 * {@code snapshot/RecordViewAssembler}, which repeats the DAO's SQL so it can run against either
+	 * connection pool. A predicate written out three times is a predicate that will eventually differ
+	 * in one of them, and the failure would be silent and one-directional: the service and the feed
+	 * would disagree about who has access. Bind {@code :asOf} to an ISO date in the service zone.
 	 */
-	private static final String IN_FORCE = """
+	public static final String IN_FORCE = """
 			removed_at IS NULL
 			AND (starts_on  IS NULL OR starts_on  <= :asOf)
 			AND (expires_on IS NULL OR expires_on >= :asOf)

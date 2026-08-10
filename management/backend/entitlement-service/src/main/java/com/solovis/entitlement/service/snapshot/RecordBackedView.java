@@ -6,6 +6,7 @@ import com.solovis.entitlement.core.model.Capability;
 import com.solovis.entitlement.core.model.CapabilityKey;
 import com.solovis.entitlement.core.model.Plan;
 import com.solovis.entitlement.core.model.PlanEntitlement;
+import com.solovis.entitlement.core.model.StandingOverride;
 
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -41,6 +42,7 @@ public final class RecordBackedView implements com.solovis.entitlement.core.view
     private final Map<CapabilityKey, Capability> capabilities;
     private final Map<CapabilityKey, PlanEntitlement> planEntitlements;
     private final Map<CapabilityKey, List<AccountOverride>> liveOverrides;
+    private final Map<CapabilityKey, List<StandingOverride>> knownOverrides;
 
     RecordBackedView(
         Mode mode,
@@ -49,7 +51,8 @@ public final class RecordBackedView implements com.solovis.entitlement.core.view
         AccountAssignment account,
         Map<CapabilityKey, Capability> capabilities,
         Map<CapabilityKey, PlanEntitlement> planEntitlements,
-        Map<CapabilityKey, List<AccountOverride>> liveOverrides) {
+        Map<CapabilityKey, List<AccountOverride>> liveOverrides,
+        Map<CapabilityKey, List<StandingOverride>> knownOverrides) {
         this.mode = mode;
         this.snapshotVersion = snapshotVersion;
         this.accountExternalId = accountExternalId;
@@ -57,6 +60,7 @@ public final class RecordBackedView implements com.solovis.entitlement.core.view
         this.capabilities = capabilities;
         this.planEntitlements = planEntitlements;
         this.liveOverrides = liveOverrides;
+        this.knownOverrides = knownOverrides;
     }
 
     @Override
@@ -87,6 +91,23 @@ public final class RecordBackedView implements com.solovis.entitlement.core.view
     public List<AccountOverride> liveOverrides(String externalId, CapabilityKey capabilityKey) {
         requireInScope(externalId);
         return liveOverrides.getOrDefault(capabilityKey, List.of());
+    }
+
+    /**
+     * Every override on this capability that exists, each paired with what it is doing now — the
+     * wider set {@code Resolver.explain} needs to say "there was a GRANT of 200 and it ended on 30
+     * June" (c19–c21). The default on {@code EntitlementView} reports only the in-force ones, which
+     * is right for a replica's projection and wrong here: the record is the one place that still
+     * knows about the overrides a window has taken out of play.
+     *
+     * <p>The obligation the interface states is checked structurally rather than trusted: filtering
+     * this to {@code IN_FORCE} must reproduce {@link #liveOverrides} exactly, since both come from
+     * the same rows evaluated against the same date inside one read transaction.
+     */
+    @Override
+    public List<StandingOverride> knownOverrides(String externalId, CapabilityKey capabilityKey) {
+        requireInScope(externalId);
+        return knownOverrides.getOrDefault(capabilityKey, List.of());
     }
 
     @Override
@@ -137,8 +158,20 @@ public final class RecordBackedView implements com.solovis.entitlement.core.view
                 remaining.put(entry.getKey(), kept);
             }
         }
+        // Dropped from the known set too, not only the live one. The interface's obligation is that
+        // filtering knownOverrides to IN_FORCE reproduces liveOverrides; leaving it in one and not
+        // the other would make the preview's trace describe a different computation from its value.
+        var remainingKnown = new LinkedHashMap<CapabilityKey, List<StandingOverride>>();
+        for (var entry : knownOverrides.entrySet()) {
+            var kept = entry.getValue().stream()
+                .filter(s -> !s.override().id().equals(OptionalLong.of(overrideId)))
+                .toList();
+            if (!kept.isEmpty()) {
+                remainingKnown.put(entry.getKey(), kept);
+            }
+        }
         return new RecordBackedView(mode, snapshotVersion, accountExternalId, account,
-            capabilities, planEntitlements, Map.copyOf(remaining));
+            capabilities, planEntitlements, Map.copyOf(remaining), Map.copyOf(remainingKnown));
     }
 
     private void requireInScope(String externalId) {

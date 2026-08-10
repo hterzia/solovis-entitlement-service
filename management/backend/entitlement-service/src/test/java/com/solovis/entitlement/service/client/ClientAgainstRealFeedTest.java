@@ -131,11 +131,11 @@ class ClientAgainstRealFeedTest {
 
         // GRANT raises t15.quantity from the plan's 20 to 150 — a candidate check() and the live
         // HTTP decision route must agree exceeded the plan baseline.
-        grantOverrideId = accountOverrideRepository.insert(new AccountOverrideRow(null, accountId, quantityCapId,
+        grantOverrideId = accountOverrideRepository.insert(AccountOverrideRow.openEnded(null, accountId, quantityCapId,
             "GRANT", null, 150L, false, null, GRANT_REASON, TS, "dev-operator", "PERSON", null, null, null));
         // HOLD caps t15.tier from the plan's "gold" down to "silver" — exercises the restriction
         // path as well as the raise path, in the same fixture set.
-        holdOverrideId = accountOverrideRepository.insert(new AccountOverrideRow(null, accountId, tierCapId,
+        holdOverrideId = accountOverrideRepository.insert(AccountOverrideRow.openEnded(null, accountId, tierCapId,
             "HOLD", null, null, false, "silver", HOLD_REASON, TS, "dev-operator", "PERSON", null, null, null));
 
         long auditSeq = auditEventRepository.insert(new AuditEventRow(null, TS, "PERSON", "dev-operator", "UI",

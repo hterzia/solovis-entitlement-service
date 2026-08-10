@@ -5,6 +5,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -92,7 +93,9 @@ public class DecisionReadDao {
 			rs.getString("created_source"),
 			rs.getString("removed_at"),
 			rs.getString("removed_by"),
-			rs.getString("removed_reason"));
+			rs.getString("removed_reason"),
+			rs.getString("starts_on"),
+			rs.getString("expires_on"));
 
 	private final JdbcClient jdbcClient;
 
@@ -147,24 +150,58 @@ public class DecisionReadDao {
 				.optional();
 	}
 
-	public List<AccountOverrideRow> liveOverrides(long accountId, long capabilityId) {
+	/**
+	 * The overrides that take part in a decision made on {@code asOf} — in force, not merely
+	 * un-removed (002 c10). The date is a parameter rather than read from a clock here so that the
+	 * historical assembler can ask the same question about a past day.
+	 */
+	public List<AccountOverrideRow> inForceOverrides(long accountId, long capabilityId, LocalDate asOf) {
 		return jdbcClient.sql("""
 				SELECT * FROM account_override
-				WHERE account_id = :accountId AND capability_id = :capabilityId AND removed_at IS NULL
-				ORDER BY id
-				""")
+				WHERE account_id = :accountId AND capability_id = :capabilityId AND
+				""" + AccountOverrideRepository.IN_FORCE + " ORDER BY id")
 				.param("accountId", accountId)
 				.param("capabilityId", capabilityId)
+				.param("asOf", asOf.toString())
 				.query(ACCOUNT_OVERRIDE_ROW_MAPPER)
 				.list();
 	}
 
-	public List<AccountOverrideRow> liveOverridesForAccount(long accountId) {
+	public List<AccountOverrideRow> inForceOverridesForAccount(long accountId, LocalDate asOf) {
 		return jdbcClient.sql("""
-				SELECT * FROM account_override WHERE account_id = :accountId AND removed_at IS NULL
+				SELECT * FROM account_override WHERE account_id = :accountId AND
+				""" + AccountOverrideRepository.IN_FORCE + " ORDER BY capability_id, id")
+				.param("accountId", accountId)
+				.param("asOf", asOf.toString())
+				.query(ACCOUNT_OVERRIDE_ROW_MAPPER)
+				.list();
+	}
+
+	/**
+	 * Every override on this account and capability that existed at {@code createdAtOrBefore},
+	 * whatever its standing — what an explanation needs to say "there was a GRANT of 200 and it
+	 * ended on 30 June" rather than the true but useless "no GRANT in force" (002 c19, c25).
+	 */
+	public List<AccountOverrideRow> knownOverrides(long accountId, long capabilityId, String createdAtOrBefore) {
+		return jdbcClient.sql("""
+				SELECT * FROM account_override
+				WHERE account_id = :accountId AND capability_id = :capabilityId AND created_at <= :asOf
+				ORDER BY id
+				""")
+				.param("accountId", accountId)
+				.param("capabilityId", capabilityId)
+				.param("asOf", createdAtOrBefore)
+				.query(ACCOUNT_OVERRIDE_ROW_MAPPER)
+				.list();
+	}
+
+	public List<AccountOverrideRow> knownOverridesForAccount(long accountId, String createdAtOrBefore) {
+		return jdbcClient.sql("""
+				SELECT * FROM account_override WHERE account_id = :accountId AND created_at <= :asOf
 				ORDER BY capability_id, id
 				""")
 				.param("accountId", accountId)
+				.param("asOf", createdAtOrBefore)
 				.query(ACCOUNT_OVERRIDE_ROW_MAPPER)
 				.list();
 	}
@@ -225,8 +262,14 @@ public class DecisionReadDao {
 				.list();
 	}
 
-	public List<AccountOverrideRow> allLiveOverrides() {
-		return jdbcClient.sql("SELECT * FROM account_override WHERE removed_at IS NULL")
+	/**
+	 * Every override in force on {@code asOf}, for the full-resync artifact. A replica is told what
+	 * counts, never what merely exists: it holds no windows and no clock that matters, so a pending
+	 * or ended override reaching it would be indistinguishable from a live one (002 c14).
+	 */
+	public List<AccountOverrideRow> allInForceOverrides(LocalDate asOf) {
+		return jdbcClient.sql("SELECT * FROM account_override WHERE " + AccountOverrideRepository.IN_FORCE)
+				.param("asOf", asOf.toString())
 				.query(ACCOUNT_OVERRIDE_ROW_MAPPER)
 				.list();
 	}

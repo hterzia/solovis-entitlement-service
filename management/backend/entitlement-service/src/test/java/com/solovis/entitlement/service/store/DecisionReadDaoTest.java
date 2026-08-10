@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -20,6 +22,9 @@ class DecisionReadDaoTest {
 
 	@Autowired
 	DecisionReadDao dao;
+
+	@Autowired
+	Clock clock;
 
 	@Autowired
 	AccountRepository accountRepository;
@@ -141,18 +146,58 @@ class DecisionReadDaoTest {
 		long capabilityId = seedCapability("area.cap_" + suffix, "ACTIVE");
 		long accountId = seedAccount("acct_" + suffix, planId, "ACTIVE");
 
-		long liveId = accountOverrideRepository.insert(new AccountOverrideRow(null, accountId, capabilityId,
+		long liveId = accountOverrideRepository.insert(AccountOverrideRow.openEnded(null, accountId, capabilityId,
 				"GRANT", true, null, false, null, "grant reason", "2026-08-10T00:00:00.000Z", "operator",
 				"PERSON", null, null, null));
-		long removedId = accountOverrideRepository.insert(new AccountOverrideRow(null, accountId, capabilityId,
+		long removedId = accountOverrideRepository.insert(AccountOverrideRow.openEnded(null, accountId, capabilityId,
 				"HOLD", false, null, false, null, "hold reason", "2026-08-10T00:00:00.000Z", "operator",
 				"PERSON", null, null, null));
 		accountOverrideRepository.remove(removedId, "2026-08-10T01:00:00.000Z", "operator", "no longer needed");
 
-		assertThat(dao.liveOverrides(accountId, capabilityId)).extracting(AccountOverrideRow::id)
+		LocalDate today = LocalDate.now(clock);
+		assertThat(dao.inForceOverrides(accountId, capabilityId, today)).extracting(AccountOverrideRow::id)
 				.containsExactly(liveId);
-		assertThat(dao.liveOverridesForAccount(accountId)).extracting(AccountOverrideRow::id)
+		assertThat(dao.inForceOverridesForAccount(accountId, today)).extracting(AccountOverrideRow::id)
 				.containsExactly(liveId);
+
+		// The removed one still existed, so the explanation's wider set keeps it (c19) — the
+		// difference between "takes part" and "is worth naming" is the whole point of the pair.
+		assertThat(dao.knownOverrides(accountId, capabilityId, "2026-08-10T23:59:59.999Z"))
+				.extracting(AccountOverrideRow::id)
+				.containsExactly(liveId, removedId);
+	}
+
+	/** c2, c3 — a window, not merely {@code removed_at}, decides what takes part in a decision. */
+	@Test
+	void inForceOverridesExcludePendingAndEndedWindows() {
+		String suffix = unique();
+		long planId = seedPlan("plan_" + suffix);
+		long capabilityId = seedCapability("area.cap_" + suffix, "ACTIVE");
+		long accountId = seedAccount("acct_" + suffix, planId, "ACTIVE");
+		LocalDate today = LocalDate.now(clock);
+
+		long current = accountOverrideRepository.insert(new AccountOverrideRow(null, accountId, capabilityId,
+				"GRANT", true, null, false, null, "in force", "2026-08-10T00:00:00.000Z", "operator",
+				"PERSON", null, null, null, null, today.plusDays(5).toString()));
+		long pending = accountOverrideRepository.insert(new AccountOverrideRow(null, accountId, capabilityId,
+				"GRANT", true, null, false, null, "not yet", "2026-08-10T00:00:00.000Z", "operator",
+				"PERSON", null, null, null, today.plusDays(1).toString(), null));
+		long ended = accountOverrideRepository.insert(new AccountOverrideRow(null, accountId, capabilityId,
+				"GRANT", true, null, false, null, "over", "2026-08-10T00:00:00.000Z", "operator",
+				"PERSON", null, null, null, null, today.minusDays(1).toString()));
+		// The expiry day is inclusive, so one expiring today is still in force today (c4).
+		long expiringToday = accountOverrideRepository.insert(new AccountOverrideRow(null, accountId, capabilityId,
+				"GRANT", true, null, false, null, "last day", "2026-08-10T00:00:00.000Z", "operator",
+				"PERSON", null, null, null, null, today.toString()));
+
+		assertThat(dao.inForceOverrides(accountId, capabilityId, today)).extracting(AccountOverrideRow::id)
+				.containsExactly(current, expiringToday);
+		assertThat(dao.allInForceOverrides(today)).extracting(AccountOverrideRow::id)
+				.contains(current, expiringToday)
+				.doesNotContain(pending, ended);
+		assertThat(dao.knownOverrides(accountId, capabilityId, "2026-08-10T23:59:59.999Z"))
+				.as("all four existed, whatever they were doing")
+				.hasSize(4);
 	}
 
 	@Test

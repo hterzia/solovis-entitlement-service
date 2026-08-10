@@ -5,7 +5,8 @@ import com.solovis.entitlement.service.admin.service.*;
 import com.solovis.entitlement.service.dto.ValueDto;
 import com.solovis.entitlement.service.error.EntitlementApiException;
 import com.solovis.entitlement.service.error.ErrorCode;
-import com.solovis.entitlement.service.snapshot.SnapshotHolder;
+import com.solovis.entitlement.service.store.SnapshotVersionRepository;
+import com.solovis.entitlement.service.store.SnapshotVersionRow;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,8 +29,17 @@ class OverrideWindowApiTest {
 	@Autowired AccountAdminService accountService;
 	@Autowired PlanAdminService planService;
 	@Autowired CapabilityAdminService capabilityService;
-	@Autowired SnapshotHolder snapshotHolder;
+	@Autowired SnapshotVersionRepository snapshotVersionRepository;
 	@Autowired Clock clock;
+
+	/**
+	 * The latest published version — what a replica would next be handed. The service holds no
+	 * snapshot of its own, so "has anything reached replicas" is a question about the
+	 * {@code snapshot_version} table and nothing else.
+	 */
+	private long publishedVersion() {
+		return snapshotVersionRepository.findLatest().map(SnapshotVersionRow::version).orElse(0L);
+	}
 
 	private String account;
 	private String capability;
@@ -93,14 +103,14 @@ class OverrideWindowApiTest {
 	 */
 	@Test
 	void aPendingOverrideDoesNotRaiseTheValueAndDoesNotReachReplicas() {
-		long versionBefore = snapshotHolder.current().snapshotVersion();
+		long versionBefore = publishedVersion();
 
 		var created = overrideService.create(account, grant(200L, today().plusMonths(2).toString(), null));
 
 		assertThat(created.decision().value().amount())
 				.as("the plan value stands until the grant begins")
 				.isEqualTo(50L);
-		assertThat(snapshotHolder.current().snapshotVersion())
+		assertThat(publishedVersion())
 				.as("nothing a replica can see has changed yet")
 				.isEqualTo(versionBefore);
 
@@ -113,22 +123,22 @@ class OverrideWindowApiTest {
 
 	@Test
 	void anOverrideInForceTodayDoesReachReplicas() {
-		long versionBefore = snapshotHolder.current().snapshotVersion();
+		long versionBefore = publishedVersion();
 
 		overrideService.create(account, grant(200L, today().toString(), today().plusDays(30).toString()));
 
-		assertThat(snapshotHolder.current().snapshotVersion()).isGreaterThan(versionBefore);
+		assertThat(publishedVersion()).isGreaterThan(versionBefore);
 	}
 
 	/** The mirror: withdrawing something replicas never received must not emit a removal. */
 	@Test
 	void removingAPendingOverrideEmitsNothingToReplicas() {
 		var created = overrideService.create(account, grant(200L, today().plusMonths(2).toString(), null));
-		long versionBefore = snapshotHolder.current().snapshotVersion();
+		long versionBefore = publishedVersion();
 
 		overrideService.delete(account, created.overrideId(), "cancelled before it began");
 
-		assertThat(snapshotHolder.current().snapshotVersion()).isEqualTo(versionBefore);
+		assertThat(publishedVersion()).isEqualTo(versionBefore);
 		assertThat(accountService.get(account).overrides())
 				.as("removed overrides leave the live list; the record itself survives (c17)")
 				.isEmpty();

@@ -89,7 +89,7 @@ class AuditEventRepositoryTest {
 		long t29aPlanId = planRepository.findByKey("t29a.plan").orElseThrow().id();
 		long t29bPlanId = planRepository.findByKey("t29b.plan").orElseThrow().id();
 
-		var byPlan = repository.find(new AuditEventFilter(null, t29aPlanId, null, null, null, null, null, 50));
+		var byPlan = repository.find(new AuditEventFilter(null, t29aPlanId, null, null, null, null, null, null, 50));
 
 		assertThat(byPlan).isNotEmpty();
 		assertThat(byPlan).allMatch(row -> row.planId() != null && row.planId() == t29aPlanId);
@@ -107,7 +107,7 @@ class AuditEventRepositoryTest {
 		long e2 = repository.insert(event("t.window", null, "2026-08-09T00:01:00.000Z"));
 		long e3 = repository.insert(event("t.window", null, "2026-08-09T00:02:00.000Z"));
 
-		var windowed = repository.find(new AuditEventFilter(null, null, "t.window", null,
+		var windowed = repository.find(new AuditEventFilter(null, null, null, "t.window", null,
 				"2026-08-09T00:01:00.000Z", "2026-08-09T00:02:00.000Z", null, 10));
 
 		// e2's occurredAt equals the from bound (inclusive) and e3's equals the to bound

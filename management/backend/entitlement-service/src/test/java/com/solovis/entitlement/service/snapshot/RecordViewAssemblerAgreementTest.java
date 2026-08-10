@@ -102,18 +102,18 @@ class RecordViewAssemblerAgreementTest {
 
 		// Competing overrides on the quantity capability: a GRANT of 200 raised over the default of 5,
 		// then capped by a HOLD of 50 — a restriction always defeats a concession (§4).
-		accountOverrideRepository.insert(new AccountOverrideRow(null, activeId, quantityId, "GRANT",
+		accountOverrideRepository.insert(AccountOverrideRow.openEnded(null, activeId, quantityId, "GRANT",
 				null, 200L, false, null, "capacity purchased", TS, "operator", "PERSON", null, null, null));
-		holdOverrideId = accountOverrideRepository.insert(new AccountOverrideRow(null, activeId, quantityId, "HOLD",
+		holdOverrideId = accountOverrideRepository.insert(AccountOverrideRow.openEnded(null, activeId, quantityId, "HOLD",
 				null, 50L, false, null, "suspended pending investigation", TS, "operator", "PERSON", null, null, null));
 		// A second GRANT that loses to the first, so the trace carries a non-winning entry too.
-		accountOverrideRepository.insert(new AccountOverrideRow(null, activeId, quantityId, "GRANT",
+		accountOverrideRepository.insert(AccountOverrideRow.openEnded(null, activeId, quantityId, "GRANT",
 				null, 20L, false, null, "trial bump", TS, "operator", "PERSON", null, null, null));
 		// A GRANT on the tier capability, lifting silver to gold.
-		accountOverrideRepository.insert(new AccountOverrideRow(null, activeId, tierId, "GRANT",
+		accountOverrideRepository.insert(AccountOverrideRow.openEnded(null, activeId, tierId, "GRANT",
 				null, null, false, "gold", "escalated support", TS, "operator", "PERSON", null, null, null));
 		// A live override belonging to the CLOSED account — it must be invisible to every view.
-		accountOverrideRepository.insert(new AccountOverrideRow(null, closedId, quantityId, "GRANT",
+		accountOverrideRepository.insert(AccountOverrideRow.openEnded(null, closedId, quantityId, "GRANT",
 				null, 999L, false, null, "should never be seen", TS, "operator", "PERSON", null, null, null));
 
 		snapshotVersionRepository.insert(new SnapshotVersionRow(null, TS, seedAuditEvent(), "{}"));

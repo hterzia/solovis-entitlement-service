@@ -139,7 +139,7 @@ class AccountAdminServiceTest {
         var defaultPlan = planRepository.findByKey("tacct.default-plan").orElseThrow();
 
         var events = auditEventRepository.find(
-            new AuditEventFilter(accountRow.id(), null, null, "ACCOUNT", null, null, null, 10));
+            new AuditEventFilter(accountRow.id(), null, null, null, "ACCOUNT", null, null, null, 10));
 
         assertThat(events).hasSize(1);
         var event = events.get(0);

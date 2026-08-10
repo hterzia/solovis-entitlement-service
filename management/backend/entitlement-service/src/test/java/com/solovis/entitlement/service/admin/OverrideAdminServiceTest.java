@@ -109,7 +109,7 @@ class OverrideAdminServiceTest {
             .anyMatch(o -> ("ovr_" + o.id()).equals(created.overrideId()));
         assertThat(stillLive).isFalse();
 
-        var removeEvent = auditEventRepository.find(new AuditEventFilter(accountId, null, null, "OVERRIDE", null, null, null, 50))
+        var removeEvent = auditEventRepository.find(new AuditEventFilter(accountId, null, null, null, "OVERRIDE", null, null, null, 50))
             .stream()
             .filter(e -> "REMOVE".equals(e.action()) && created.overrideId().equals(e.entityId()))
             .findFirst();
@@ -145,7 +145,7 @@ class OverrideAdminServiceTest {
         overrideService.delete("acct_tovr_before", created.overrideId(), null);
 
         long accountId = accountRepository.findByExternalId("acct_tovr_before").orElseThrow().id();
-        var removeEvent = auditEventRepository.find(new AuditEventFilter(accountId, null, null, "OVERRIDE", null, null, null, 50))
+        var removeEvent = auditEventRepository.find(new AuditEventFilter(accountId, null, null, null, "OVERRIDE", null, null, null, 50))
             .stream()
             .filter(e -> "REMOVE".equals(e.action()) && created.overrideId().equals(e.entityId()))
             .findFirst()

@@ -1,6 +1,14 @@
 -- ============================================================================
--- V2__override_windows.sql
+-- V4__override_windows.sql
 -- Feature 002 — time-bounded overrides and point-in-time answers.
+--
+-- Numbered V4, not V2, and the number is load-bearing. This began life as V2 on
+-- a branch cut before V3__service_state.sql existed on main. Flyway defaults to
+-- out-of-order=false with validate-on-migrate=true, and the deployed database is
+-- restored from GCS rather than rebuilt, so it already has V1 and V3 recorded: a
+-- V2 arriving afterwards is a hard startup failure, not a warning. Never edit V3
+-- to close the gap either — its checksum is recorded, and changing so much as a
+-- comment fails validation the same way.
 --
 -- Additive only: two nullable columns and three indexes. Nothing here rewrites
 -- an existing row, so it is safe to apply to a live database with Litestream
