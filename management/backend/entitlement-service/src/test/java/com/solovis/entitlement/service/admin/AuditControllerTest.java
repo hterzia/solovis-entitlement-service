@@ -99,6 +99,46 @@ class AuditControllerTest {
     }
 
     @Test
+    void nextCursorIsNullWhenTheLastPageIsShortOfTheLimit() throws Exception {
+        planService.create(new PlanCreateRequest("tcur.short.plan", "Tcur Short Plan", null));
+        planService.designateDefault("tcur.short.plan");
+        accountService.create(new AccountCreateRequest("acct_tcur_short", null));
+
+        // Exactly one audit event is scoped to this account (its own ACCOUNT/CREATE), so a
+        // generous limit leaves nothing beyond this page.
+        mockMvc.perform(get("/admin/v1/audit").param("account", "acct_tcur_short").param("limit", "50"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.events.length()").value(1))
+            .andExpect(jsonPath("$.nextCursor").doesNotExist());
+    }
+
+    @Test
+    void nextCursorIsNullWhenTheLastPageIsExactlyFull() throws Exception {
+        planService.create(new PlanCreateRequest("tcur.exact.plan", "Tcur Exact Plan", null));
+        planService.designateDefault("tcur.exact.plan");
+        accountService.create(new AccountCreateRequest("acct_tcur_exact", null));
+
+        // The page is exactly full, but there is no further row. A cursor here would send the
+        // History screen (c33) to an empty page it had no way to predict.
+        mockMvc.perform(get("/admin/v1/audit").param("account", "acct_tcur_exact").param("limit", "1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.events.length()").value(1))
+            .andExpect(jsonPath("$.nextCursor").doesNotExist());
+    }
+
+    @Test
+    void nextCursorIsPresentWhileFurtherRowsRemain() throws Exception {
+        planService.create(new PlanCreateRequest("tcur.more.plan", "Tcur More Plan", null));
+        planService.patch("tcur.more.plan", new PlanPatchRequest("Tcur More Plan Renamed", null));
+
+        // Two events on this plan (CREATE then UPDATE), so a page of one has a successor.
+        mockMvc.perform(get("/admin/v1/audit").param("planKey", "tcur.more.plan").param("limit", "1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.events.length()").value(1))
+            .andExpect(jsonPath("$.nextCursor").isString());
+    }
+
+    @Test
     void cursorPagingWalksStrictlyDescendingSeqsWithNoRepeats() throws Exception {
         capabilityService.create(new CapabilityCreateRequest("t29.cursor.one", "Cursor probe one", null, "SWITCH",
             new ValueDto("SWITCH", false, null, null, null, null), null, null));
