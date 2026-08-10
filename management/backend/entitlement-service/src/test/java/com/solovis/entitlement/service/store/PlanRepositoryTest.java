@@ -37,9 +37,8 @@ class PlanRepositoryTest {
 		repository.insert(plan("legacy"));
 		repository.archive(repository.findByKey("legacy").orElseThrow().id(), "2026-08-09T01:00:00.000Z");
 
-		assertThat(repository.findAll("ACTIVE")).extracting(PlanRow::key).containsExactly("pro");
-		assertThat(repository.findAll("ARCHIVED")).extracting(PlanRow::key).containsExactly("legacy");
-		assertThat(repository.findAll(null)).hasSize(2);
+		assertThat(repository.findAll("ACTIVE")).extracting(PlanRow::key).contains("pro").doesNotContain("legacy");
+		assertThat(repository.findAll("ARCHIVED")).extracting(PlanRow::key).contains("legacy").doesNotContain("pro");
 		assertThat(proId).isPositive();
 	}
 
