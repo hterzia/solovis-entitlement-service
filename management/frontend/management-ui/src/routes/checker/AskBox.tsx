@@ -49,8 +49,8 @@ export function AskBox({
 
   return (
     <div className="app-panel">
-      <form onSubmit={handleSubmit}>
-        <label className="sv-label">Ask
+      <form onSubmit={handleSubmit} className="ask-form">
+        <label className="sv-label ask-form__label">Ask
           <input
             className="sv-field"
             aria-label="Ask"
