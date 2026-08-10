@@ -6,7 +6,7 @@ One service that answers, for any account and any capability: **are they allowed
 value**, and **how was that decided** — replacing the ad-hoc entitlement checks scattered across a
 product.
 
-- **Live demo:** `<CLOUD_RUN_URL>` — operator UI at `/`, API docs at `/swagger-ui.html`
+- **Live demo:** `https://entitlement-service-773463992355.us-central1.run.app` — operator UI at `/`, API docs at `/swagger-ui.html`
 - **Architectural choices, alternatives rejected, scope deliberately cut:** [`DECISIONS.md`](./DECISIONS.md)
 - **The specification that governs all of it:** [`.specs/001-entitlement-service/spec.md`](./.specs/001-entitlement-service/spec.md)
 
