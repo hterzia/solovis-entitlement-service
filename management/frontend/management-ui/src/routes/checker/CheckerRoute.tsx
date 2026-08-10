@@ -85,8 +85,16 @@ export function CheckerRoute() {
           <input className="sv-field" aria-label="Account" value={account} disabled={overrideRef !== ''} onChange={(e) => setAccount(e.target.value)} />
         </label>
         <label className="sv-label">Capability
-          <input className="sv-field" aria-label="Capability" value={capability} disabled={overrideRef !== ''} onChange={(e) => setCapability(e.target.value)} />
+          <input list="checker-capabilities" className="sv-field" aria-label="Capability" value={capability} disabled={overrideRef !== ''} onChange={(e) => setCapability(e.target.value)} />
         </label>
+        {/* Suggestions only — a <datalist> constrains nothing, so a retired key stays typeable and
+            its §6.3 error stays reachable. The list is the service's answer to "what is active",
+            never a client-side filter over a fuller one. */}
+        <datalist id="checker-capabilities">
+          {(capabilitiesQuery.data?.capabilities ?? []).map((c) => (
+            <option key={c.key} value={c.key}>{c.displayName}</option>
+          ))}
+        </datalist>
         <label className="sv-label">Override reference
           <input className="sv-field" aria-label="Override reference" value={overrideRef} disabled={capability !== ''} onChange={(e) => setOverrideRef(e.target.value)} />
         </label>
