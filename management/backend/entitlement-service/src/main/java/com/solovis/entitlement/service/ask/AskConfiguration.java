@@ -17,17 +17,29 @@ import java.time.Clock;
 @EnableConfigurationProperties(AskProperties.class)
 class AskConfiguration {
 
-	/** Only exists when an api-key is configured — the bean's absence is the feature flag. */
+	/**
+	 * Only exists when an api-key is configured — the bean's absence is the feature flag.
+	 *
+	 * <p>Builds its own {@link ObjectMapper} rather than injecting Spring's bean: this app's JSON
+	 * stack is Jackson 3 ({@code tools.jackson}, see {@code JacksonConfig}), and a classic Jackson 2
+	 * {@code ObjectMapper} bean only exists on the *test* classpath (pulled in by
+	 * {@code spring-boot-starter-jackson-test} for MockMvc) — a real {@code spring-boot:run} or the
+	 * packaged jar has no such bean, and this dependency would fail to autowire at actual startup
+	 * despite every {@code @SpringBootTest} passing. langchain4j itself is built on classic Jackson 2
+	 * (it is what pulls {@code jackson-databind} onto the compile classpath at all), so a
+	 * self-constructed mapper is not a workaround — it is the correct scope for parsing a model's
+	 * own JSON, independent of the app's response-serialisation tuning.
+	 */
 	@Bean
 	@ConditionalOnExpression("!'${entitlement.ask.api-key:}'.isBlank()")
-	QuestionInterpreter questionInterpreter(AskProperties properties, ObjectMapper objectMapper) {
+	QuestionInterpreter questionInterpreter(AskProperties properties) {
 		ChatModel model = GoogleAiGeminiChatModel.builder()
 				.apiKey(properties.apiKey())
 				.modelName(properties.model())
 				.temperature(0.0)
 				.timeout(properties.timeout())
 				.build();
-		return new GeminiQuestionInterpreter(model, objectMapper);
+		return new GeminiQuestionInterpreter(model, new ObjectMapper());
 	}
 
 	/**
