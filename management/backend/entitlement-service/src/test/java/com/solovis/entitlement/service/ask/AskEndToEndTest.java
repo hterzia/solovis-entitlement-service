@@ -57,6 +57,7 @@ class AskEndToEndTest {
 	@Autowired AccountRepository accountRepository;
 	@Autowired AuditEventRepository auditEventRepository;
 	@Autowired StubInterpreter stubInterpreter;
+	@Autowired java.time.Clock clock;
 
 	private static final ObjectMapper MAPPER = new ObjectMapper();
 	private static final String ACCOUNT_EXTERNAL = "acct_ask_t5";
@@ -171,5 +172,38 @@ class AskEndToEndTest {
 
 		long after = auditEventRepository.findMaxSeq().orElse(0L);
 		assertThat(after).as("asking must never write an audit row (criterion 11)").isEqualTo(before);
+	}
+
+	/**
+	 * 002's three date refusals are delegated, never reimplemented (§5) — the ask path does no
+	 * local check beyond parseability, so a well-formed but unanswerable day must reach the
+	 * checker's own point-in-time route and come back as that route's own error, untouched.
+	 */
+	@Test
+	void aFutureResolvedDatePassesThroughAs002sOwnRefusal() throws Exception {
+		String tomorrow = LocalDate.now(clock).plusDays(1).toString();
+		stubInterpreter.next = new Proposal(ACCOUNT_MENTION, List.of(CAPABILITY_KEY), null, "tomorrow", tomorrow);
+
+		mockMvc.perform(post("/admin/v1/check/ask")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"question\": \"Could Ask T5 Corp get monthly reports tomorrow?\"}"))
+				.andExpect(status().isUnprocessableEntity())
+				.andExpect(jsonPath("$.type").value("entitlement/future-date"));
+	}
+
+	@Test
+	void aDateBeforeTheAccountExistedPassesThroughAs002sOwnRefusal() throws Exception {
+		// The account was seeded at 2026-08-10T00:00:00Z; well before that has no answer. Which of
+		// 002's two "no answer in the past" refusals fires depends on where the change history
+		// itself starts, not something this ask-path test seeds — AsAtCheckTest accepts either for
+		// the same reason. Either way it must be one of 002's own types, never a denial or a guess.
+		stubInterpreter.next = new Proposal(ACCOUNT_MENTION, List.of(CAPABILITY_KEY), null, "in 2020", "2020-01-01");
+
+		mockMvc.perform(post("/admin/v1/check/ask")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"question\": \"Could Ask T5 Corp get monthly reports back in 2020?\"}"))
+				.andExpect(status().isUnprocessableEntity())
+				.andExpect(jsonPath("$.type").value(org.hamcrest.Matchers.in(
+						List.of("entitlement/before-account-existed", "entitlement/beyond-history"))));
 	}
 }
