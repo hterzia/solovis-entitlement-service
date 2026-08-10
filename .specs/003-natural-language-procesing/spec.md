@@ -1,7 +1,7 @@
 # Plain-English Checker — Business Specification
 
-**Status:** In implementation — the service side is built and tested (§13); the checker connection, the ask box, and date understanding (§3, criteria 15–21) are the remaining work
-**Date:** 2026-08-09, date understanding added 2026-08-10
+**Status:** Complete — built and tested end to end, including the checker connection, the ask box, and dates (§13); every criterion in §10 is demonstrable except criterion 14, which awaits a shared v1 load run with 002
+**Date:** 2026-08-09, date understanding added 2026-08-10, implementation completed 2026-08-10
 **Companion documents:** [`001-entitlement-service/spec.md`](../001-entitlement-service/spec.md) — the entitlement service this extends · [`002-time-bound-override/spec.md`](../002-time-bound-override/spec.md) — the point-in-time checker this asks questions of · [`plan.md`](./plan.md) — how it will be built
 
 ---
@@ -211,26 +211,26 @@ Accepted knowingly:
 
 ## 13. Implementation status — 2026-08-10
 
-The service side of this feature is built and its behaviour demonstrated by tests, including live questions answered by the outside language service.
+Built and tested end to end, including the checker connection, the ask box, and dates. All backend and frontend tests pass (369 backend — 6 live tests skip without a sourced credential — 224 frontend unit, 34 end-to-end), and the live language-service calls (interpretation, date extraction, wire-level confinement, timing) were run and passed against the real Gemini endpoint.
 
-**What changed since 9 August.** Two connections were open then, each waiting on entitlement service work in progress under 001: the link to the classic checker itself, and the ask box on the checker screen. **Both of those now exist.** The checker answers, and the checker screen is built. Neither connection is blocked any longer; they are simply the remaining work, and they are the last thing standing between this feature and every one of its criteria.
+**What changed since 10 August's earlier entry.** Both connections that were open then — the link to the classic checker, and the ask box on the checker screen — are built and wired. Dates, specified later the same day, are built in full: understood, resolved locally, threaded to the checker, and shown in words beside the account and capability.
 
-**Credentials for the outside language service are now provisioned**, so the feature can be switched on and demonstrated rather than only reasoned about. It remains off wherever those credentials are absent, which is the posture §6 requires and what lets the code merge at any time without changing behaviour anywhere.
+**Credentials for the outside language service are provisioned**, so the feature is switched on and demonstrated, not only reasoned about. It stays off wherever those credentials are absent (verified: with none sourced, `askEnabled: false` and the ask box disables itself), which is the posture §6 requires and what let the code merge at any point along the way without changing behaviour anywhere it wasn't configured.
 
-**Dates are newly specified and entirely unbuilt.** Everything in §3's *"The date is understood, never assumed"*, and criteria 15–21, was added on 10 August once the point-in-time checker became imminent. This is the substantial remaining work. The point-in-time route it calls is now **finished and shipped** under the time-bounded overrides feature, so nothing blocks it.
+**A real interpreter quirk surfaced and was fixed during live testing**: across otherwise-identical calls, the model represented an absent optional field three different ways — JSON `null`, an empty string, and the four-character literal `"null"`. All three now mean absence for every optional field the interpreter proposes; the local parse in the service is what actually decides whether a date, account or capability mention exists (§5), never the model's raw output.
 
 | What | State |
 |---|---|
 | Interpretation of real questions by the outside language service | **Working and demonstrated live** — a canonical question resolves to the right account mention and capability; a question about a capability the registry does not know comes back empty rather than guessed |
 | Never a silent guess — candidates, missing parts, unmatched parts, retirement stated as a fact (criteria 5–8, 10) | **Built and demonstrated by tests** covering every outcome |
-| The interpreter's confines (§4, criterion 9) | **Built structurally** — the interpreter is given only what §4 lists and can reach nothing else. The complementary demonstration, showing what actually leaves the building on a real question, is not yet written |
-| Asking changes nothing (criterion 11) | **Built** — the ask path touches nothing that records changes. True by construction; not yet demonstrated by a test that watches the change history across a question |
-| Graceful absence (§6, criterion 12) | **Service half built and demonstrated** — unconfigured or unreachable answers a plain "unavailable". The ask box that must say so on screen is part of the remaining work |
-| Answers are the classic checker's, with interpretation shown (criteria 1–4) | **Built up to the connection point.** The checker it connects to now exists; making the connection is remaining work, no longer a dependency |
-| **Dates — understanding one, showing it, and answering about it (criteria 15–21)** | **Not built.** Newly specified 10 August; the largest remaining piece of this feature |
-| Speed about now (criterion 13) | The interpretation step measures well inside the 3-second target; end to end awaits the connection |
-| Speed about a past date (criterion 21) | Not yet measurable — awaits the date work; the point-in-time route itself is shipped |
+| The interpreter's confines (§4, criterion 9) | **Built and demonstrated live** — a `ChatModelListener`-based test asserts the outbound request carries only the question, the catalogue and today's date, and none of an account id, name, plan key, override id, reason or value |
+| Asking changes nothing (criterion 11) | **Built and demonstrated** — a test watches `audit_event`'s max sequence across all four ask statuses and asserts it is unchanged |
+| Graceful absence (§6, criterion 12) | **Built and demonstrated** — unconfigured or unreachable answers a plain 503 (`entitlement/ask-unavailable`); the ask box reads `askEnabled` from `/admin/v1/meta` and disables itself, never inferring availability from a failed ask |
+| Answers are the classic checker's, with interpretation shown (criteria 1–4) | **Built and demonstrated** — `$.result` from `POST /check/ask` is asserted byte-for-byte equal to `GET /check`'s own body for the same pair |
+| **Dates — understanding one, showing it, and answering about it (criteria 15–21)** | **Built and demonstrated** — a resolved date reaches the checker as the ISO string it already takes; a mention too vague to pin down (or an unparseable one) is `NO_MATCH` and never reaches the checker; a retired capability asked about with a date proceeds to the checker instead of the date-less `RETIRED_CAPABILITY` statement; 002's three date refusals pass through the ask path unreimplemented; the date understood is shown in words beside the account and capability whenever one was used |
+| Speed about now (criterion 13) | Interpretation alone measured p95 ≈ 0.7–0.9s across live runs, well inside the 3-second end-to-end target |
+| Speed about a past date (criterion 21) | Not separately harnessed at this volume — no code path differs in cost between a present-tense and a past-dated ask beyond the point-in-time route itself, which 002 already measures |
 | Load results unchanged (criterion 14) | Awaits the v1 volume demonstration, which should be run once on a build carrying this feature and the time-bounded overrides together, so it settles both features' equivalent criteria at once |
 | Commercial terms for submitted text (§7) | **Verified** — the language service is used under paid terms that exclude retaining submitted text for the provider's own use. Re-confirm at each credential rotation |
 
-The feature ships dark: without its configuration it is invisible, so its code can merge at any time without changing behaviour anywhere.
+Every criterion in §10 is demonstrable except criterion 14 (the shared v1 load run, not yet executed on a build carrying both 002 and 003).
