@@ -16,7 +16,7 @@ import java.util.List;
  * services every real write path uses, so it can never declare data the validation rules reject.
  */
 @Component
-@Order(1) // after SnapshotStartup (@Order(0))
+@Order(1)
 public class DemoDataSeeder implements ApplicationRunner {
 
     private final CapabilityAdminService capabilityService;
