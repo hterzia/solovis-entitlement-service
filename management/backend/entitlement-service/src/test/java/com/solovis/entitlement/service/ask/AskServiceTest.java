@@ -29,7 +29,7 @@ class AskServiceTest {
 	private static AskService service(Proposal proposal, AccountMatch match) {
 		return new AskService(
 				(question, catalog) -> proposal,
-				(accountExternalId, capabilityKey) -> CHECK_PAYLOAD,
+				(accountExternalId, capabilityKey, asAt) -> CHECK_PAYLOAD,
 				mention -> match,
 				CATALOGS);
 	}
