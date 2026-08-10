@@ -34,7 +34,10 @@ public enum ErrorCode {
     // Same `type` slug as VALIDATION_FAILED (contracts/README.md's error table has no dedicated
     // slug for a uniqueness conflict) but a different HttpStatus — callers branch on `type`, and
     // 409 is the correct status for "key already declared" (admin-api.md, "Capabilities — screen 1").
-    DUPLICATE_KEY("entitlement/validation-failed", HttpStatus.CONFLICT, "Validation failed");
+    DUPLICATE_KEY("entitlement/validation-failed", HttpStatus.CONFLICT, "Validation failed"),
+    // 003 — the plain-English checker is unconfigured, unreachable, or answering unusably.
+    // Convenience degrades; no decision anywhere is affected (spec §6).
+    ASK_UNAVAILABLE("entitlement/ask-unavailable", HttpStatus.SERVICE_UNAVAILABLE, "Ask unavailable");
 
     private final String type;
     private final HttpStatus status;
