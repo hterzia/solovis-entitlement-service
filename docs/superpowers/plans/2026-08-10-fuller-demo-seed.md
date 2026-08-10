@@ -1255,7 +1255,7 @@ git commit -m "feat(seed): apply the dataset in day order through the admin serv
 - Delete: `management/backend/entitlement-service/src/test/java/com/solovis/entitlement/service/seed/DemoDataSeederTest.java`
 
 **Interfaces:**
-- Consumes: `SeedClock`, `SeedState`, `SeedDataset`, `SeedApplier`, `ServiceStateRepository`, `SnapshotStartup` (bean name `snapshotStartup`).
+- Consumes: `SeedClock`, `SeedState`, `SeedDataset`, `SeedApplier`, `ServiceStateRepository`. **No ordering dependency.** 002 removed `SnapshotStartup` and `SnapshotHolder`: `SnapshotPublisher.publish(long lastAuditSeq, DeltaChange delta)` takes its version from `snapshot_version`'s own autoincrement rather than from anything held in memory, so the only precondition is a migrated schema, which context refresh guarantees before any `InitializingBean` runs. `ConformanceAnnouncementStartup`'s javadoc states this; mirror it rather than re-deriving it.
 - Produces: a bean that seeds during context refresh, before the connector opens.
 
 - [ ] **Step 1: Replace the implementation**
@@ -1271,7 +1271,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.context.annotation.DependsOn;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
@@ -1282,11 +1281,18 @@ import java.time.Duration;
 /**
  * Writes the demo dataset into an empty database, before the service accepts traffic.
  *
- * <p>An {@link InitializingBean} rather than an {@code ApplicationRunner} for the reason
- * {@code SnapshotStartup} gives: Boot starts the web connector during context refresh, before any
- * runner fires, so a runner would leave a window where the console is reachable and half populated.
- * {@code @DependsOn} is required as well as ordering — {@code SnapshotPublisher} mutates from the
- * current snapshot, so the snapshot must exist before the first write.
+ * <p>An {@link InitializingBean} rather than an {@code ApplicationRunner}, for two reasons. Boot
+ * starts the web connector during context refresh, before any runner fires, so a runner would leave
+ * a window where the console is reachable and half populated. And {@code @Scheduled} tasks start
+ * with the context lifecycle, also after every {@code InitializingBean} — which is what keeps
+ * {@code WindowBoundaryRoller} (fixed delay, {@code initialDelay = 0}, reads
+ * {@code LocalDate.now(clock)}) from ever observing the wound clock. As a runner it would fire
+ * mid-seed, record {@code window.rolledThrough} in the fictional past, and then publish a flood of
+ * boundary transitions for moments nobody observed.
+ *
+ * <p>It needs no {@code @DependsOn}: {@code SnapshotPublisher} derives its version from the
+ * {@code snapshot_version} autoincrement rather than from anything in memory, so a migrated schema
+ * is the only precondition and context refresh already guarantees it.
  *
  * <p>Whether a database has been seeded is recorded, not inferred. The previous check asked whether
  * any plan existed, which is one question standing in for the whole sequence: a crash partway
@@ -1296,7 +1302,6 @@ import java.time.Duration;
  */
 @Component
 @ConditionalOnProperty(name = "entitlement.seed.enabled", havingValue = "true")
-@DependsOn("snapshotStartup")
 public class DemoDataSeeder implements InitializingBean {
 
     private static final Logger log = LoggerFactory.getLogger(DemoDataSeeder.class);
@@ -1386,7 +1391,7 @@ git commit -m "feat(seed): seed before the port opens, on a recorded marker"
 - Create: `management/backend/entitlement-service/src/test/java/com/solovis/entitlement/service/seed/DemoDataSeederIT.java`
 
 **Interfaces:**
-- Consumes: everything above, plus `SnapshotHolder.current()`, `com.solovis.entitlement.core.engine.Resolver.explain(Snapshot, String account, CapabilityKey, Instant)`, `AuditEventRepository`.
+- Consumes: everything above, plus `AsAtCheckService.check(String accountExternalId, String capabilityKey, LocalDate asOf)` returning `AsAtDecisionResponseDto(String asAt, DecisionResponseDto decision, String capabilityRetiredSince)`, `AccountAdminService.get(String external)` returning `AccountDetailDto` whose `overrides()` are `OverrideRow(..., String standing)`, and `AuditEventRepository.find(AuditEventFilter(accountId, planId, capabilityId, actorId, entityType, occurredFrom, occurredTo, beforeSeq, limit))` returning `AuditEventRow(seq, occurredAt, ...)`. **002 deleted `SnapshotHolder` and `SnapshotStartup`** — service reads resolve from SQLite through `DecisionReadDao`, so assertions go through `AsAtCheckService`, not a held snapshot.
 
 - [ ] **Step 1: Write the test**
 
@@ -1395,11 +1400,10 @@ This is the first test of the seeder's happy path. It needs its own context (see
 ```java
 package com.solovis.entitlement.service.seed;
 
-import com.solovis.entitlement.core.model.CapabilityKey;
 import com.solovis.entitlement.service.admin.service.AccountAdminService;
+import com.solovis.entitlement.service.admin.service.AsAtCheckService;
 import com.solovis.entitlement.service.admin.service.CapabilityAdminService;
 import com.solovis.entitlement.service.admin.service.PlanAdminService;
-import com.solovis.entitlement.service.snapshot.SnapshotHolder;
 import com.solovis.entitlement.service.store.AuditEventFilter;
 import com.solovis.entitlement.service.store.AuditEventRepository;
 import org.junit.jupiter.api.Test;
@@ -1409,6 +1413,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -1417,7 +1422,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * proved only by the end-to-end suite and by the deployment itself.
  *
  * <p>Its own context and its own database file: the shared test context runs with seeding off, and
- * the seed must land in an empty database to run at all.
+ * the seed must land in an empty database to run at all. Assertions go through {@link AsAtCheckService},
+ * which is the real read path -- 002 removed the in-memory snapshot the service used to answer from.
  */
 @SpringBootTest(properties = {
     "entitlement.seed.enabled=true",
@@ -1425,47 +1431,61 @@ import static org.assertj.core.api.Assertions.assertThat;
 })
 class DemoDataSeederIT {
 
-    @Autowired SnapshotHolder snapshotHolder;
     @Autowired CapabilityAdminService capabilityService;
     @Autowired PlanAdminService planService;
     @Autowired AccountAdminService accountService;
+    @Autowired AsAtCheckService asAtCheckService;
     @Autowired AuditEventRepository auditEvents;
     @Autowired Clock clock;
+
+    private String valueOf(String account, String capability) {
+        return asAtCheckService.check(account, capability, LocalDate.now(clock)).decision().value().toString();
+    }
 
     @Test
     void itSeedsTheWholeCatalogue() {
         assertThat(capabilityService.list(null, "ACTIVE", null)).hasSize(15);
         assertThat(capabilityService.list(null, "RETIRED", null)).hasSize(1);
         assertThat(planService.list()).hasSize(5);
+        assertThat(accountService.search(null, null, 0, 200).accounts()).hasSizeGreaterThan(55);
     }
 
     @Test
     void theEndToEndFixturesResolveExactlyAsTheSuiteExpects() {
-        var explanation = com.solovis.entitlement.core.engine.Resolver.explain(
-            snapshotHolder.current(), "acct_9931", new CapabilityKey("reports.monthly"), clock.instant());
-
-        assertThat(explanation.value().toString()).contains("200");
+        assertThat(valueOf("acct_9931", "reports.monthly")).contains("200");
     }
 
     @Test
     void aHoldDefeatsAGrant() {
-        var explanation = com.solovis.entitlement.core.engine.Resolver.explain(
-            snapshotHolder.current(), "acct_2384", new CapabilityKey("api.access"), clock.instant());
-
-        assertThat(explanation.allowed()).isFalse();
+        // acct_2384 holds api.access down while a GRANT raises it: a restriction defeats a concession.
+        assertThat(asAtCheckService.check("acct_2384", "api.access", LocalDate.now(clock)).decision().allowed())
+            .isFalse();
     }
 
     @Test
     void anEnterpriseAccountResolvesUnlimited() {
-        var explanation = com.solovis.entitlement.core.engine.Resolver.explain(
-            snapshotHolder.current(), "acct_2043", new CapabilityKey("reports.monthly"), clock.instant());
+        assertThat(valueOf("acct_2043", "reports.monthly").toLowerCase()).contains("unlimited");
+    }
 
-        assertThat(explanation.value().toString().toLowerCase()).contains("unlimited");
+    @Test
+    void allFourStandingsAreOnTheWindowsFlagship() {
+        // The point of the seed clock: ENDED cannot be produced by an API caller standing in the
+        // present, because c7 refuses a window that has already ended.
+        assertThat(accountService.get("acct_2947").overrides())
+            .extracting(o -> o.standing())
+            .contains("ENDED", "IN_FORCE", "PENDING", "REMOVED");
+    }
+
+    @Test
+    void aPendingOverrideTakesNoPartInTodaysAnswer() {
+        // acct_2947's pending GRANT of 40 portfolios has not begun; `core` entitles 5.
+        assertThat(valueOf("acct_2947", "portfolio.count")).contains("5");
     }
 
     @Test
     void theHistorySpansMonthsAndEndsAtThePresent() {
-        var events = auditEvents.find(new AuditEventFilter(null, null, null, null, null, null, null, 1000));
+        var events = auditEvents.find(
+            new AuditEventFilter(null, null, null, null, null, null, null, null, 1000));
 
         assertThat(events).hasSizeGreaterThan(100);
         var timestamps = events.stream().map(e -> Instant.parse(e.occurredAt())).sorted().toList();
@@ -1481,25 +1501,6 @@ class DemoDataSeederIT {
     }
 
     @Test
-    void allFourStandingsAreOnTheWindowsFlagship() {
-        // The point of the seed clock: ENDED could not be produced before, because c7 refuses a
-        // wholly-past window and the seeder writes through the same admin services as everyone else.
-        var account = accountService.get("acct_2947");
-
-        assertThat(account.overrides()).extracting(o -> o.standing().toString())
-            .contains("ENDED", "IN_FORCE", "PENDING", "REMOVED");
-    }
-
-    @Test
-    void aPendingOverrideTakesNoPartInTodaysAnswer() {
-        // acct_2947's pending GRANT of 40 portfolios has not begun; `core` entitles 5.
-        var explanation = com.solovis.entitlement.core.engine.Resolver.explain(
-            snapshotHolder.current(), "acct_2947", new CapabilityKey("portfolio.count"), clock.instant());
-
-        assertThat(explanation.value().toString()).contains("5");
-    }
-
-    @Test
     void theClockIsRealTimeOnceSeedingHasFinished() {
         assertThat(clock).isInstanceOf(SeedClock.class);
         assertThat(((SeedClock) clock).isWound()).isFalse();
@@ -1508,7 +1509,7 @@ class DemoDataSeederIT {
 }
 ```
 
-Note: three shapes must be checked against the source before running, and the call adjusted to match rather than the production code changed — `AuditEventFilter`'s constructor arity, the audit row's timestamp accessor (`occurredAt`), and `AccountDetailDto`'s override collection and its standing accessor, which 002 reshaped.
+Note (resolved): the three shapes below were read from post-002 source and are correct as written -- `AuditEventFilter` takes nine arguments, `AccountDetailDto.OverrideRow.standing()` is a `String`, and `AsAtCheckService.check` returns `AsAtDecisionResponseDto`. Original note: three shapes must be checked against the source before running, and the call adjusted to match rather than the production code changed — `AuditEventFilter`'s constructor arity, the audit row's timestamp accessor (`occurredAt`), and `AccountDetailDto`'s override collection and its standing accessor, which 002 reshaped.
 
 - [ ] **Step 2: Run it**
 
