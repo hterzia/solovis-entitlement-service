@@ -49,4 +49,13 @@ describe('CapabilityCreateForm', () => {
     expect(onCreated).toHaveBeenCalled()
     await expect(getCapability('integration.hubspot')).resolves.toMatchObject({ valueType: 'SWITCH' })
   })
+
+  it('reports a rejected declaration through the shared error notice', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<CapabilityCreateForm onCreated={vi.fn()} />)
+    await user.type(await screen.findByLabelText('Key'), 'reports.monthly')
+    await user.type(screen.getByLabelText('Display name'), 'Monthly reports')
+    await user.click(screen.getByRole('button', { name: 'Declare capability' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent("Key 'reports.monthly' already declared.")
+  })
 })

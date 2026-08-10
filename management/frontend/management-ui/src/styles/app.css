@@ -1,5 +1,14 @@
-/* src/styles/app.css — application chrome, not marketing chrome. Uses --sv-app-* tokens. */
+/* src/styles/app.css — application chrome, not marketing chrome. Uses --sv-app-* tokens.
+   Density rules here are the platform's, not the marketing site's: tight rows, hairline rules,
+   borders instead of shadows, and no value that is not a token in ./tokens.css. */
 @import './tokens.css';
+
+:root {
+  /* The uppercase tracking the design system applies to .sv-eyebrow (tokens.css). Named here
+     because tokens.css is the extracted source of truth and is not edited, and four app-chrome
+     micro-labels need the same value — one name beats four copies of the literal. */
+  --sv-app-tracking-caps: 0.06em;
+}
 
 * { box-sizing: border-box; }
 
@@ -32,11 +41,19 @@ body {
   font-size: var(--sv-type-12);
 }
 
+/* Inter everywhere — a monospace default would be a second font in the system. */
+.app-banner code {
+  font-family: var(--sv-font);
+  font-weight: var(--sv-weight-ui);
+  color: var(--sv-accent-pale);
+}
+
 .app-navbar {
   background: var(--sv-app-navbar);
   display: flex;
   gap: var(--sv-space-24);
   padding: 0 var(--sv-space-24);
+  overflow-x: auto;
 }
 
 .app-navbar a {
@@ -47,12 +64,19 @@ body {
   font-weight: var(--sv-weight-ui);
   font-size: var(--sv-type-14);
   border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition: color 150ms ease-out, border-color 150ms ease-out;
 }
 
 .app-navbar a:hover,
 .app-navbar a.active {
   color: var(--sv-surface);
   border-bottom-color: var(--sv-accent);
+}
+
+.app-navbar a:focus-visible {
+  outline: 2px solid var(--sv-accent);
+  outline-offset: calc(var(--sv-space-4) * -1);
 }
 
 .app-canvas {
@@ -63,15 +87,26 @@ body {
   margin: 0 auto;
 }
 
+/* Panels scroll their own overflow. A wide grid then scrolls inside the panel it belongs to
+   instead of dragging the whole page sideways on a narrow viewport. */
 .app-panel {
   background: var(--sv-app-surface);
   border: 1px solid var(--sv-app-border);
   border-radius: var(--sv-radius-card);
   padding: var(--sv-space-24);
+  overflow-x: auto;
 }
 
 .app-panel + .app-panel {
   margin-top: var(--sv-space-24);
+}
+
+/* A panel inside a panel is a sub-result, not a peer: tint it so the nesting is visible. */
+.app-panel .app-panel {
+  background: var(--sv-surface-alt);
+  padding: var(--sv-space-16);
+  margin-top: var(--sv-space-16);
+  margin-bottom: var(--sv-space-24);
 }
 
 .app-page-title {
@@ -79,4 +114,658 @@ body {
   font-weight: var(--sv-weight-heading);
   line-height: var(--sv-lh-28);
   margin: 0 0 var(--sv-space-24);
+}
+
+/* ---- Heading ladder inside the workspace -------------------------------------------------
+   28 (page title) -> 20 -> 16 -> 14. No level is skipped and no level repeats a size. */
+.app-canvas h2 {
+  font-size: var(--sv-type-20);
+  font-weight: var(--sv-weight-heading);
+  line-height: var(--sv-lh-20);
+  margin: var(--sv-space-32) 0 var(--sv-space-12);
+}
+
+.app-canvas h3 {
+  font-size: var(--sv-type-16);
+  font-weight: var(--sv-weight-heading);
+  line-height: var(--sv-lh-body);
+  margin: var(--sv-space-24) 0 var(--sv-space-8);
+}
+
+.app-canvas h4 {
+  font-size: var(--sv-type-14);
+  font-weight: var(--sv-weight-ui);
+  line-height: var(--sv-lh-body);
+  margin: var(--sv-space-16) 0 var(--sv-space-8);
+}
+
+.app-canvas h2:first-child,
+.app-canvas h3:first-child,
+.app-canvas h4:first-child {
+  margin-top: 0;
+}
+
+.app-canvas p {
+  line-height: var(--sv-lh-body);
+}
+
+/* Inter is the only font in the system; the UA monospace default for these would be a second one. */
+.app-canvas code,
+.app-canvas kbd,
+.app-canvas samp {
+  font-family: var(--sv-font);
+  font-size: inherit;
+  font-weight: var(--sv-weight-ui);
+}
+
+/* ---- Tables — the dense surface ------------------------------------------------------------
+   Header on --sv-app-table-head, zebra on --sv-app-row-alt, hairlines on --sv-app-border.
+   Tabular figures so digits line up column to column. */
+.app-panel table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--sv-type-14);
+  font-variant-numeric: tabular-nums;
+  margin: 0 0 var(--sv-space-24);
+}
+
+.app-panel thead th {
+  background: var(--sv-app-table-head);
+  color: var(--sv-text);
+  font-size: var(--sv-type-12);
+  font-weight: var(--sv-weight-heading);
+  line-height: var(--sv-lh-body);
+  text-align: left;
+  white-space: nowrap;
+  padding: var(--sv-space-8) var(--sv-space-12);
+  border-bottom: 1px solid var(--sv-app-border);
+}
+
+.app-panel tbody th {
+  text-align: left;
+  font-weight: var(--sv-weight-ui);
+}
+
+.app-panel tbody td,
+.app-panel tbody th {
+  padding: var(--sv-space-8) var(--sv-space-12);
+  border-top: 1px solid var(--sv-app-border);
+  line-height: var(--sv-lh-body);
+  vertical-align: top;
+}
+
+.app-panel tbody tr:nth-child(even) {
+  background: var(--sv-app-row-alt);
+}
+
+.app-panel tbody tr:hover {
+  background: var(--sv-surface-alt);
+}
+
+/* A grid may group its rows by area with a spanning sub-header — the grouped multi-level header
+   that is characteristic of the platform's grids. It is a band, not a record: no zebra, no hover. */
+.app-panel tbody th[scope="colgroup"] {
+  background: var(--sv-app-panel-head);
+  color: var(--sv-text);
+  font-size: var(--sv-type-12);
+  font-weight: var(--sv-weight-heading);
+  text-transform: var(--sv-caption-case);
+  letter-spacing: var(--sv-app-tracking-caps);
+  padding: var(--sv-space-4) var(--sv-space-12);
+}
+
+.app-panel tbody tr:has(> th[scope="colgroup"]),
+.app-panel tbody tr:has(> th[scope="colgroup"]):hover {
+  background: transparent;
+}
+
+/* The first column is the row's identity — a key, a name, a timestamp. Keeping it on one line
+   stops hyphenated identifiers ("2026-08-10T…", "dev-operator") breaking into stacks. */
+.app-panel thead th:first-child,
+.app-panel tbody td:first-child {
+  white-space: nowrap;
+}
+
+/* Grids may be rendered one-per-area under an <h3>. Tighten the pairing so the heading reads as
+   the caption of the table beneath it rather than as a floating label. */
+.app-canvas h3 + table {
+  margin-top: 0;
+}
+
+.app-panel table + h3 {
+  margin-top: var(--sv-space-24);
+}
+
+/* First-column entities are drill-down links, as in the platform grids. */
+.app-panel td .sv-link,
+.app-panel td a {
+  color: var(--sv-app-link);
+}
+
+/* ---- Definition lists — label/value bands, as in the platform right rail ------------------- */
+.app-panel dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  margin: 0 0 var(--sv-space-24);
+  border: 1px solid var(--sv-app-border);
+  border-radius: var(--sv-radius-card);
+  overflow: hidden;
+  font-size: var(--sv-type-14);
+}
+
+.app-panel dt {
+  padding: var(--sv-space-8) var(--sv-space-16);
+  background: var(--sv-app-row-alt);
+  color: var(--sv-slate-600);
+  font-weight: var(--sv-weight-ui);
+  white-space: nowrap;
+}
+
+.app-panel dd {
+  margin: 0;
+  padding: var(--sv-space-8) var(--sv-space-16);
+  line-height: var(--sv-lh-body);
+}
+
+.app-panel dl > dt,
+.app-panel dl > dd {
+  border-top: 1px solid var(--sv-app-border);
+}
+
+.app-panel dl > dt:first-of-type,
+.app-panel dl > dt:first-of-type + dd {
+  border-top: 0;
+}
+
+/* ---- Content lists ------------------------------------------------------------------------
+   Plain <ul>s in a panel are records, not prose. Bordered, striped, one row per record.
+   .trace-view and .capability-tree restate these below at equal specificity and win by order. */
+.app-panel ul {
+  list-style: none;
+  margin: 0 0 var(--sv-space-24);
+  padding: 0;
+  border: 1px solid var(--sv-app-border);
+  border-radius: var(--sv-radius-card);
+  overflow: hidden;
+  font-size: var(--sv-type-14);
+}
+
+.app-panel ul > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sv-space-8);
+  padding: var(--sv-space-8) var(--sv-space-12);
+  border-top: 1px solid var(--sv-app-border);
+  line-height: var(--sv-lh-body);
+}
+
+.app-panel ul > li:first-child {
+  border-top: 0;
+}
+
+.app-panel ul > li:nth-child(even) {
+  background: var(--sv-app-row-alt);
+}
+
+/* An inline confirmation replaces a row's controls in place; keep it on the row's rhythm. */
+.app-panel li > span:not(.sv-tag),
+.app-panel td > span:not(.sv-tag) {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sv-space-8);
+}
+
+/* ---- Forms ---------------------------------------------------------------------------------
+   Filter bars and edit forms read as a row of labelled fields, not a run-on line. */
+.app-panel form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sv-space-16);
+  margin: 0 0 var(--sv-space-24);
+  padding: var(--sv-space-16);
+  background: var(--sv-surface-alt);
+  border: 1px solid var(--sv-app-border);
+  border-radius: var(--sv-radius-card);
+}
+
+/* Explanatory copy inside a form takes its own line rather than becoming a field-shaped column. */
+.app-panel form > p {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--sv-type-14);
+}
+
+.app-canvas fieldset {
+  border: 1px solid var(--sv-app-border);
+  border-radius: var(--sv-radius-card);
+  padding: var(--sv-space-16);
+  margin: 0 0 var(--sv-space-16);
+}
+
+.app-canvas legend {
+  padding: 0 var(--sv-space-8);
+  font-size: var(--sv-type-12);
+  font-weight: var(--sv-weight-heading);
+  text-transform: var(--sv-caption-case);
+  letter-spacing: var(--sv-app-tracking-caps);
+  color: var(--sv-slate-600);
+}
+
+.app-canvas label {
+  font-size: var(--sv-label-size);
+  font-weight: var(--sv-label-weight);
+  line-height: var(--sv-lh-body);
+}
+
+.app-canvas .sv-label,
+.app-canvas form label {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--sv-space-4);
+  color: var(--sv-slate-600);
+}
+
+/* A tick or a radio sits beside its words, not above them. */
+.app-canvas label:has(> input[type="checkbox"]),
+.app-canvas label:has(> input[type="radio"]) {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--sv-space-8);
+  color: var(--sv-text);
+}
+
+.app-canvas input[type="checkbox"],
+.app-canvas input[type="radio"] {
+  width: var(--sv-space-16);
+  height: var(--sv-space-16);
+  margin: 0;
+  accent-color: var(--sv-text);
+  cursor: pointer;
+}
+
+/* Pill fields, per the system — but the marketing 32px field gutter is replaced by the form's
+   own gap, because the app is dense on purpose. */
+.app-canvas .sv-field {
+  margin-bottom: 0;
+  padding: var(--sv-space-8) var(--sv-space-16);
+  max-width: 100%;
+  line-height: var(--sv-lh-body);
+  transition: border-color 150ms ease-out, background 150ms ease-out;
+}
+
+.app-canvas .sv-field:hover:not(:disabled) {
+  border-color: var(--sv-slate-400);
+}
+
+.app-canvas .sv-field:focus {
+  border-color: var(--sv-primary);
+  background: var(--sv-surface);
+}
+
+.app-canvas .sv-field:disabled {
+  background: var(--sv-tag-bg);
+  color: var(--sv-slate-400);
+  cursor: not-allowed;
+}
+
+/* ---- Buttons -------------------------------------------------------------------------------
+   Several call sites use .sv-btn--secondary without .sv-btn, so the shared pill geometry is
+   applied to both. Padding is tightened from the marketing 12/20 for a dense workspace. */
+.app-canvas .sv-btn,
+.app-canvas .sv-btn--secondary {
+  font-family: var(--sv-font);
+  font-size: var(--sv-btn-size);
+  font-weight: var(--sv-btn-weight);
+  line-height: var(--sv-lh-body);
+  padding: var(--sv-space-8) var(--sv-space-20);
+  border-radius: var(--sv-radius-pill);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 150ms ease-out, color 150ms ease-out, border-color 150ms ease-out;
+}
+
+/* The filled pill keeps a border of its own fill colour: its hover state inverts to a pale bed,
+   which on a white panel would otherwise leave no edge at all. */
+.app-canvas .sv-btn {
+  border: 2px solid var(--sv-primary);
+}
+
+.app-canvas .sv-btn:hover:not(:disabled) {
+  border-color: var(--sv-primary);
+}
+
+.app-canvas button:disabled {
+  background: var(--sv-tag-bg);
+  color: var(--sv-slate-400);
+  border-color: var(--sv-border);
+  cursor: not-allowed;
+}
+
+/* Controls that live inside a grid row or a record row are secondary to the data. */
+.app-panel td .sv-btn,
+.app-panel td .sv-btn--secondary,
+.app-panel li .sv-btn,
+.app-panel li .sv-btn--secondary {
+  padding: var(--sv-space-4) var(--sv-space-16);
+}
+
+/* Standalone controls stacked directly in a panel need their own rhythm. */
+.app-panel > .sv-btn,
+.app-panel > .sv-btn--secondary,
+.app-panel > label {
+  margin: 0 var(--sv-space-12) var(--sv-space-16) 0;
+}
+
+/* A labelled field stacked straight into a panel (rather than inside a form) owns its own row.
+   Left inline, the next standalone button flows up beside it and reads as that field's action —
+   on the capability editor that put "Save changes" next to the off-value picker, as though it
+   saved only that. */
+.app-panel > .sv-label {
+  display: flex;
+  width: fit-content;
+}
+
+.app-canvas :focus-visible {
+  outline: 2px solid var(--sv-primary);
+  outline-offset: var(--sv-space-4);
+}
+
+/* ---- Notices -------------------------------------------------------------------------------
+   A failed read or write. Deliberately loud: the failure mode this replaces was a rejected write
+   leaving the screen completely unchanged, which reads as success. */
+.app-error {
+  display: block;
+  background: var(--sv-surface);
+  color: var(--sv-danger);
+  border: 1px solid var(--sv-danger);
+  border-left: var(--sv-space-4) solid var(--sv-danger);
+  border-radius: var(--sv-radius-card);
+  padding: var(--sv-space-12) var(--sv-space-16);
+  margin: var(--sv-space-12) 0;
+  font-size: var(--sv-type-14);
+  font-weight: var(--sv-weight-ui);
+}
+
+/* Consequential-but-not-failed statements: "this change affects N accounts", "no such account". */
+.app-canvas p[role="alert"]:not(.app-error):not(.sv-tag),
+.app-canvas p[role="status"]:not(.sv-tag) {
+  display: block;
+  background: var(--sv-surface-alt);
+  border: 1px solid var(--sv-border);
+  border-left: var(--sv-space-4) solid var(--sv-primary);
+  border-radius: var(--sv-radius-card);
+  padding: var(--sv-space-12) var(--sv-space-16);
+  margin: var(--sv-space-12) 0;
+  font-size: var(--sv-type-14);
+  font-weight: var(--sv-weight-ui);
+}
+
+/* The save confirmation is a tag by class; it still needs to sit on its own line. */
+.app-canvas p.sv-tag {
+  margin: var(--sv-space-12) 0 var(--sv-space-16);
+}
+
+/* ---- Trace view — the explanation, and the reason screen 4 exists --------------------------
+   Four steps, each its own bed, joined by a continuous left rail so the chain reads as a chain.
+   The result step is the answer: white bed, rail in Solovis blue. */
+/* The line immediately above a trace carries snapshot version and evaluation time — the platform's
+   data-freshness line. It is meta about the answer, not part of it: set it as meta. */
+.app-canvas p:has(+ .trace-view) {
+  margin: 0 0 var(--sv-space-12);
+  font-size: var(--sv-type-12);
+  color: var(--sv-slate-600);
+  line-height: var(--sv-lh-body);
+}
+
+.trace-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sv-space-12);
+  margin: 0 0 var(--sv-space-16);
+}
+
+.trace-view > section {
+  position: relative;
+  background: var(--sv-surface-alt);
+  border: 1px solid var(--sv-app-border);
+  border-left: var(--sv-space-4) solid var(--sv-border);
+  border-radius: var(--sv-radius-card);
+  padding: var(--sv-space-12) var(--sv-space-16);
+}
+
+/* The rail continues through the gap between steps. */
+.trace-view > section + section::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--sv-space-4) * -1);
+  top: calc(var(--sv-space-12) * -1);
+  width: var(--sv-space-4);
+  height: var(--sv-space-12);
+  background: var(--sv-border);
+}
+
+.trace-view > section[data-testid="trace-result"],
+.trace-view > section:last-child {
+  background: var(--sv-surface);
+  border-left-color: var(--sv-primary);
+}
+
+.trace-view > section[data-testid="trace-result"]::before,
+.trace-view > section:last-child::before {
+  background: var(--sv-primary);
+}
+
+/* Step headings are the system's uppercase eyebrow — the signature type move. */
+.trace-view h4 {
+  margin: 0 0 var(--sv-space-8);
+  font-size: var(--sv-caption-size);
+  font-weight: var(--sv-caption-weight);
+  line-height: var(--sv-lh-body);
+  text-transform: var(--sv-caption-case);
+  letter-spacing: var(--sv-app-tracking-caps);
+  color: var(--sv-primary);
+}
+
+.trace-view p {
+  margin: 0;
+  font-size: var(--sv-type-14);
+  line-height: var(--sv-lh-body);
+}
+
+.trace-view p + p,
+.trace-view ul + p {
+  margin-top: var(--sv-space-8);
+}
+
+.trace-view ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  font-size: var(--sv-type-14);
+}
+
+.trace-view ul > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sv-space-4);
+  padding: var(--sv-space-4) 0;
+  border-top: 1px solid var(--sv-border);
+  background: transparent;
+  line-height: var(--sv-lh-body);
+}
+
+.trace-view ul > li:first-child {
+  border-top: 0;
+}
+
+.trace-view strong {
+  font-weight: var(--sv-weight-ui);
+}
+
+/* ---- Capability tree ----------------------------------------------------------------------
+   Several hundred rows grouped by area. The area head is a panel strip; rows are grid rows. */
+.capability-tree {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sv-space-12);
+}
+
+.capability-tree > .sv-field {
+  width: 100%;
+}
+
+.capability-tree > p {
+  margin: 0;
+  font-size: var(--sv-type-14);
+  color: var(--sv-slate-600);
+}
+
+.capability-tree > section {
+  border: 1px solid var(--sv-app-border);
+  border-radius: var(--sv-radius-card);
+  overflow: hidden;
+}
+
+.capability-tree h3 {
+  margin: 0;
+  font-size: var(--sv-type-12);
+}
+
+.capability-tree h3 > button {
+  display: flex;
+  align-items: center;
+  gap: var(--sv-space-8);
+  width: 100%;
+  padding: var(--sv-space-8) var(--sv-space-12);
+  background: var(--sv-app-panel-head);
+  color: var(--sv-text);
+  border: 0;
+  border-radius: 0;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--sv-font);
+  font-size: var(--sv-type-12);
+  font-weight: var(--sv-weight-heading);
+  line-height: var(--sv-lh-body);
+  text-transform: var(--sv-caption-case);
+  letter-spacing: var(--sv-app-tracking-caps);
+  transition: background 150ms ease-out;
+}
+
+.capability-tree h3 > button:hover {
+  background: var(--sv-border);
+}
+
+/* Disclosure caret, drawn from borders so no glyph or image enters the markup. */
+.capability-tree h3 > button::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 0;
+  height: 0;
+  border-left: var(--sv-space-4) solid transparent;
+  border-right: var(--sv-space-4) solid transparent;
+  border-top: var(--sv-space-4) solid var(--sv-primary);
+  transition: transform 150ms ease-out;
+}
+
+.capability-tree h3 > button[aria-expanded="false"]::before {
+  transform: rotate(-90deg);
+}
+
+.capability-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  font-size: var(--sv-type-14);
+}
+
+.capability-tree ul > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sv-space-8);
+  padding: var(--sv-space-4) var(--sv-space-12);
+  border-top: 1px solid var(--sv-app-border);
+  line-height: var(--sv-lh-body);
+}
+
+.capability-tree ul > li:first-child {
+  border-top: 0;
+}
+
+.capability-tree ul > li:nth-child(even) {
+  background: var(--sv-app-row-alt);
+}
+
+.capability-tree ul > li:hover {
+  background: var(--sv-surface-alt);
+}
+
+/* Field labels inside a row ("Default", "Off-value", the value type) are captions on the value
+   beside them. Recede them so the eye lands on the values when scanning hundreds of rows. */
+.capability-tree ul > li .sv-eyebrow {
+  color: var(--sv-slate-600);
+}
+
+/* A plan row: capability on the left, its value and controls flush right so a long list of rows
+   can be scanned down a single edge. */
+.plan-editor-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sv-space-8);
+  width: 100%;
+}
+
+.plan-editor-row > span:first-child {
+  flex: 1 1 auto;
+}
+
+.plan-editor-row .sv-label {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--sv-space-8);
+}
+
+/* ---- Narrow viewports ---------------------------------------------------------------------
+   Chrome padding tightens; grids keep their natural width and scroll inside their own panel. */
+@media (max-width: 768px) {
+  .app-canvas {
+    padding: var(--sv-space-16);
+  }
+
+  .app-topbar,
+  .app-banner,
+  .app-navbar {
+    padding-left: var(--sv-space-16);
+    padding-right: var(--sv-space-16);
+  }
+
+  .app-navbar {
+    gap: var(--sv-space-16);
+  }
+
+  .app-panel {
+    padding: var(--sv-space-16);
+  }
+
+  .app-panel form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .app-canvas .sv-label,
+  .app-canvas form label {
+    display: flex;
+  }
 }

@@ -31,7 +31,41 @@ describe('AccountsListRoute', () => {
     await waitFor(() => expect(screen.getByRole('link', { name: /acct_5001/i })).toBeInTheDocument())
   })
 
-  it('loads the next page via cursor when more accounts exist', async () => {
+  it('shows the service refusal when creating an account is rejected', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.post('/admin/v1/accounts', () =>
+        HttpResponse.json(
+          { type: 'entitlement/account-exists', title: 'Account already exists', status: 422, detail: "Account 'acct_9931' already exists." },
+          { status: 422 },
+        ),
+      ),
+    )
+
+    renderWithProviders(<AccountsListRoute />)
+    await waitFor(() => expect(screen.getByLabelText('New account external id')).toBeInTheDocument())
+    await user.type(screen.getByLabelText('New account external id'), 'acct_9931')
+    await user.click(screen.getByRole('button', { name: 'Create account' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent("Account 'acct_9931' already exists."))
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not create the account')
+  })
+
+  it('shows the service refusal when the accounts list fails to load', async () => {
+    server.use(
+      http.get('/admin/v1/accounts', () =>
+        HttpResponse.json(
+          { type: 'entitlement/unavailable', title: 'Service unavailable', status: 503, detail: 'The accounts list is unavailable.' },
+          { status: 503 },
+        ),
+      ),
+    )
+
+    renderWithProviders(<AccountsListRoute />)
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('The accounts list is unavailable.'))
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not load the accounts')
+  })
+
+  it('appends the next page to the rows already on screen', async () => {
     const user = userEvent.setup()
     server.use(
       http.get('/admin/v1/accounts', ({ request }) => {
@@ -47,6 +81,26 @@ describe('AccountsListRoute', () => {
     expect(screen.queryByRole('link', { name: 'acct_page_two' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Load more' }))
     await waitFor(() => expect(screen.getByRole('link', { name: 'acct_page_two' })).toBeInTheDocument())
+    // The page already read stays on screen — paging forward is not a swap.
+    expect(screen.getByRole('link', { name: 'acct_page_one' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument()
+  })
+
+  it('offers no "Load more" on a last page that happens to be exactly full', async () => {
+    server.use(
+      http.get('/admin/v1/accounts', () =>
+        HttpResponse.json({
+          accounts: [
+            { account: 'acct_full_one', name: null, planKey: 'pro' },
+            { account: 'acct_full_two', name: null, planKey: 'pro' },
+          ],
+          nextCursor: null,
+        }),
+      ),
+    )
+
+    renderWithProviders(<AccountsListRoute />)
+    await waitFor(() => expect(screen.getByRole('link', { name: 'acct_full_two' })).toBeInTheDocument())
     expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument()
   })
 
@@ -72,5 +126,6 @@ describe('AccountsListRoute', () => {
     await user.type(screen.getByLabelText('Search accounts'), 'a')
     await waitFor(() => expect(screen.getByRole('link', { name: 'acct_searched' })).toBeInTheDocument())
     expect(screen.queryByRole('link', { name: 'acct_page_two' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'acct_page_one' })).not.toBeInTheDocument()
   })
 })
