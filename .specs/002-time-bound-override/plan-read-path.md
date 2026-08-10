@@ -2,7 +2,9 @@
 
 **Parent**: [`plan.md`](./plan.md) — this is its Phase 0, lifted out because it is a change to 001 rather than a part of 002, and it lands on `main` before the 002 branch rebases onto it.
 **Spec**: [`spec.md`](./spec.md) · **Builds on**: [`001-entitlement-service/`](../001-entitlement-service/)
-**Date**: 2026-08-10 (settled) · **Status: decided — this is the plan of record.** The earlier draft that kept a service-side holder for the feed is superseded; the decision and its alternatives are recorded in `DECISIONS.md`.
+**Date**: 2026-08-10 (settled) · **Status: complete — built and merged to `main`.** The earlier draft that kept a service-side holder for the feed is superseded; the decision and its alternatives are recorded in `DECISIONS.md` §13.
+
+> **What shipped, where this document predicted otherwise.** `SnapshotHolder` and `SnapshotStartup` are **deleted outright** rather than retained for the feed — `SnapshotAssembler.assembleFull()` walks `DecisionReadDao` too, so replication reads the record like everything else. The new view is `snapshot/RecordBackedView`, built by `snapshot/RecordViewAssembler` (`pointView`, `accountView`, `pointViewInWriteTxn`), not the `DatabaseEntitlementView` named below. `SnapshotPublisher` returns the `snapshot_version` row's own autoincrement key, so the version counter lives in exactly one place and the one-publish-per-transaction rule this document inherited from the holder no longer applies. Read the file as the record of why the change was made; read the code for what it became.
 
 ## The change in one line
 
