@@ -508,6 +508,17 @@ body {
   margin: var(--sv-space-12) 0 var(--sv-space-16);
 }
 
+/* Beside the control that saved, the confirmation is that control's answer: same pill geometry,
+   so the two read as one pair rather than two differently sized objects. */
+.app-canvas p.sv-tag[role="status"] {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--sv-space-8) var(--sv-space-20);
+  border: 2px solid transparent;
+  font-size: var(--sv-btn-size);
+  line-height: var(--sv-lh-body);
+}
+
 /* ---- Trace view — the explanation, and the reason screen 4 exists --------------------------
    Four steps, each its own bed, joined by a continuous left rail so the chain reads as a chain.
    The result step is the answer: white bed, rail in Solovis blue. */
