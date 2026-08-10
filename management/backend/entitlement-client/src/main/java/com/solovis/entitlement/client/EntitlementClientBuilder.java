@@ -2,6 +2,7 @@ package com.solovis.entitlement.client;
 
 import com.solovis.entitlement.client.error.EntitlementClientStartupException;
 import com.solovis.entitlement.client.metrics.ClientMetrics;
+import com.solovis.entitlement.client.metrics.MicrometerClientMetrics;
 import com.solovis.entitlement.client.replica.ConformanceGate;
 import com.solovis.entitlement.client.replica.DiskCache;
 import com.solovis.entitlement.client.replica.Replica;
@@ -84,9 +85,9 @@ public final class EntitlementClientBuilder {
     }
 
     /**
-     * Wires a Micrometer registry so the SDK's metrics are recorded. None by default, meaning
-     * {@link ClientMetrics#NO_OP}. The registry is stored but not yet used to build a real {@code
-     * ClientMetrics} — that wiring is Task 14.
+     * Wires a Micrometer registry so the SDK's metrics are recorded via {@link
+     * MicrometerClientMetrics}. None by default, meaning {@link ClientMetrics#NO_OP} — a product
+     * that never calls this never loads a Micrometer class.
      */
     public EntitlementClientBuilder meterRegistry(MeterRegistry meterRegistry) {
         this.meterRegistry = meterRegistry;
@@ -149,8 +150,9 @@ public final class EntitlementClientBuilder {
             throw new IllegalStateException("serviceUrl is required to build an EntitlementClient");
         }
 
-        // The registry is only stored for now; Task 14 turns it into a real ClientMetrics.
-        ClientMetrics metrics = ClientMetrics.NO_OP;
+        ClientMetrics metrics = meterRegistry != null
+            ? new MicrometerClientMetrics(meterRegistry)
+            : ClientMetrics.NO_OP;
 
         var baseUri = URI.create(serviceUrl);
         var feed = httpClient != null
@@ -184,6 +186,10 @@ public final class EntitlementClientBuilder {
             holder.set(cached.get());
             startingFromCache = true;
         }
+
+        // The first replica is now loaded either way; the gauge tracks it live from here on, not
+        // a one-time snapshot of its age at this instant.
+        metrics.snapshotAge(() -> Duration.between(holder.get().publishedAt(), clock.instant()));
 
         var poller = new SnapshotPoller(feed, holder, pollInterval, staleAfter, cache, metrics, clock);
         if (startingFromCache) {
