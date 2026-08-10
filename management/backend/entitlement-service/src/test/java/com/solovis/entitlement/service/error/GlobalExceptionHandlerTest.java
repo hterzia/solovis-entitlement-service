@@ -1,8 +1,10 @@
 package com.solovis.entitlement.service.error;
 
+import com.solovis.entitlement.service.snapshot.SnapshotHolder;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -10,7 +12,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+/**
+ * {@code @Import(SnapshotHolder.class)} supplies the real, empty holder the handler now depends on
+ * for the {@code /v1} snapshot-version header. Every route here lives under {@code /test/**}, so the
+ * handler short-circuits before reading it — an uninitialised holder is exactly the state this slice
+ * should exercise, and no mock is needed to get it.
+ */
 @WebMvcTest(controllers = ThrowingController.class)
+@Import(SnapshotHolder.class)
 class GlobalExceptionHandlerTest {
 
     @Autowired MockMvc mockMvc;

@@ -40,7 +40,9 @@ public class SnapshotFeedController {
         var snapshot = snapshotHolder.current();
         String publishedAt = publishedAtFor(snapshot.snapshotVersion());
         var body = new SnapshotVersionResponseDto(snapshot.snapshotVersion(), publishedAt, 1, ResolverContract.VERSION);
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(body);
+        return ResponseEntity.ok()
+            .header(SnapshotVersionHeader.NAME, String.valueOf(snapshot.snapshotVersion()))
+            .cacheControl(CacheControl.noStore()).body(body);
     }
 
     @GetMapping(value = "/full", produces = "application/x-ndjson")
@@ -52,7 +54,11 @@ public class SnapshotFeedController {
                 fullSnapshotWriter.write(snapshot, publishedAt, gzip);
             }
         };
+        // Stamped from the same immutable snapshot object the body is serialised from, not from a
+        // second read of the holder — a write committing mid-stream must not make the header
+        // describe a version the body does not contain.
         return ResponseEntity.ok().header("Content-Encoding", "gzip")
+            .header(SnapshotVersionHeader.NAME, String.valueOf(snapshot.snapshotVersion()))
             .contentType(MediaType.parseMediaType("application/x-ndjson")).body(body);
     }
 
@@ -64,7 +70,12 @@ public class SnapshotFeedController {
     }
 
     @GetMapping
-    public SnapshotDeltaResponseDto delta(@RequestParam long since) {
-        return deltaFeedService.since(since);
+    public ResponseEntity<SnapshotDeltaResponseDto> delta(@RequestParam long since) {
+        var body = deltaFeedService.since(since);
+        // toVersion, not the holder's current version: the header states the version this response
+        // actually carries a replica to, which is lower than current whenever the delta was capped.
+        return ResponseEntity.ok()
+            .header(SnapshotVersionHeader.NAME, String.valueOf(body.toVersion()))
+            .body(body);
     }
 }

@@ -160,6 +160,38 @@ class SnapshotFeedControllerTest {
             .andExpect(jsonPath("$.changes").isEmpty());
     }
 
+    // contracts/README.md: "Response header X-Entitlement-Snapshot-Version accompanies every /v1
+    // response." The feed lives under /v1, so it is bound by that sentence too — a replica should
+    // never have to parse a body to learn which version it just received.
+    @Test
+    void versionCarriesTheSnapshotVersionHeader() throws Exception {
+        long current = snapshotHolder.current().snapshotVersion();
+
+        mockMvc.perform(get("/v1/snapshot/version"))
+            .andExpect(status().isOk())
+            .andExpect(header().string("X-Entitlement-Snapshot-Version", String.valueOf(current)));
+    }
+
+    @Test
+    void fullSnapshotCarriesTheSnapshotVersionHeader() throws Exception {
+        long current = snapshotHolder.current().snapshotVersion();
+
+        MvcResult started = mockMvc.perform(get("/v1/snapshot/full")).andReturn();
+        mockMvc.perform(asyncDispatch(started))
+            .andExpect(status().isOk())
+            .andExpect(header().string("X-Entitlement-Snapshot-Version", String.valueOf(current)));
+    }
+
+    @Test
+    void deltaCarriesTheSnapshotVersionHeaderMatchingItsToVersion() throws Exception {
+        long current = snapshotHolder.current().snapshotVersion();
+
+        mockMvc.perform(get("/v1/snapshot").param("since", String.valueOf(current)))
+            .andExpect(status().isOk())
+            .andExpect(header().string("X-Entitlement-Snapshot-Version", String.valueOf(current)))
+            .andExpect(jsonPath("$.toVersion").value(current));
+    }
+
     @Test
     void deltaChangesAreFlatObjectsMatchingTheContractNotNestedUnderAChangeKey() throws Exception {
         long before = snapshotHolder.current().snapshotVersion();
