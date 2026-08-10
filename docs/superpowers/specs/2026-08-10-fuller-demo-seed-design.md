@@ -1,7 +1,8 @@
 # A demo dataset that reads like a real deployment
 
 Date: 2026-08-10
-Status: approved, not yet implemented
+Status: approved, not yet implemented; revised after 002 merged into `main`
+Baseline: post-002 `main` (`V4__override_windows.sql`, windowed overrides, `AsAt` read path)
 Surface: `management/backend/entitlement-service/src/main/java/com/solovis/entitlement/service/seed/`
 
 ## Problem
@@ -14,16 +15,18 @@ actually look at, where it produces five screens that all read as scaffolding:
   and `q` filters (`CapabilityAdminController.java:30`) have nothing to filter.
 - **Accounts** — two rows, so the cursor paging and search in `AccountsListRoute.tsx:16`
   never appear.
-- **History** — about thirteen events, all stamped within the same second of container
+- **History** — about seventeen events, all stamped within the same second of container
   boot, which announces the data as generated more loudly than any amount of volume
   would fix.
 - **Plans** — `Free` and `Pro`, which no institutional investment platform has.
 - **Checker** — one interesting answer to look up.
 
-The dataset also omits the rule the whole service is built around. There is no HOLD
-anywhere in the seed, and no e2e test creates one, so *a restriction always defeats a
-concession* (spec §4) is never shown on a screen. `unlimited` is likewise absent, as is
-any retired capability.
+The dataset also never shows the rule the whole service is built around. 002 added a HOLD
+to the seed, but it is removed in the next statement, so it exists to demonstrate the
+*removed* standing rather than the combining rule — no seeded account has a HOLD holding a
+GRANT down, and no e2e test creates one. *A restriction always defeats a concession*
+(spec §4) is therefore never shown on a screen. `unlimited` is absent entirely, as is any
+retired capability.
 
 ## Decisions taken
 
@@ -34,7 +37,7 @@ any retired capability.
 | Where the data lives | A versioned JSON resource plus a small applier; the long tail of ordinary accounts from a compact table in the same file |
 | Existing fixtures | Every key the e2e suite locates by is preserved; display names and descriptions are re-authored |
 | Safety | A seed marker in `service_state` with loud failure, and seeding completed before the port opens |
-| Sequencing | Built on `main` now; 002's windows slot into the same file when that branch merges |
+| Sequencing | 002 merged into `main` while this design was being written (`V4__override_windows.sql`), so the dataset carries override windows from the start |
 | History | A seed-scoped mutable clock, wound through an authored eight-month timeline |
 
 ## Design
@@ -101,6 +104,10 @@ the resolution rule on screen:
 5. **An account resolving `unlimited`** from its plan.
 6. **An account touching the retired capability.**
 7. Northwind Capital's existing GRANT-beats-plan story, unchanged.
+8. **All four standings on one account** — a concession that ran and **ended** months ago, one
+   in force with an expiry still ahead of it, and one removed early — so screen 3's grouping
+   has every group populated and the checker's past-date answers have something to differ
+   about.
 
 The remaining ~50 accounts come from a tail block in the same file — name, plan, join day —
 which is what pushes the account list past its 50-row page and makes search and paging real
@@ -114,10 +121,18 @@ rather than decorative.
 therefore share a single timestamp.
 
 `seed/SeedClock.java` is a `Clock` with a mutable instant, contributed as *the* `Clock`
-bean only when `entitlement.seed.enabled=true`. Unwound, it delegates to
-`Clock.tick(Clock.systemUTC(), 1ms)` — byte for byte the behaviour of the existing bean.
-The seeder winds it forward through the authored timeline, and releases it in a `finally`
-before returning, after which it delegates forever.
+bean only when `entitlement.seed.enabled=true`. Unwound it simply delegates, so it is byte
+for byte the behaviour of the existing bean. The seeder winds it forward through the
+authored timeline, and releases it in a `finally` before returning, after which it
+delegates forever.
+
+It **decorates the clock `ClockConfig` builds** rather than constructing its own. Two
+reasons, both enforced by tests already in the repository: `NoDirectClockAccessTest` bans
+`Clock.systemUTC()` everywhere except `ClockConfig.java`, and since 002 the service clock
+carries the service zone (`Clock.system(entitlementZone)`), which is what makes
+`LocalDate.now(clock)` mean the operator-facing date rather than the host's. A `SeedClock`
+wrapping UTC would compile, pass its own tests, and silently change what every window date
+means.
 
 The consequence is that every audit row, every `created_at`, and every plan-assignment
 timestamp lands where the story says it did, and the change history shows eight months of
@@ -139,8 +154,20 @@ The dependency is required, not stylistic — `SnapshotPublisher` mutates from t
 snapshot, so the snapshot must exist before the first admin write.
 
 Two things follow. The console is never reachable in a half-populated state, and
-Playwright's wait on `/actuator/health` (`playwright.config.ts:41`) becomes a real
-guarantee that the fixtures exist rather than a race the Vite startup happens to cover.
+Playwright's wait on `/actuator/health` becomes a real guarantee that the fixtures exist
+rather than a race the Vite startup happens to cover.
+
+A third thing follows that 002 made load-bearing. `WindowBoundaryRoller` is
+`@Scheduled(fixedDelayString = "…", initialDelay = 0)`, so it runs the moment the
+scheduler starts — and it reads `LocalDate.now(clock)`. Scheduled tasks start with the
+context lifecycle, *after* every `InitializingBean` has finished, so the roller cannot
+observe a wound clock. That is not a happy accident to rely on silently: were the seeder
+ever moved back to an `ApplicationRunner`, the roller would fire mid-seed, take an authored
+day for today, and record `window.rolled-through` somewhere in the middle of the fictional
+past. On release it would then catch up day by day and publish a flood of boundary
+transitions for moments nobody observed — precisely what the roller's own first-run comment
+exists to prevent. **The seeder being an `InitializingBean` is what keeps the wound clock
+away from the scheduler thread.**
 
 ### 5. A marker, and loud failure
 
@@ -172,35 +199,59 @@ existing hourly `SnapshotVersionPruner` sweep clears them within an hour of boot
 the version being served. That is the retention rule behaving exactly as documented, not a
 special case.
 
-## What 002 adds later
+## Windows, and the fourth standing
 
-The JSON schema reserves `startsOn` / `expiresOn` on override entries from the start. On
-main the applier **rejects a file that sets them**, so the dataset can never silently claim
-windows the running code cannot honour. When `002-time-bound-override` merges, the applier
-passes them through and the flagship stories gain a pending override, one in force with an
-expiry, and one that has ended — the four states of 002 §3.2 on a screen.
+002 merged into `main` while this design was being written, so override windows are not
+future work: `startsOn` / `expiresOn` are fields on `OverrideCreateRequest`, and the seeder
+already writes three of the four standings onto `acct_1177`.
 
-The seed clock makes this free, and removes a bypass that 002 currently reserves for the
-seeder: `WindowRules`' javadoc grants the seeder permission to write backdated rows
-directly to the repository, because the admin API refuses back-dating. With the clock wound
-to the authored day, a ninety-day concession created "in March" and long since ended is an
-ordinary, fully validated admin write. That paragraph of `WindowRules` should be deleted
-when 002 merges.
+Its own comment records why the fourth is missing:
+
+> ENDED is missing from this list on purpose. c7 forbids saving a wholly-past window
+> through the API, and the seeder writes through the same admin services as everything else,
+> so it cannot manufacture one either.
+
+**The seed clock dissolves that constraint without weakening the principle it protects.**
+`OverrideAdminService` validates a window with `WindowRules.validate(startsOn, expiresOn,
+LocalDate.now(clock))`. Wound to authored day 90, a window running day 90 → day 140 is an
+ordinary, fully validated admin write; by the time the demo is served it has ended. The
+seeder still goes through the admin services — it simply is not standing in the present when
+it does. All four standings become seedable, and the permission `WindowRules`' javadoc
+reserves for the seeder to bypass the repository stays unused, which is the outcome that
+paragraph would prefer.
+
+Three constraints on the dataset follow from what is already there:
+
+- **`acct_9931` gains nothing.** The e2e suite asserts on its resolved state; a second
+  override on its capabilities changes the answer and fails tests that are correct.
+- **`acct_1177`'s three overrides are carried into the JSON verbatim** — `seats.count` in
+  force and expiring today, `reports.monthly` pending, `api.access` held then removed. They
+  are what screen 3's grouping renders, and `windows.spec.ts` uses that account as its
+  scratch space. It gets no authored plan moves on top; the richer window stories go on new
+  flagship accounts instead.
+- **The last authored write still lands at the present.** This now has a second reason
+  beyond feed freshness: the replica projection evaluates standings before publication, so
+  the final published snapshot must be evaluated at a moment that is effectively now.
 
 ## Testing
 
 - **`SeedDatasetTest`** (no Spring) — the file parses, every capability, plan and account
-  referenced by an event exists, days are non-decreasing, keys are unique, and no entry
-  sets a window while windows are unsupported.
+  referenced by an event exists, days are non-decreasing, keys are unique, and every window
+  is coherent — start on or before expiry, and neither already past on the authored day it
+  is written, which is the rule `WindowRules` will apply against the wound clock.
 - **`DemoDataSeederIT`** — its own context with `entitlement.seed.enabled=true` and a
   throwaway database, running the whole seed. Asserts the resulting counts, that
   `acct_9931` still resolves 200 sourced from `GRANT`, that a HOLD defeats a GRANT on the
   flagship that carries one, that audit timestamps span months and the newest is within a
-  minute of now, and that the `Clock` bean reads real time once seeding has finished. This
+  minute of now, that the windows flagship shows all four standings — including the ENDED
+  one that could not be seeded before — and that the `Clock` bean reads real time once
+  seeding has finished. This
   is the first test of the seeder's happy path, which today is exercised only by e2e and by
   the deployment itself.
 - **e2e** — one assertion changes: the default-plan test matches on the display text
-  `Free`, which becomes `Evaluation`. Every other e2e locator is a preserved key.
+  `Free`, which becomes `Evaluation`. Every other locator in `operator-screens.spec.ts` is a
+  preserved key, and `windows.spec.ts` is untouched because `acct_1177` keeps the three
+  overrides it asserts around and creates its own capability for everything else.
 
 ## Out of scope
 
