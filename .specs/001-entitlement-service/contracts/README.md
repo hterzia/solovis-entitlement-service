@@ -104,6 +104,8 @@ RFC 9457 `application/problem+json`. Every error carries a stable `type` slug �
 The snapshot feed carries **two** integers, because a replica can be wrong in two different ways:
 
 - `format` — the wire shape. An old SDK meeting a new payload fails loudly instead of misreading it.
-- `resolverContract` — the resolution semantics of §4. Bumped only when the rule itself changes, which `future-spec.md` §1 (time-bounded overrides) and §3 (relative grants) both would. A replica that does not implement the current contract refuses to serve rather than answering differently from its neighbours.
+- `resolverContract` — the resolution semantics of §4. Bumped only when the rule itself changes, which `future-spec.md` §3 (relative grants) would, because it redefines "most generous". A replica that does not implement the current contract refuses to serve rather than answering differently from its neighbours.
+
+  **Time-bounded overrides did not bump it**, though this note previously predicted they would. The prediction assumed replicas would evaluate windows themselves; they must not, because 002 c14 requires a product cut off from the service to go on honouring an override that has ended, and a replica able to evaluate its own windows would lapse it *correctly* while disconnected — exactly what the fixed outage posture forbids. Windows are evaluated only where the record lives, before publication, so a beginning reaches a replica as an ordinary `override.created` and an ending as `override.removed`.
 
 Version numbers alone are a claim, not a check, so the feed also carries conformance vectors that each replica evaluates against its own engine before serving. See [`snapshot-feed.md`](./snapshot-feed.md), "The conformance gate".
