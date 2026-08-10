@@ -266,7 +266,7 @@ class PlanAdminServiceTest {
         long setaId = capabilityRepository.findByKey("tplan.audit.seta").orElseThrow().id();
         long setbId = capabilityRepository.findByKey("tplan.audit.setb").orElseThrow().id();
 
-        int beforeCount = auditEventRepository.find(new AuditEventFilter(null, planId, null, "PLAN_ENTITLEMENT", null, null, null, 200)).size();
+        int beforeCount = auditEventRepository.find(new AuditEventFilter(null, planId, null, null, "PLAN_ENTITLEMENT", null, null, null, 200)).size();
 
         var edit = new PlanEntitlementEditRequest(
             Map.of("tplan.audit.seta", new ValueDto("QUANTITY", null, 42L, null, null, null)),
@@ -274,7 +274,7 @@ class PlanAdminServiceTest {
         var preview = planService.preview("tplan-audit", edit);
         planService.apply("tplan-audit", new PlanEntitlementEditRequest(edit.set(), edit.unset(), null, preview.previewToken()));
 
-        var afterEvents = auditEventRepository.find(new AuditEventFilter(null, planId, null, "PLAN_ENTITLEMENT", null, null, null, 200));
+        var afterEvents = auditEventRepository.find(new AuditEventFilter(null, planId, null, null, "PLAN_ENTITLEMENT", null, null, null, 200));
         assertThat(afterEvents).hasSize(beforeCount + 2);
 
         var setEvent = afterEvents.stream().filter(e -> e.capabilityId() != null && e.capabilityId() == setaId
@@ -294,7 +294,7 @@ class PlanAdminServiceTest {
         planService.patch("tplan-patch-desc", new PlanPatchRequest(null, "Updated description"));
 
         long planId = planRepository.findByKey("tplan-patch-desc").orElseThrow().id();
-        var events = auditEventRepository.find(new AuditEventFilter(null, planId, null, "PLAN", null, null, null, 10));
+        var events = auditEventRepository.find(new AuditEventFilter(null, planId, null, null, "PLAN", null, null, null, 10));
         var latest = events.stream().filter(e -> "UPDATE".equals(e.action())).findFirst().orElseThrow();
 
         assertThat(latest.beforeJson()).contains("Original description");
@@ -308,7 +308,7 @@ class PlanAdminServiceTest {
         planService.archive("tplan-archive-status");
 
         long planId = planRepository.findByKey("tplan-archive-status").orElseThrow().id();
-        var events = auditEventRepository.find(new AuditEventFilter(null, planId, null, "PLAN", null, null, null, 10));
+        var events = auditEventRepository.find(new AuditEventFilter(null, planId, null, null, "PLAN", null, null, null, 10));
         var archiveEvent = events.stream().filter(e -> "ARCHIVE".equals(e.action())).findFirst().orElseThrow();
 
         assertThat(archiveEvent.beforeJson()).contains("ACTIVE");

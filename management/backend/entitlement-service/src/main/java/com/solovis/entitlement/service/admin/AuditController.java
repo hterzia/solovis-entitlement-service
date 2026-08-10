@@ -36,11 +36,16 @@ public class AuditController {
     public AuditListResponseDto list(
         @RequestParam(required = false) String account, @RequestParam(required = false) String planKey,
         @RequestParam(required = false) String actor, @RequestParam(required = false) String entityType,
+        @RequestParam(required = false) String capability,
         @RequestParam(required = false) String from, @RequestParam(required = false) String to,
         @RequestParam(required = false) String cursor, @RequestParam(required = false, defaultValue = "50") int limit) {
 
         Long accountId = account == null ? null : accountRepository.findByExternalId(account).map(a -> a.id()).orElse(-1L);
         Long planId = planKey == null ? null : planRepository.findByKey(planKey).map(p -> p.id()).orElse(-1L);
+        // -1 rather than null for an unknown key: null would mean "no constraint" and quietly return
+        // everything, which reads as "this capability changed constantly" rather than "no such key".
+        Long capabilityId = capability == null ? null
+            : capabilityRepository.findByKey(capability).map(c -> c.id()).orElse(-1L);
         Long beforeSeq = cursor == null ? null : RefId.parse(cursor, "aud_");
         int pageSize = limit > 0 ? limit : DEFAULT_LIMIT;
 
@@ -48,8 +53,8 @@ public class AuditController {
         // cursor emitted from a page that happens to be exactly full would send the History screen
         // to an empty page it had no way to predict — "there are more" and "this filled the page"
         // are different facts, and only the probe row distinguishes them.
-        var rows = auditEventRepository.find(new AuditEventFilter(accountId, planId, actor, entityType, from, to,
-            beforeSeq, pageSize + 1));
+        var rows = auditEventRepository.find(new AuditEventFilter(accountId, planId, capabilityId, actor, entityType,
+            from, to, beforeSeq, pageSize + 1));
         boolean hasMore = rows.size() > pageSize;
         var page = hasMore ? rows.subList(0, pageSize) : rows;
 

@@ -39,7 +39,10 @@ public final class DecisionMapper {
         return new DecisionResponseDto.TraceDto.CandidateDto(
             entry.overrideId().isPresent() ? "ovr_" + entry.overrideId().getAsLong() : null,
             ValueMapper.toDto(entry.value()), entry.reason().orElse(null), entry.createdBy().orElse(null),
-            entry.createdAt().map(Timestamps::iso).orElse(null), entry.outcome().map(Enum::name).orElse(null));
+            entry.createdAt().map(Timestamps::iso).orElse(null), entry.outcome().map(Enum::name).orElse(null),
+            entry.startsOn().map(Object::toString).orElse(null),
+            entry.expiresOn().map(Object::toString).orElse(null),
+            entry.notInForceSince().map(Object::toString).orElse(null));
     }
 
     private static DecisionResponseDto.TraceDto.GrantStepDto toGrantStepDto(Trace trace) {
@@ -50,8 +53,13 @@ public final class DecisionMapper {
             return new DecisionResponseDto.TraceDto.GrantStepDto(true, refOf(winner), ValueMapper.toDto(winner.value()), note, null);
         }
         boolean noGrants = trace.grants().isEmpty();
-        String why = noGrants ? "NO_GRANTS" : "PLAN_AT_LEAST_AS_GENEROUS";
+        // Three cases, not two. Since 002 a trace may list GRANTs that exist but do not count, and
+        // saying "the plan is at least as generous as every GRANT" about a GRANT of 500 that ended
+        // last week is simply false — which is the misstatement c20 exists to prevent.
+        boolean noneInForce = !noGrants && trace.grants().stream().allMatch(DecisionMapper::isNotInForce);
+        String why = noGrants ? "NO_GRANTS" : noneInForce ? "NO_GRANTS_IN_FORCE" : "PLAN_AT_LEAST_AS_GENEROUS";
         String note = noGrants ? "No GRANT overrides exist for this capability on this account."
+            : noneInForce ? "No GRANT is in force; each one listed had not begun, had ended, or was removed."
             : "The plan baseline is already at least as generous as every GRANT.";
         return new DecisionResponseDto.TraceDto.GrantStepDto(false, null, null, note, why);
     }
@@ -63,10 +71,16 @@ public final class DecisionMapper {
             return new DecisionResponseDto.TraceDto.HoldStepDto(true, refOf(winner), ValueMapper.toDto(winner.value()), note, null);
         }
         boolean noHolds = trace.holds().isEmpty();
-        String why = noHolds ? "NO_HOLDS" : "HOLD_NOT_MORE_RESTRICTIVE";
+        boolean noneInForce = !noHolds && trace.holds().stream().allMatch(DecisionMapper::isNotInForce);
+        String why = noHolds ? "NO_HOLDS" : noneInForce ? "NO_HOLDS_IN_FORCE" : "HOLD_NOT_MORE_RESTRICTIVE";
         String note = noHolds ? "No HOLD overrides exist for this capability on this account."
+            : noneInForce ? "No HOLD is in force; each one listed had not begun, had ended, or was removed."
             : "No HOLD is more restrictive than the post-grant value.";
         return new DecisionResponseDto.TraceDto.HoldStepDto(false, null, null, note, why);
+    }
+
+    private static boolean isNotInForce(TraceEntry entry) {
+        return entry.outcome().map(o -> o.name().startsWith("NOT_IN_FORCE_")).orElse(false);
     }
 
     private static String allowedReason(Trace trace, Capability capability) {

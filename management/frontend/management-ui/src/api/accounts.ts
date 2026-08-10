@@ -36,6 +36,9 @@ export interface AddOverrideInput {
   kind: OverrideKind
   value: EntitlementValue
   reason: string
+  /** ISO dates in the service zone; both optional, and blank is still the fastest path (002 c1). */
+  startsOn?: string
+  expiresOn?: string
 }
 
 export interface OverrideMutationResult {

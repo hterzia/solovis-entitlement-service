@@ -46,7 +46,7 @@ class ReadTransactionIsolationTest {
 	JdbcClient entitlementReadJdbcClient;
 
 	private long seedAuditEvent() {
-		return auditEventRepository.insert(new AuditEventRow(null, "2026-08-09T00:00:00.000Z", "SYSTEM",
+		return auditEventRepository.insert(AuditEventRow.operatorAct(null, "2026-08-09T00:00:00.000Z", "SYSTEM",
 				"dev-operator", "API", "CAPABILITY", "isolation-test", "CREATE",
 				null, null, null, null, null, null, null));
 	}

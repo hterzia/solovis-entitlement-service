@@ -7,6 +7,7 @@ package com.solovis.entitlement.service.store;
 public record AuditEventFilter(
 		Long accountId,
 		Long planId,
+		Long capabilityId,
 		String actorId,
 		String entityType,
 		String occurredFrom,

@@ -14,8 +14,13 @@ import { defineConfig } from '@playwright/test'
  * Both servers are throwaway: a fresh SQLite file per run, the demo seed enabled, and ports well
  * away from the 8081/5173 a developer is likely to be using.
  */
-const API_PORT = 8099
-const UI_PORT = 5199
+// Overridable, and worth the two lines. `reuseExistingServer` is on outside CI, so a stray backend
+// left behind by a killed Playwright run — teardown does not always reap the JVM — is silently
+// adopted by the next run, along with whatever build and whatever database it has. That failure
+// looks like a regression in resolution and is not one. Set E2E_API_PORT/E2E_UI_PORT to run beside
+// one instead of into it.
+const API_PORT = Number(process.env.E2E_API_PORT ?? 8099)
+const UI_PORT = Number(process.env.E2E_UI_PORT ?? 5199)
 const API_URL = `http://127.0.0.1:${API_PORT}`
 
 export default defineConfig({

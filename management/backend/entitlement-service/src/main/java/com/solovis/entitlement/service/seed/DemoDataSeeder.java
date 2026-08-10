@@ -25,16 +25,18 @@ public class DemoDataSeeder implements ApplicationRunner {
     private final AccountAdminService accountService;
     private final OverrideAdminService overrideService;
     private final AuditSource auditSource;
+    private final java.time.Clock clock;
     private final boolean enabled;
 
     public DemoDataSeeder(CapabilityAdminService capabilityService, PlanAdminService planService,
             AccountAdminService accountService, OverrideAdminService overrideService, AuditSource auditSource,
-            @Value("${entitlement.seed.enabled:false}") boolean enabled) {
+            java.time.Clock clock, @Value("${entitlement.seed.enabled:false}") boolean enabled) {
         this.capabilityService = capabilityService;
         this.planService = planService;
         this.accountService = accountService;
         this.overrideService = overrideService;
         this.auditSource = auditSource;
+        this.clock = clock;
         this.enabled = enabled;
     }
 
@@ -77,6 +79,30 @@ public class DemoDataSeeder implements ApplicationRunner {
             overrideService.create("acct_9931", new OverrideCreateRequest("reports.monthly", "GRANT",
                 new ValueDto("QUANTITY", null, 200L, null, null, null), "Renewal concession — Q3 pilot"));
             accountService.create(new AccountCreateRequest("acct_1177", "Example Co"));
+
+            // 002: one override in each standing an operator can be shown today, so screen 3's
+            // grouping and the checker's not-in-force entries have something real to render.
+            //
+            // Deliberately on acct_1177, never acct_9931: the e2e suite asserts on acct_9931's
+            // *resolved* state, and another override on its capabilities would change the answer
+            // and fail tests that are perfectly correct.
+            //
+            // ENDED is missing from this list on purpose. c7 forbids saving a wholly-past window
+            // through the API, and the seeder writes through the same admin services as everything
+            // else, so it cannot manufacture one either. The seats.count grant below expires
+            // *today*, which means the demo shows a real ending when the clock next passes midnight
+            // — a better demonstration of c12 than a row that was born expired.
+            var today = java.time.LocalDate.now(clock);
+            overrideService.create("acct_1177", new OverrideCreateRequest("seats.count", "GRANT",
+                new ValueDto("QUANTITY", null, 25L, null, null, null),
+                "Trial seats through the end of today", null, today.toString()));
+            overrideService.create("acct_1177", new OverrideCreateRequest("reports.monthly", "GRANT",
+                new ValueDto("QUANTITY", null, 500L, null, null, null),
+                "Reporting pilot agreed for next month", today.plusDays(30).toString(), today.plusDays(120).toString()));
+            var lifted = overrideService.create("acct_1177", new OverrideCreateRequest("api.access", "HOLD",
+                new ValueDto("SWITCH", false, null, null, null, null),
+                "Suspended pending investigation"));
+            overrideService.delete("acct_1177", lifted.overrideId(), "Investigation closed, access restored");
         });
     }
 }

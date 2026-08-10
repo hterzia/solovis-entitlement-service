@@ -6,6 +6,8 @@ import com.solovis.entitlement.core.view.Snapshot;
 import com.solovis.entitlement.core.view.SnapshotBuilder;
 import com.solovis.entitlement.service.store.DecisionReadDao;
 import org.springframework.stereotype.Component;
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,13 +17,16 @@ import java.util.Map;
 public class SnapshotAssembler {
 
     private final DecisionReadDao decisionReadDao;
+    private final Clock clock;
 
-    public SnapshotAssembler(DecisionReadDao decisionReadDao) {
+    public SnapshotAssembler(DecisionReadDao decisionReadDao, Clock clock) {
         this.decisionReadDao = decisionReadDao;
+        this.clock = clock;
     }
 
     public Snapshot assembleFull() {
         long version = decisionReadDao.latestVersion();
+        LocalDate today = LocalDate.now(clock);
         var builder = new SnapshotBuilder();
 
         var tiersByCapabilityId = decisionReadDao.allTiers();
@@ -51,7 +56,12 @@ public class SnapshotAssembler {
             externalIdsById.put(row.id(), row.externalId());
         }
 
-        for (var row : decisionReadDao.allLiveOverrides()) {
+        // In force today, not merely un-removed. A snapshot assembled from scratch — which every
+        // full resync is — must not resurrect an override that has ended, nor start one that has not
+        // begun. Windows are evaluated here, before publication, and never inside a replica: c14
+        // requires a cut-off product to go on honouring an ended override, which a replica able to
+        // evaluate its own windows would not do.
+        for (var row : decisionReadDao.allInForceOverrides(today)) {
             String externalId = externalIdsById.get(row.accountId());
             if (externalId == null) {
                 continue; // account is CLOSED or otherwise excluded from the active set

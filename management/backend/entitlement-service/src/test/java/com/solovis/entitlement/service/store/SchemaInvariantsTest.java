@@ -36,7 +36,7 @@ class SchemaInvariantsTest {
 
 	@Test
 	void auditEventRejectsUpdateAndDelete() {
-		long seq = auditEventRepository.insert(new AuditEventRow(null, "2026-08-09T00:00:00.000Z", "PERSON",
+		long seq = auditEventRepository.insert(AuditEventRow.operatorAct(null, "2026-08-09T00:00:00.000Z", "PERSON",
 				"a.reyes", "UI", "PLAN_ENTITLEMENT", "pro", "UPDATE", null, null, null, null, null, null, null));
 
 		assertThatThrownBy(() -> jdbcClient.sql("UPDATE audit_event SET reason = 'tampered' WHERE seq = :seq")

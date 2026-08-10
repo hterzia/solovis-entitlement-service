@@ -11,5 +11,20 @@ public enum Outcome {
     WON,
     LOST_NOT_MORE_GENEROUS_THAN_WINNING_GRANT,
     LOST_NOT_MORE_GENEROUS_THAN_PLAN,
-    LOST_NOT_MORE_RESTRICTIVE_THAN_WINNING_HOLD
+    LOST_NOT_MORE_RESTRICTIVE_THAN_WINNING_HOLD,
+
+    /**
+     * The three below mean the override took no part at all, rather than taking part and losing
+     * (002 c19). They are named separately because *"it lost to a bigger grant"* and *"it ended on
+     * 30 June"* are different answers to *"why isn't this customer getting it?"*, and only the
+     * second explains an answer that changed with nobody acting.
+     */
+    NOT_IN_FORCE_PENDING,
+    NOT_IN_FORCE_ENDED,
+    NOT_IN_FORCE_REMOVED;
+
+    /** True for the outcomes that describe an override which never entered the arithmetic. */
+    public boolean isNotInForce() {
+        return this == NOT_IN_FORCE_PENDING || this == NOT_IN_FORCE_ENDED || this == NOT_IN_FORCE_REMOVED;
+    }
 }

@@ -42,7 +42,7 @@ class CapabilityAdminServiceTest {
         auditSource.runAs("SEED", () -> service.create(request));
 
         var events = auditEventRepository.find(
-            new AuditEventFilter(null, null, null, "CAPABILITY", null, null, null, 50));
+            new AuditEventFilter(null, null, null, null, "CAPABILITY", null, null, null, 50));
         var created = events.stream().filter(e -> e.entityId().equals("taudit.probe")).findFirst();
         assertThat(created).isPresent();
         assertThat(created.get().source()).isEqualTo("SEED");

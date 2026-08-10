@@ -296,7 +296,7 @@ describe('AccountDetailRoute', () => {
     account.overrides = [
       {
         id: 'ovr_tier', capability: 'support', kind: 'GRANT', value: { type: 'TIER', tier: 'gold' },
-        reason: 'Support upgrade', createdBy: 'dev-operator', createdAt: '2026-08-10T00:00:00.000Z', effectNow: 'WINNING',
+        reason: 'Support upgrade', createdBy: 'dev-operator', createdAt: '2026-08-10T00:00:00.000Z', effectNow: 'WINNING', standing: 'IN_FORCE' as const,
       },
     ]
     server.use(
@@ -408,7 +408,7 @@ describe('AccountDetailRoute', () => {
       {
         id: 'ovr_tier', capability: 'support', kind: 'GRANT', value: { type: 'TIER', tier: 'gold' },
         reason: 'Support upgrade', createdBy: 'dev-operator', createdAt: '2026-08-10T00:00:00.000Z',
-        effectNow: 'WINNING',
+        effectNow: 'WINNING', standing: 'IN_FORCE' as const,
       },
     ]
     server.use(

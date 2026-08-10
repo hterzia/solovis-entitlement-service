@@ -38,7 +38,7 @@ class DemoDataSeederTest {
     void seedingDisabledCreatesNoPlans() {
         int before = planService.list().size();
 
-        new DemoDataSeeder(capabilityService, planService, accountService, overrideService, auditSource, false)
+        new DemoDataSeeder(capabilityService, planService, accountService, overrideService, auditSource, java.time.Clock.systemUTC(), false)
             .run(null);
 
         assertThat(planService.list()).hasSize(before);
@@ -49,7 +49,7 @@ class DemoDataSeederTest {
         planService.create(new PlanCreateRequest("tseed.already-here", "Already here", null));
         int before = planService.list().size();
 
-        new DemoDataSeeder(capabilityService, planService, accountService, overrideService, auditSource, true)
+        new DemoDataSeeder(capabilityService, planService, accountService, overrideService, auditSource, java.time.Clock.systemUTC(), true)
             .run(null);
 
         assertThat(planService.list()).hasSize(before);

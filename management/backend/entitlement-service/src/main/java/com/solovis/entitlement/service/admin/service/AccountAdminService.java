@@ -19,6 +19,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import com.solovis.entitlement.service.time.Timestamps;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.*;
 
 @Service
@@ -35,6 +38,7 @@ public class AccountAdminService {
     private final SnapshotPublisher snapshotPublisher;
     private final RecordViewAssembler recordViewAssembler;
     private final Clock clock;
+    private final ZoneId zone;
 
     public AccountAdminService(AccountRepository accountRepository, AccountOverrideRepository accountOverrideRepository,
             PlanRepository planRepository, CapabilityRepository capabilityRepository, AuditRecorder auditRecorder,
@@ -51,6 +55,7 @@ public class AccountAdminService {
         this.snapshotPublisher = snapshotPublisher;
         this.recordViewAssembler = recordViewAssembler;
         this.clock = clock;
+        this.zone = clock.getZone();
     }
 
     public AccountSearchResponseDto search(String q, String planKey, long afterId, int limit) {
@@ -125,15 +130,23 @@ public class AccountAdminService {
         }
 
         var overrides = new ArrayList<AccountDetailDto.OverrideRow>();
-        for (var overrideRow : accountOverrideRepository.findLiveForAccount(row.id())) {
+        // Every override, not only the live ones: c18 groups by standing and names removed as one
+        // of the four states, so a list that dropped them could not show it.
+        for (var overrideRow : accountOverrideRepository.findAllForAccount(row.id())) {
             var capRow = capabilityRepository.findById(overrideRow.capabilityId()).orElseThrow();
             var explanation = explanationsByCapabilityId.get(overrideRow.capabilityId());
             String effectNow = explanation == null ? null : effectNow(overrideRow, explanation.trace());
             var capability = RowMappers.toCapability(capRow, capabilityRepository.findTiers(capRow.id()));
             var value = ValueColumnCodec.toValue(capability.valueType(), overrideRow.boolValue(), overrideRow.qtyValue(),
                 overrideRow.qtyUnlimited(), overrideRow.tierValue(), capability.tierOrder());
+            var standing = OverrideStanding.of(
+                Optional.ofNullable(overrideRow.startsOn()).map(LocalDate::parse),
+                Optional.ofNullable(overrideRow.expiresOn()).map(LocalDate::parse),
+                Optional.ofNullable(overrideRow.removedAt()).map(at -> LocalDate.ofInstant(Instant.parse(at), zone)),
+                LocalDate.now(clock));
             overrides.add(new AccountDetailDto.OverrideRow("ovr_" + overrideRow.id(), capRow.key(), overrideRow.kind(),
-                ValueMapper.toDto(value), overrideRow.reason(), overrideRow.createdBy(), overrideRow.createdAt(), effectNow));
+                ValueMapper.toDto(value), overrideRow.reason(), overrideRow.createdBy(), overrideRow.createdAt(), effectNow,
+                overrideRow.startsOn(), overrideRow.expiresOn(), standing.name()));
         }
 
         return new AccountDetailDto(external, row.name(), row.status(),
@@ -159,6 +172,12 @@ public class AccountAdminService {
             return null; // not among this capability's candidates at all — shouldn't happen for a live override, defensive only
         }
         var outcome = entry.get().outcome().orElseThrow();
+        // effectNow answers "what is this override doing to the result", which only has an answer
+        // for one that is counting. An override that has not begun, has ended, or was removed is
+        // described by its standing instead (002 c18) — the field Phase 5 adds beside this one.
+        if (outcome.isNotInForce()) {
+            return null;
+        }
         if (isGrant) {
             return switch (outcome) {
                 case WON -> trace.holdWinner().isPresent() ? "OVERRIDDEN_BY_HOLD" : "WINNING";
@@ -166,6 +185,8 @@ public class AccountAdminService {
                 case LOST_NOT_MORE_GENEROUS_THAN_WINNING_GRANT -> "SUPERSEDED_BY_GRANT";
                 case LOST_NOT_MORE_RESTRICTIVE_THAN_WINNING_HOLD ->
                     throw new IllegalStateException("A GRANT candidate cannot carry a HOLD-only outcome.");
+                case NOT_IN_FORCE_PENDING, NOT_IN_FORCE_ENDED, NOT_IN_FORCE_REMOVED ->
+                    throw new IllegalStateException("Not-in-force outcomes return above, before this switch.");
             };
         }
         return switch (outcome) {
@@ -173,6 +194,8 @@ public class AccountAdminService {
             case LOST_NOT_MORE_RESTRICTIVE_THAN_WINNING_HOLD -> "SUPERSEDED_BY_STRICTER_HOLD";
             case LOST_NOT_MORE_GENEROUS_THAN_PLAN, LOST_NOT_MORE_GENEROUS_THAN_WINNING_GRANT ->
                 throw new IllegalStateException("A HOLD candidate cannot carry a GRANT-only outcome.");
+            case NOT_IN_FORCE_PENDING, NOT_IN_FORCE_ENDED, NOT_IN_FORCE_REMOVED ->
+                throw new IllegalStateException("Not-in-force outcomes return above, before this switch.");
         };
     }
 

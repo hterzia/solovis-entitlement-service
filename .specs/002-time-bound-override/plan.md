@@ -1,6 +1,7 @@
 # Implementation Plan: Time-bounded Overrides and Point-in-Time Answers (002)
 
-**Branch**: `002-time-bound-override` | **Spec**: [`spec.md`](./spec.md) | **Revised**: 2026-08-10
+**Branch**: `002-windows` (replayed from `002-time-bound-override`) | **Spec**: [`spec.md`](./spec.md) | **Revised**: 2026-08-10
+**Status: complete — built and merged to `main` on 2026-08-10.** Every phase below is done. Two things came out differently from the plan and are recorded at the end under "What changed while building it"; read that before treating any section here as a description of the code.
 **Builds on**: [`001-entitlement-service/`](../001-entitlement-service/), merged to `main`. Criterion references *(c14)* are **002's** criteria unless prefixed *v1*, in which case they point at [`001-entitlement-service/spec.md`](../001-entitlement-service/spec.md) §10.
 
 > **Why this document was revised.** The 2026-08-09 draft was written against a `main` that has since moved twice over. Its Phase 0 — the read-path correction — has been **designed, built and merged** under a different shape than it predicted ([`plan-read-path.md`](./plan-read-path.md), `DECISIONS.md` §13); the SDK and the operator SPA that gated three of its phases are **built**; and the load-test harness two criteria depended on has been **withdrawn**, not deferred. Meanwhile the 002 branch has landed phases 1, 2, 3 and half of 5 against the *old* `main` and has not been rebased. This revision reconciles all three. Everything below describes the repository as it is on 2026-08-10.
@@ -341,6 +342,21 @@ Nothing is gated on 001 any more. The ordering is a dependency ordering, and the
 | **The past is only as faithful as `after_json`** | Reconstruction reads payloads 001 wrote for a different purpose. Phase 5 confirms the four lookups can be satisfied from what is stored, against the real seeded trail, before building on the assumption |
 | **The demo's seeded history is the whole evidence base for the point-in-time half** | Without a matching audit trail, c22–c29 are undemonstrable and the feature will look broken rather than unseeded. Phase 7 treats the trail as the deliverable, not a by-product |
 | **Someone outside Eastern is surprised by a boundary** | Accepted, recorded in the spec's limitations. Naming the clock wherever a date appears is the mitigation, and Phase 6 must not treat it as decoration |
+
+## What changed while building it
+
+Recorded because the plan above was written before the work and a reader should not have to diff it against the code.
+
+| Planned | Built | Why |
+|---|---|---|
+| `V4__override_windows.sql` plus a `V5` SQL migration for the `audit_event` rebuild | `V5` is a **Java** migration reaching Flyway as a `@Component` | The rebuild needs `PRAGMA foreign_keys=OFF`, which SQLite ignores inside a transaction and Flyway wraps SQL migrations in one. Location scanning did not find it; Boot collects `JavaMigration` beans, which does |
+| The window predicate in `RecordViewAssembler` and `SnapshotAssembler` | Also in `DecisionReadDao`, and defined once as `AccountOverrideRepository.IN_FORCE` | Three query sites, not two — `RecordViewAssembler` repeats the DAO's SQL so it can run against either pool. Three copies of a predicate is a predicate that will differ in one of them |
+| `grantStep.why` gains `NO_GRANTS_IN_FORCE` | That, **and** the SPA states it even when candidates are listed | The absence sentence was rendered only for an empty list, so a trace full of dimmed rows carried no statement at all. c20 asks the explanation alone to be enough |
+| c18 groups an account's overrides by standing | The account view had to widen from live overrides to **all** of them | A removed override cannot be shown in a grouping that never fetched it |
+| A backdated demo history for c22–c29 | **Not built.** The seeder gives each standing an override at today's date instead | `asAtSeq` is `MAX(seq)` below a boundary, so seq order and `occurred_at` order must agree. Appending a backdated trail to an existing database gives early rows high sequences and makes every past answer silently return today's. It has to be written in time order or not at all — `AuditTrailOrderingTest` now states the invariant. Point-in-time therefore reaches back only as far as the deployment's own trail, which is honest but thinner than the demo deserves |
+| c29 measured by a load harness | Measured at the service layer, p95 over 100 answers | There is no load harness and none is owed — v1's throughput rubric was withdrawn (`DECISIONS.md` §13) |
+
+Two demonstrations that were blocked when this plan was first written are now real: **c14** has a test that cuts a live SDK replica off and watches it go on honouring an ended override, and **c13**'s published half is driven by moving a clock across midnight, including both daylight-saving days.
 
 ## Complexity Tracking
 

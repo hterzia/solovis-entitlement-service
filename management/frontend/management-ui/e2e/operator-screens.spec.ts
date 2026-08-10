@@ -190,7 +190,7 @@ test.describe('Screen 4 — checker', () => {
   })
 
   test('a retired capability is refused as an error rather than answered', async ({ page, request }) => {
-    await request.post('http://127.0.0.1:8099/admin/v1/capabilities', {
+    await request.post('/admin/v1/capabilities', {
       data: {
         key: 'e2e.retired.probe',
         displayName: 'E2E retired probe',
@@ -198,7 +198,7 @@ test.describe('Screen 4 — checker', () => {
         default: { type: 'SWITCH', enabled: false },
       },
     })
-    await request.post('http://127.0.0.1:8099/admin/v1/capabilities/e2e.retired.probe/retire')
+    await request.post('/admin/v1/capabilities/e2e.retired.probe/retire')
 
     await page.goto('/checker')
     await page.getByLabel('Account').fill('acct_9931')
@@ -210,7 +210,7 @@ test.describe('Screen 4 — checker', () => {
   })
 
   test('an override reference resolves to its own account and capability', async ({ page, request }) => {
-    const account = await request.get('http://127.0.0.1:8099/admin/v1/accounts/acct_9931')
+    const account = await request.get('/admin/v1/accounts/acct_9931')
     const overrides = (await account.json()).overrides as Array<{ id: string }>
     expect(overrides.length).toBeGreaterThan(0)
 
@@ -253,7 +253,7 @@ test.describe('Cross-cutting', () => {
   })
 
   test('the liveness number the UI states matches what the service guarantees', async ({ page, request }) => {
-    const meta = await (await request.get('http://127.0.0.1:8099/admin/v1/meta')).json()
+    const meta = await (await request.get('/admin/v1/meta')).json()
 
     await page.goto('/accounts/acct_1177')
     await page.getByRole('button', { name: 'Add override' }).click()

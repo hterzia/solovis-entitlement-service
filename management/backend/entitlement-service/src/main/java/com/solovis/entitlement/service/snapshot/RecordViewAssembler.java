@@ -17,6 +17,12 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
+import com.solovis.entitlement.core.model.StandingOverride;
+import com.solovis.entitlement.service.store.AccountOverrideRepository;
+import com.solovis.entitlement.service.time.Timestamps;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -117,16 +123,21 @@ public class RecordViewAssembler {
 			rs.getString("created_source"),
 			rs.getString("removed_at"),
 			rs.getString("removed_by"),
-			rs.getString("removed_reason"));
+			rs.getString("removed_reason"),
+			rs.getString("starts_on"),
+			rs.getString("expires_on"));
 
 	private final JdbcClient readClient;
 	private final JdbcClient writeClient;
+	private final Clock clock;
 
 	public RecordViewAssembler(
 			@Qualifier("entitlementReadJdbcClient") JdbcClient readClient,
-			@Qualifier("entitlementWriteJdbcClient") JdbcClient writeClient) {
+			@Qualifier("entitlementWriteJdbcClient") JdbcClient writeClient,
+			Clock clock) {
 		this.readClient = readClient;
 		this.writeClient = writeClient;
+		this.clock = clock;
 	}
 
 	public RecordBackedView pointView(String accountExternalId, String capabilityKey) {
@@ -143,13 +154,15 @@ public class RecordViewAssembler {
 	}
 
 	private RecordBackedView assemblePoint(JdbcClient client, String accountExternalId, String capabilityKey) {
+		Instant now = clock.instant();
+		LocalDate today = LocalDate.now(clock);
 		long version = queryLatestVersion(client);
 		var accountRow = queryAccount(client, accountExternalId);
 		if (accountRow.isEmpty()) {
 			// No active account, so there is nothing for the other three lookups to key off. The view
 			// still answers snapshotVersion(); Resolver.lookUp raises entitlement/unknown-account.
 			return new RecordBackedView(RecordBackedView.Mode.POINT, version, accountExternalId, null,
-					Map.of(), Map.of(), Map.of());
+					Map.of(), Map.of(), Map.of(), Map.of());
 		}
 
 		var account = accountRow.get();
@@ -161,7 +174,7 @@ public class RecordViewAssembler {
 		if (capabilityRow.isEmpty()) {
 			// Resolver.lookUp raises entitlement/unknown-capability from the empty capability map.
 			return new RecordBackedView(RecordBackedView.Mode.POINT, version, accountExternalId, assignment,
-					Map.of(), Map.of(), Map.of());
+					Map.of(), Map.of(), Map.of(), Map.of());
 		}
 
 		var capability = RowMappers.toCapability(capabilityRow.get(), queryTiers(client, capabilityRow.get().id()));
@@ -171,23 +184,51 @@ public class RecordViewAssembler {
 				.map(row -> Map.of(capability.key(), RowMappers.toPlanEntitlement(row, planKey, capability)))
 				.orElseGet(Map::of);
 
-		var overrideRows = queryLiveOverrides(client, account.id(), capabilityRow.get().id());
+		var overrideRows = queryInForceOverrides(client, account.id(), capabilityRow.get().id(), today);
 		Map<CapabilityKey, List<AccountOverride>> overrides = overrideRows.isEmpty()
 				? Map.of()
 				: Map.of(capability.key(), overrideRows.stream()
 						.map(row -> RowMappers.toOverride(row, accountExternalId, capability))
 						.toList());
 
+		// The wider set the explanation needs. Loaded alongside rather than derived from the one
+		// above, because "in force" is a subset of "existed" and the difference is exactly what c19
+		// asks to be named — a GRANT that ended, a HOLD not yet begun, an override removed last May.
+		var knownRows = queryKnownOverrides(client, account.id(), capabilityRow.get().id(), Timestamps.iso(now));
+		Map<CapabilityKey, List<StandingOverride>> known = knownRows.isEmpty()
+				? Map.of()
+				: Map.of(capability.key(), standing(knownRows, accountExternalId, capability, today));
+
 		return new RecordBackedView(RecordBackedView.Mode.POINT, version, accountExternalId, assignment,
-				capabilities, entitlements, overrides);
+				capabilities, entitlements, overrides, known);
+	}
+
+	/**
+	 * Pairs each row with what it was doing on {@code asOf}. Standing is computed once, here, from
+	 * the row's own window and removal date, so the trace never recomputes it and the view and the
+	 * explanation cannot disagree about which overrides counted.
+	 */
+	private List<StandingOverride> standing(
+			List<AccountOverrideRow> rows, String accountExternalId, Capability capability, LocalDate asOf) {
+		return rows.stream()
+				.map(row -> StandingOverride.at(
+						RowMappers.toOverride(row, accountExternalId, capability),
+						// removed_at is a stored UTC instant; standing is a statement about a date in
+						// the service zone, so it is converted rather than truncated.
+						Optional.ofNullable(row.removedAt())
+								.map(at -> Instant.parse(at).atZone(clock.getZone()).toLocalDate()),
+						asOf))
+				.toList();
 	}
 
 	private RecordBackedView assembleAccountSlice(JdbcClient client, String accountExternalId) {
+		Instant now = clock.instant();
+		LocalDate today = LocalDate.now(clock);
 		long version = queryLatestVersion(client);
 		var accountRow = queryAccount(client, accountExternalId);
 		if (accountRow.isEmpty()) {
 			return new RecordBackedView(RecordBackedView.Mode.ACCOUNT_SLICE, version, accountExternalId, null,
-					Map.of(), Map.of(), Map.of());
+					Map.of(), Map.of(), Map.of(), Map.of());
 		}
 
 		var account = accountRow.get();
@@ -213,7 +254,7 @@ public class RecordViewAssembler {
 		}
 
 		Map<CapabilityKey, List<AccountOverride>> overrides = new LinkedHashMap<>();
-		for (var row : queryLiveOverridesForAccount(client, account.id())) {
+		for (var row : queryInForceOverridesForAccount(client, account.id(), today)) {
 			var capability = capabilitiesById.get(row.capabilityId());
 			overrides.computeIfAbsent(capability.key(), k -> new ArrayList<>())
 					.add(RowMappers.toOverride(row, accountExternalId, capability));
@@ -221,8 +262,19 @@ public class RecordViewAssembler {
 		Map<CapabilityKey, List<AccountOverride>> frozenOverrides = new LinkedHashMap<>();
 		overrides.forEach((key, list) -> frozenOverrides.put(key, List.copyOf(list)));
 
+		// Screen 3 groups an account's overrides by standing (c18), so the slice carries the whole
+		// known set per capability, not only the counting ones.
+		Map<CapabilityKey, List<AccountOverrideRow>> knownRows = new LinkedHashMap<>();
+		for (var row : queryKnownOverridesForAccount(client, account.id(), Timestamps.iso(now))) {
+			var capability = capabilitiesById.get(row.capabilityId());
+			knownRows.computeIfAbsent(capability.key(), k -> new ArrayList<>()).add(row);
+		}
+		Map<CapabilityKey, List<StandingOverride>> known = new LinkedHashMap<>();
+		knownRows.forEach((key, rows) ->
+				known.put(key, standing(rows, accountExternalId, capabilities.get(key), today)));
+
 		return new RecordBackedView(RecordBackedView.Mode.ACCOUNT_SLICE, version, accountExternalId, assignment,
-				Map.copyOf(capabilities), Map.copyOf(entitlements), Map.copyOf(frozenOverrides));
+				Map.copyOf(capabilities), Map.copyOf(entitlements), Map.copyOf(frozenOverrides), Map.copyOf(known));
 	}
 
 	// Query helpers. The SQL matches DecisionReadDao's text; it is repeated here rather than
@@ -299,24 +351,52 @@ public class RecordViewAssembler {
 				.list();
 	}
 
-	private List<AccountOverrideRow> queryLiveOverrides(JdbcClient client, long accountId, long capabilityId) {
+	private List<AccountOverrideRow> queryInForceOverrides(
+			JdbcClient client, long accountId, long capabilityId, LocalDate asOf) {
 		return client.sql("""
 				SELECT * FROM account_override
-				WHERE account_id = :accountId AND capability_id = :capabilityId AND removed_at IS NULL
-				ORDER BY id
-				""")
+				WHERE account_id = :accountId AND capability_id = :capabilityId AND
+				""" + AccountOverrideRepository.IN_FORCE + " ORDER BY id")
 				.param("accountId", accountId)
 				.param("capabilityId", capabilityId)
+				.param("asOf", asOf.toString())
 				.query(ACCOUNT_OVERRIDE_ROW_MAPPER)
 				.list();
 	}
 
-	private List<AccountOverrideRow> queryLiveOverridesForAccount(JdbcClient client, long accountId) {
+	private List<AccountOverrideRow> queryInForceOverridesForAccount(JdbcClient client, long accountId, LocalDate asOf) {
 		return client.sql("""
-				SELECT * FROM account_override WHERE account_id = :accountId AND removed_at IS NULL
+				SELECT * FROM account_override WHERE account_id = :accountId AND
+				""" + AccountOverrideRepository.IN_FORCE + " ORDER BY capability_id, id")
+				.param("accountId", accountId)
+				.param("asOf", asOf.toString())
+				.query(ACCOUNT_OVERRIDE_ROW_MAPPER)
+				.list();
+	}
+
+	/** Every override that existed at {@code createdAtOrBefore}, whatever its standing (c19, c25). */
+	private List<AccountOverrideRow> queryKnownOverrides(
+			JdbcClient client, long accountId, long capabilityId, String createdAtOrBefore) {
+		return client.sql("""
+				SELECT * FROM account_override
+				WHERE account_id = :accountId AND capability_id = :capabilityId AND created_at <= :asOf
+				ORDER BY id
+				""")
+				.param("accountId", accountId)
+				.param("capabilityId", capabilityId)
+				.param("asOf", createdAtOrBefore)
+				.query(ACCOUNT_OVERRIDE_ROW_MAPPER)
+				.list();
+	}
+
+	private List<AccountOverrideRow> queryKnownOverridesForAccount(
+			JdbcClient client, long accountId, String createdAtOrBefore) {
+		return client.sql("""
+				SELECT * FROM account_override WHERE account_id = :accountId AND created_at <= :asOf
 				ORDER BY capability_id, id
 				""")
 				.param("accountId", accountId)
+				.param("asOf", createdAtOrBefore)
 				.query(ACCOUNT_OVERRIDE_ROW_MAPPER)
 				.list();
 	}

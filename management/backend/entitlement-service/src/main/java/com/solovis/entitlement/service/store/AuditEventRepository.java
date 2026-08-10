@@ -28,7 +28,8 @@ public class AuditEventRepository {
 			rs.getString("before_json"),
 			rs.getString("after_json"),
 			rs.getString("reason"),
-			rs.getObject("affected_account_count") == null ? null : rs.getLong("affected_account_count"));
+			rs.getObject("affected_account_count") == null ? null : rs.getLong("affected_account_count"),
+			rs.getString("window_transition"));
 
 	private final JdbcClient jdbcClient;
 
@@ -41,12 +42,15 @@ public class AuditEventRepository {
 		jdbcClient.sql("""
 				INSERT INTO audit_event (
 				    occurred_at, actor_kind, actor_id, source, entity_type, entity_id, action,
-				    account_id, plan_id, capability_id, before_json, after_json, reason, affected_account_count
+				    account_id, plan_id, capability_id, before_json, after_json, reason, affected_account_count,
+				    window_transition
 				) VALUES (
 				    :occurredAt, :actorKind, :actorId, :source, :entityType, :entityId, :action,
-				    :accountId, :planId, :capabilityId, :beforeJson, :afterJson, :reason, :affectedAccountCount
+				    :accountId, :planId, :capabilityId, :beforeJson, :afterJson, :reason, :affectedAccountCount,
+				    :windowTransition
 				)
 				""")
+				.param("windowTransition", row.windowTransition())
 				.param("occurredAt", row.occurredAt())
 				.param("actorKind", row.actorKind())
 				.param("actorId", row.actorId())
@@ -95,6 +99,9 @@ public class AuditEventRepository {
 		if (filter.planId() != null) {
 			sql.append(" AND plan_id = :planId");
 		}
+		if (filter.capabilityId() != null) {
+			sql.append(" AND capability_id = :capabilityId");
+		}
 		if (filter.actorId() != null) {
 			sql.append(" AND actor_id = :actorId");
 		}
@@ -118,6 +125,9 @@ public class AuditEventRepository {
 		}
 		if (filter.planId() != null) {
 			spec = spec.param("planId", filter.planId());
+		}
+		if (filter.capabilityId() != null) {
+			spec = spec.param("capabilityId", filter.capabilityId());
 		}
 		if (filter.actorId() != null) {
 			spec = spec.param("actorId", filter.actorId());

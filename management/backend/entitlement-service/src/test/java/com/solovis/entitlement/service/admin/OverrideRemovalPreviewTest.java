@@ -149,7 +149,7 @@ class OverrideRemovalPreviewTest {
         long accountId = accountRepository.findByExternalId("tprev_acct_5").orElseThrow().id();
         long latestRowBefore = snapshotVersionRepository.findLatest().orElseThrow().version();
         int auditCountBefore = auditEventRepository
-            .find(new AuditEventFilter(accountId, null, null, null, null, null, null, 100)).size();
+            .find(new AuditEventFilter(accountId, null, null, null, null, null, null, null, 100)).size();
 
         overrideService.previewRemoval("tprev_acct_5", grant.overrideId());
 
@@ -158,7 +158,7 @@ class OverrideRemovalPreviewTest {
         assertThat(row.removedAt()).isNull();
         assertThat(accountOverrideRepository.findLiveForAccount(accountId))
             .extracting(o -> "ovr_" + o.id()).contains(grant.overrideId());
-        assertThat(auditEventRepository.find(new AuditEventFilter(accountId, null, null, null, null, null, null, 100)))
+        assertThat(auditEventRepository.find(new AuditEventFilter(accountId, null, null, null, null, null, null, null, 100)))
             .hasSize(auditCountBefore);
         assertThat(snapshotVersionRepository.findLatest().orElseThrow().version()).isEqualTo(latestRowBefore);
     }

@@ -65,12 +65,12 @@ export function makeAccount(): AccountDetail {
       {
         id: 'ovr_4471', capability: 'reports.monthly', kind: 'GRANT', value: { type: 'QUANTITY', amount: 200 },
         reason: 'Renewal concession — Q3 pilot', createdBy: 'j.okafor', createdAt: '2026-06-02T09:12:44.000Z',
-        effectNow: 'OVERRIDDEN_BY_HOLD',
+        effectNow: 'OVERRIDDEN_BY_HOLD', standing: 'IN_FORCE' as const,
       },
       {
         id: 'ovr_7788', capability: 'reports.monthly', kind: 'HOLD', value: { type: 'QUANTITY', amount: 0 },
         reason: 'Suspended pending billing investigation', createdBy: 'billing-bot', createdAt: '2026-08-01T02:00:00.000Z',
-        effectNow: 'WINNING',
+        effectNow: 'WINNING', standing: 'IN_FORCE' as const,
       },
     ],
   }
