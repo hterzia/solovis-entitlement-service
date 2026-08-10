@@ -5,8 +5,8 @@ import com.solovis.entitlement.service.api.dto.SnapshotDeltaResponseDto;
 import com.solovis.entitlement.service.api.dto.SnapshotVersionResponseDto;
 import com.solovis.entitlement.service.snapshot.DeltaFeedService;
 import com.solovis.entitlement.service.snapshot.FullSnapshotWriter;
-import com.solovis.entitlement.service.snapshot.SnapshotHolder;
 import com.solovis.entitlement.service.store.SnapshotVersionRepository;
+import com.solovis.entitlement.service.store.SnapshotVersionRow;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -19,15 +19,13 @@ import java.util.zip.GZIPOutputStream;
 @RequestMapping("/v1/snapshot")
 public class SnapshotFeedController {
 
-    private final SnapshotHolder snapshotHolder;
     private final FullSnapshotWriter fullSnapshotWriter;
     private final DeltaFeedService deltaFeedService;
     private final SnapshotVersionRepository snapshotVersionRepository;
     private final Clock clock;
 
-    public SnapshotFeedController(SnapshotHolder snapshotHolder, FullSnapshotWriter fullSnapshotWriter, DeltaFeedService deltaFeedService,
+    public SnapshotFeedController(FullSnapshotWriter fullSnapshotWriter, DeltaFeedService deltaFeedService,
             SnapshotVersionRepository snapshotVersionRepository, Clock clock) {
-        this.snapshotHolder = snapshotHolder;
         this.fullSnapshotWriter = fullSnapshotWriter;
         this.deltaFeedService = deltaFeedService;
         this.snapshotVersionRepository = snapshotVersionRepository;
@@ -36,17 +34,16 @@ public class SnapshotFeedController {
 
     @GetMapping("/version")
     public ResponseEntity<SnapshotVersionResponseDto> version() {
-        var snapshot = snapshotHolder.current();
-        String publishedAt = snapshotVersionRepository.findByVersion(snapshot.snapshotVersion())
-            .map(row -> row.publishedAt())
-            .orElseGet(() -> clock.instant().toString());
-        var body = new SnapshotVersionResponseDto(snapshot.snapshotVersion(), publishedAt, 1, ResolverContract.VERSION);
+        var latest = snapshotVersionRepository.findLatest();
+        long version = latest.map(SnapshotVersionRow::version).orElse(0L);
+        String publishedAt = latest.map(SnapshotVersionRow::publishedAt).orElseGet(() -> clock.instant().toString());
+        var body = new SnapshotVersionResponseDto(version, publishedAt, 1, ResolverContract.VERSION);
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(body);
     }
 
     @GetMapping(value = "/full", produces = "application/x-ndjson")
     public ResponseEntity<StreamingResponseBody> full() {
-        var snapshot = snapshotHolder.current();
+        var snapshot = deltaFeedService.fullSnapshot();
         StreamingResponseBody body = out -> {
             try (var gzip = new GZIPOutputStream(out)) {
                 fullSnapshotWriter.write(snapshot, gzip);

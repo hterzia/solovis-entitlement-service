@@ -1,5 +1,6 @@
 package com.solovis.entitlement.service.snapshot;
 
+import com.solovis.entitlement.service.store.SnapshotVersionRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -13,12 +14,16 @@ class DeltaFeedServiceTest {
 
     @Autowired DeltaFeedService deltaFeedService;
     @Autowired SnapshotPublisher snapshotPublisher;
-    @Autowired SnapshotHolder snapshotHolder;
+    @Autowired SnapshotVersionRepository snapshotVersionRepository;
     @Autowired PlatformTransactionManager entitlementTransactionManager;
+
+    private long currentVersion() {
+        return snapshotVersionRepository.findLatest().map(row -> row.version()).orElse(0L);
+    }
 
     @Test
     void sinceEqualsCurrentReturnsEmptyChanges() {
-        long current = snapshotHolder.current().snapshotVersion();
+        long current = currentVersion();
         var result = deltaFeedService.since(current);
         assertThat(result.changes()).isEmpty();
         assertThat(result.fromVersion()).isEqualTo(current);
@@ -27,7 +32,7 @@ class DeltaFeedServiceTest {
 
     @Test
     void sinceGreaterThanCurrentIsRejected() {
-        long current = snapshotHolder.current().snapshotVersion();
+        long current = currentVersion();
         assertThatThrownByGreaterThanCurrent(current);
     }
 

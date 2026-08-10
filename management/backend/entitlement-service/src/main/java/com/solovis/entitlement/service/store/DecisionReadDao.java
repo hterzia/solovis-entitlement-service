@@ -212,4 +212,32 @@ public class DecisionReadDao {
 				.query(PLAN_ENTITLEMENT_ROW_MAPPER)
 				.list();
 	}
+
+	public List<PlanRow> allPlans() {
+		return jdbcClient.sql("SELECT * FROM plan ORDER BY key")
+				.query(PLAN_ROW_MAPPER)
+				.list();
+	}
+
+	public List<AccountRow> activeAccounts() {
+		return jdbcClient.sql("SELECT * FROM account WHERE status = 'ACTIVE'")
+				.query(ACCOUNT_ROW_MAPPER)
+				.list();
+	}
+
+	public List<AccountOverrideRow> allLiveOverrides() {
+		return jdbcClient.sql("SELECT * FROM account_override WHERE removed_at IS NULL")
+				.query(ACCOUNT_OVERRIDE_ROW_MAPPER)
+				.list();
+	}
+
+	public List<SnapshotVersionRow> findSince(long since, int limit) {
+		return jdbcClient.sql("""
+				SELECT * FROM snapshot_version WHERE version > :since ORDER BY version ASC LIMIT :limit
+				""")
+				.param("since", since)
+				.param("limit", limit)
+				.query(SNAPSHOT_VERSION_ROW_MAPPER)
+				.list();
+	}
 }

@@ -6,7 +6,7 @@ import com.solovis.entitlement.core.conformance.ResolverContract;
 import com.solovis.entitlement.service.admin.dto.CapabilityCreateRequest;
 import com.solovis.entitlement.service.admin.service.CapabilityAdminService;
 import com.solovis.entitlement.service.dto.ValueDto;
-import com.solovis.entitlement.service.snapshot.SnapshotHolder;
+import com.solovis.entitlement.service.store.SnapshotVersionRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -30,16 +30,20 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 class SnapshotFeedControllerTest {
 
     @Autowired MockMvc mockMvc;
-    @Autowired SnapshotHolder snapshotHolder;
+    @Autowired SnapshotVersionRepository snapshotVersionRepository;
     @Autowired CapabilityAdminService capabilityAdminService;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static final String MILLIS_ISO_8601_PATTERN = "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z";
 
+    private long currentVersion() {
+        return snapshotVersionRepository.findLatest().map(row -> row.version()).orElse(0L);
+    }
+
     @Test
     void versionReflectsTheHeldSnapshotAndDisablesCaching() throws Exception {
-        long current = snapshotHolder.current().snapshotVersion();
+        long current = currentVersion();
 
         mockMvc.perform(get("/v1/snapshot/version"))
             .andExpect(status().isOk())
@@ -86,7 +90,7 @@ class SnapshotFeedControllerTest {
         JsonNode footer = lines.get(lines.size() - 1);
         assertThat(header.get("kind").asText()).isEqualTo("header");
         assertThat(footer.get("kind").asText()).isEqualTo("footer");
-        long current = snapshotHolder.current().snapshotVersion();
+        long current = currentVersion();
         assertThat(header.get("version").asLong()).isEqualTo(current);
         assertThat(footer.get("version").asLong()).isEqualTo(current);
         assertThat(footer.get("recordCount").asInt()).isEqualTo(lines.size());
@@ -114,7 +118,7 @@ class SnapshotFeedControllerTest {
 
     @Test
     void deltaSinceCurrentVersionReturnsEmptyChanges() throws Exception {
-        long current = snapshotHolder.current().snapshotVersion();
+        long current = currentVersion();
 
         mockMvc.perform(get("/v1/snapshot").param("since", String.valueOf(current)))
             .andExpect(status().isOk())
@@ -126,7 +130,7 @@ class SnapshotFeedControllerTest {
 
     @Test
     void deltaChangesAreFlatObjectsMatchingTheContractNotNestedUnderAChangeKey() throws Exception {
-        long before = snapshotHolder.current().snapshotVersion();
+        long before = currentVersion();
         capabilityAdminService.create(new CapabilityCreateRequest("t9c.delta-shape.probe", "Delta shape probe", null, "SWITCH",
             new ValueDto("SWITCH", false, null, null, null, null), null, null));
 
@@ -144,7 +148,7 @@ class SnapshotFeedControllerTest {
 
     @Test
     void deltaSinceAheadOfCurrentVersionIsRejectedAsValidationFailed() throws Exception {
-        long current = snapshotHolder.current().snapshotVersion();
+        long current = currentVersion();
 
         mockMvc.perform(get("/v1/snapshot").param("since", String.valueOf(current + 1000)))
             .andExpect(status().isUnprocessableEntity())
