@@ -178,6 +178,28 @@ test.describe('Screen 4 — checker', () => {
     await expect(page.getByText('Renewal concession — Q3 pilot')).toBeVisible()
   })
 
+  test('the capability and account fields suggest what the service actually has', async ({ page }) => {
+    await page.goto('/checker')
+
+    // <option>s inside a <datalist> are never visible, so read their values rather than
+    // asserting visibility. Exact array membership, not substring: capability keys overlap
+    // as substrings and this suite shares one service.
+    const capabilityValues = () =>
+      page.locator('#checker-capabilities option')
+        .evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value))
+
+    await expect.poll(capabilityValues).toContain('reports.monthly')
+
+    const accountValues = () =>
+      page.locator('#checker-accounts option')
+        .evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value))
+
+    // Empty until asked, then filled from a live `q` search.
+    expect(await accountValues()).toEqual([])
+    await page.getByLabel('Account').fill('acct_9931')
+    await expect.poll(accountValues).toContain('acct_9931')
+  })
+
   test('an unknown account is an error, never a denial', async ({ page }) => {
     await page.goto('/checker')
     await page.getByLabel('Account').fill('acct_does_not_exist')
