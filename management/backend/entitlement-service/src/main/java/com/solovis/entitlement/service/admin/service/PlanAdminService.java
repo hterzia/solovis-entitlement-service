@@ -32,12 +32,15 @@ public class PlanAdminService {
     private final AuditJson auditJson;
     private final ActorResolver actorResolver;
     private final SnapshotPublisher snapshotPublisher;
-    private final SnapshotHolder snapshotHolder;
+    private final DecisionReadDao decisionReadDao;
+    private final SnapshotAssembler snapshotAssembler;
+    private final SnapshotVersionRepository snapshotVersionRepository;
     private final Clock clock;
 
     public PlanAdminService(PlanRepository planRepository, CapabilityRepository capabilityRepository,
             PlanEntitlementRepository planEntitlementRepository, AuditRecorder auditRecorder, AuditJson auditJson, ActorResolver actorResolver,
-            SnapshotPublisher snapshotPublisher, SnapshotHolder snapshotHolder, Clock clock) {
+            SnapshotPublisher snapshotPublisher, DecisionReadDao decisionReadDao, SnapshotAssembler snapshotAssembler,
+            SnapshotVersionRepository snapshotVersionRepository, Clock clock) {
         this.planRepository = planRepository;
         this.capabilityRepository = capabilityRepository;
         this.planEntitlementRepository = planEntitlementRepository;
@@ -45,7 +48,9 @@ public class PlanAdminService {
         this.auditJson = auditJson;
         this.actorResolver = actorResolver;
         this.snapshotPublisher = snapshotPublisher;
-        this.snapshotHolder = snapshotHolder;
+        this.decisionReadDao = decisionReadDao;
+        this.snapshotAssembler = snapshotAssembler;
+        this.snapshotVersionRepository = snapshotVersionRepository;
         this.clock = clock;
     }
 
@@ -105,30 +110,36 @@ public class PlanAdminService {
 
     public PlanPreviewResponseDto preview(String key, PlanEntitlementEditRequest request) {
         var row = requireRow(key);
-        Snapshot snapshot = snapshotHolder.current();
         var diffs = new ArrayList<PlanPreviewResponseDto.Diff>();
         Map<String, String> canonicalSet = new LinkedHashMap<>();
         for (var entry : request.set().entrySet()) {
             var capability = requireDomainCapability(entry.getKey());
             var newValue = ValueMapper.fromDto(entry.getValue(), capability);
-            var before = snapshot.planEntitlement(key, capability.key()).map(pe -> ValueMapper.toDto(pe.value())).orElse(null);
+            var capRow = capabilityRepository.findByKey(entry.getKey()).orElseThrow();
+            var before = planEntitlementRepository.find(row.id(), capRow.id())
+                .map(pe -> ValueMapper.toDto(RowMappers.toPlanEntitlement(pe, key, capability).value())).orElse(null);
             diffs.add(new PlanPreviewResponseDto.Diff(entry.getKey(), before, ValueMapper.toDto(newValue), null));
             canonicalSet.put(entry.getKey(), newValue.valueType() + ":" + newValue);
         }
         for (var capabilityKey : request.unset()) {
             var capability = requireDomainCapability(capabilityKey);
-            var before = snapshot.planEntitlement(key, capability.key()).map(pe -> ValueMapper.toDto(pe.value())).orElse(null);
+            var capRow = capabilityRepository.findByKey(capabilityKey).orElseThrow();
+            var before = planEntitlementRepository.find(row.id(), capRow.id())
+                .map(pe -> ValueMapper.toDto(RowMappers.toPlanEntitlement(pe, key, capability).value())).orElse(null);
             diffs.add(new PlanPreviewResponseDto.Diff(capabilityKey, before,
                 ValueMapper.toDto(capability.defaultValue()), "Falls back to the capability default."));
         }
 
         PlanPreviewResponseDto.PreviewAccount previewAccount = null;
+        Long freshVersion = null;
         if (request.previewAccount() != null) {
-            Snapshot hypothetical = applyEdit(snapshot, key, request, snapshot.snapshotVersion());
+            Snapshot fresh = snapshotAssembler.assembleFull();
+            freshVersion = fresh.snapshotVersion();
+            Snapshot hypothetical = applyEdit(fresh, key, request, fresh.snapshotVersion());
             var effects = new ArrayList<PlanPreviewResponseDto.Effect>();
             for (var diff : diffs) {
                 var capKey = new CapabilityKey(diff.capability());
-                var beforeExplanation = Resolver.explain(snapshot, request.previewAccount(), capKey, clock.instant());
+                var beforeExplanation = Resolver.explain(fresh, request.previewAccount(), capKey, clock.instant());
                 var afterExplanation = Resolver.explain(hypothetical, request.previewAccount(), capKey, clock.instant());
                 var capability = requireDomainCapability(diff.capability());
                 var beforeDto = DecisionMapper.toResponse(beforeExplanation, capability);
@@ -141,14 +152,15 @@ public class PlanAdminService {
         }
 
         long affected = planRepository.countAccounts(row.id());
-        String token = PreviewTokenCodec.compute(key, canonicalSet, request.unset(), snapshot.snapshotVersion());
+        long version = freshVersion != null ? freshVersion : decisionReadDao.latestVersion();
+        String token = PreviewTokenCodec.compute(key, canonicalSet, request.unset(), version);
         return new PlanPreviewResponseDto(key, affected, diffs, previewAccount, token);
     }
 
     @Transactional
     public PlanApplyResponseDto apply(String key, PlanEntitlementEditRequest request) {
         var row = requireRow(key);
-        Snapshot before = snapshotHolder.current();
+        long currentVersion = snapshotVersionRepository.findLatest().map(SnapshotVersionRow::version).orElse(0L);
         Map<String, String> canonicalSet = new LinkedHashMap<>();
         Map<String, ValueDto> setDtos = new LinkedHashMap<>();
         for (var entry : request.set().entrySet()) {
@@ -161,7 +173,7 @@ public class PlanAdminService {
             canonicalSet.put(entry.getKey(), value.valueType() + ":" + value);
             setDtos.put(entry.getKey(), ValueMapper.toDto(value));
         }
-        String expectedToken = PreviewTokenCodec.compute(key, canonicalSet, request.unset(), before.snapshotVersion());
+        String expectedToken = PreviewTokenCodec.compute(key, canonicalSet, request.unset(), currentVersion);
         if (request.previewToken() == null || !request.previewToken().equals(expectedToken)) {
             throw new EntitlementApiException(ErrorCode.PREVIEW_TOKEN_INVALID,
                 "The preview token is missing or was computed against a different snapshot version.");

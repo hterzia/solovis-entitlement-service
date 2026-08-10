@@ -5,7 +5,7 @@ import com.solovis.entitlement.service.admin.service.CapabilityAdminService;
 import com.solovis.entitlement.service.dto.ValueDto;
 import com.solovis.entitlement.service.error.EntitlementApiException;
 import com.solovis.entitlement.service.error.ErrorCode;
-import com.solovis.entitlement.service.snapshot.SnapshotHolder;
+import com.solovis.entitlement.service.store.DecisionReadDao;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -15,31 +15,29 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Deliberately not {@code @Transactional}: {@link CapabilityAdminService#create} and
- * {@code #patch} publish into {@link SnapshotHolder} from a {@code TransactionSynchronization
- * .afterCommit()} callback (see SnapshotPublisher), which never fires if the whole test method
- * runs inside an outer test-managed transaction that always rolls back. Its writes also can't be
- * cleaned up after the fact: every created capability gets an audit_event row referencing it, and
- * audit_event is append-only (BEFORE DELETE/UPDATE triggers RAISE(ABORT) — see V1__baseline.sql),
- * so the capability row can never be deleted afterward either. This class's commits are permanent
- * for the life of the test JVM, same as SnapshotPublisherTest's manual-transaction case.
+ * Deliberately not {@code @Transactional}: assertions here read back through {@link DecisionReadDao},
+ * which queries the read pool on its own connection, so a write left uncommitted in an outer
+ * test-managed transaction (which always rolls back) would never become visible to it. Its writes
+ * also can't be cleaned up after the fact: every created capability gets an audit_event row
+ * referencing it, and audit_event is append-only (BEFORE DELETE/UPDATE triggers RAISE(ABORT) — see
+ * V1__baseline.sql), so the capability row can never be deleted afterward either. This class's
+ * commits are permanent for the life of the test JVM, same as SnapshotPublisherTest's manual-transaction case.
  */
 @SpringBootTest
 class CapabilityAdminServiceTest {
 
     @Autowired CapabilityAdminService service;
-    @Autowired SnapshotHolder snapshotHolder;
+    @Autowired DecisionReadDao decisionReadDao;
 
     @Test
-    void createPublishesTheCapabilityIntoTheLiveSnapshot() {
+    void createPublishesTheCapabilityDurablyToReads() {
         var request = new CapabilityCreateRequest("reports.monthly", "Monthly reports", "desc", "QUANTITY",
             new ValueDto("QUANTITY", null, 0L, null, null, null), null, null);
 
         var created = service.create(request);
 
         assertThat(created.key()).isEqualTo("reports.monthly");
-        assertThat(snapshotHolder.current().capability(new com.solovis.entitlement.core.model.CapabilityKey("reports.monthly")))
-            .isPresent();
+        assertThat(decisionReadDao.capabilityByKey("reports.monthly")).isPresent();
     }
 
     @Test
@@ -97,9 +95,7 @@ class CapabilityAdminServiceTest {
         assertThat(updated.description()).isEqualTo("new desc");
         assertThat(updated.defaultValue().amount()).isEqualTo(10L);
         assertThat(service.get("billing.invoices").displayName()).isEqualTo("Invoices v2");
-        assertThat(snapshotHolder.current()
-            .capability(new com.solovis.entitlement.core.model.CapabilityKey("billing.invoices"))
-            .orElseThrow().displayName()).isEqualTo("Invoices v2");
+        assertThat(decisionReadDao.capabilityByKey("billing.invoices").orElseThrow().displayName()).isEqualTo("Invoices v2");
     }
 
     @Test

@@ -3,7 +3,6 @@ package com.solovis.entitlement.service.admin.service;
 import com.solovis.entitlement.core.engine.Explanation;
 import com.solovis.entitlement.core.engine.Resolver;
 import com.solovis.entitlement.core.model.*;
-import com.solovis.entitlement.core.view.Snapshot;
 import com.solovis.entitlement.service.admin.dto.*;
 import com.solovis.entitlement.service.api.DecisionMapper;
 import com.solovis.entitlement.service.audit.ActorResolver;
@@ -31,12 +30,13 @@ public class AccountAdminService {
     private final AuditJson auditJson;
     private final ActorResolver actorResolver;
     private final SnapshotPublisher snapshotPublisher;
-    private final SnapshotHolder snapshotHolder;
+    private final RecordViewAssembler recordViewAssembler;
     private final Clock clock;
 
     public AccountAdminService(AccountRepository accountRepository, AccountOverrideRepository accountOverrideRepository,
             PlanRepository planRepository, CapabilityRepository capabilityRepository, AuditRecorder auditRecorder,
-            AuditJson auditJson, ActorResolver actorResolver, SnapshotPublisher snapshotPublisher, SnapshotHolder snapshotHolder, Clock clock) {
+            AuditJson auditJson, ActorResolver actorResolver, SnapshotPublisher snapshotPublisher,
+            RecordViewAssembler recordViewAssembler, Clock clock) {
         this.accountRepository = accountRepository;
         this.accountOverrideRepository = accountOverrideRepository;
         this.planRepository = planRepository;
@@ -45,7 +45,7 @@ public class AccountAdminService {
         this.auditJson = auditJson;
         this.actorResolver = actorResolver;
         this.snapshotPublisher = snapshotPublisher;
-        this.snapshotHolder = snapshotHolder;
+        this.recordViewAssembler = recordViewAssembler;
         this.clock = clock;
     }
 
@@ -80,12 +80,12 @@ public class AccountAdminService {
         var row = accountRepository.findByExternalId(external)
             .orElseThrow(() -> new com.solovis.entitlement.core.error.UnknownAccountException(external));
         var planRow = planRepository.findById(row.planId()).orElseThrow();
-        Snapshot snapshot = snapshotHolder.current();
+        var view = recordViewAssembler.accountView(external);
 
         Map<Long, Explanation> explanationsByCapabilityId = new HashMap<>();
         var entitlements = new ArrayList<AccountDetailDto.EntitlementRow>();
-        for (var capability : snapshot.activeCapabilities()) {
-            var explanation = Resolver.explain(snapshot, external, capability.key(), clock.instant());
+        for (var capability : view.activeCapabilities()) {
+            var explanation = Resolver.explain(view, external, capability.key(), clock.instant());
             var capRow = capabilityRepository.findByKey(capability.key().value()).orElseThrow();
             explanationsByCapabilityId.put(capRow.id(), explanation);
             var trace = explanation.trace();
@@ -123,7 +123,7 @@ public class AccountAdminService {
 
         return new AccountDetailDto(external, row.name(), row.status(),
             new AccountDetailDto.PlanInfo(planRow.key(), planRow.name(), row.planAssignedAt(), row.planAssignmentActor(), row.planAssignmentSource()),
-            snapshot.snapshotVersion(), entitlements, overrides);
+            view.snapshotVersion(), entitlements, overrides);
     }
 
     /**

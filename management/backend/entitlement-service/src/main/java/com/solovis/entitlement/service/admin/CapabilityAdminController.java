@@ -2,7 +2,7 @@ package com.solovis.entitlement.service.admin;
 
 import com.solovis.entitlement.service.admin.dto.*;
 import com.solovis.entitlement.service.admin.service.CapabilityAdminService;
-import com.solovis.entitlement.service.snapshot.SnapshotHolder;
+import com.solovis.entitlement.service.store.DecisionReadDao;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -12,11 +12,11 @@ import org.springframework.web.bind.annotation.*;
 public class CapabilityAdminController {
 
     private final CapabilityAdminService service;
-    private final SnapshotHolder snapshotHolder;
+    private final DecisionReadDao decisionReadDao;
 
-    public CapabilityAdminController(CapabilityAdminService service, SnapshotHolder snapshotHolder) {
+    public CapabilityAdminController(CapabilityAdminService service, DecisionReadDao decisionReadDao) {
         this.service = service;
-        this.snapshotHolder = snapshotHolder;
+        this.decisionReadDao = decisionReadDao;
     }
 
     @GetMapping
@@ -24,7 +24,7 @@ public class CapabilityAdminController {
         @RequestParam(required = false) String area,
         @RequestParam(required = false, defaultValue = "ACTIVE") String status,
         @RequestParam(required = false) String q) {
-        return new CapabilityListResponseDto(service.list(area, status, q), snapshotHolder.current().snapshotVersion());
+        return new CapabilityListResponseDto(service.list(area, status, q), decisionReadDao.latestVersion());
     }
 
     @PostMapping
