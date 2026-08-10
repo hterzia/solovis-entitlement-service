@@ -3,7 +3,7 @@
 **Branch**: `002-time-bound-override` | **Date**: 2026-08-09 | **Spec**: [`spec.md`](./spec.md)
 **Builds on**: [`001-entitlement-service/`](../001-entitlement-service/). Criterion references *(c14)* are **002's** criteria unless prefixed *v1*, in which case they point at [`001-entitlement-service/spec.md`](../001-entitlement-service/spec.md) §10.
 
-**Baseline**: branch `worktree-entitlement-service-api-layer`, **not `main`** — 001's service work lives there, having been assembled from sibling task worktrees merged back as each review cleared. Modules are under `management/backend/{entitlement-core,entitlement-service,entitlement-client}` and `management/frontend/management-ui`; 001's `plan.md` shows them at the repository root, which is stale and should be corrected there rather than followed here.
+**Baseline** *(revised 2026-08-10)*: **001 is complete and merged to `main`.** Modules are under `management/backend/{entitlement-core,entitlement-service,entitlement-client}` and `management/frontend/management-ui`; 001's `plan.md` shows them at the repository root, which is stale and should be corrected there rather than followed here. The 002 implementation itself lives on branch `002-time-bound-override`, which `main` has since moved ahead of.
 
 What 001 has actually landed, and therefore what each 002 phase can stand on:
 
@@ -12,12 +12,13 @@ What 001 has actually landed, and therefore what each 002 phase can stand on:
 | `entitlement-core` — model, order, view, engine, conformance | Built | Phase 1 edits it directly |
 | `entitlement-service` — `store/`, `audit/`, `snapshot/` (`SnapshotAssembler`, `SnapshotHolder`, `SnapshotPublisher`, `SnapshotStartup`, `DeltaFeedService`), `error/ErrorCode`, `time/ClockConfig` | Built | Phases 2, 3 and 5 extend these; the class names this plan uses are the real ones |
 | `api/` — `DecisionController`, `SnapshotFeedController` | Built | Phase 1's trace additions surface here with no new route |
-| `admin/` — **only `CapabilityAdminController`** | Partial | **Phase 4 is blocked**: the plan, account, override, checker and audit admin controllers do not exist yet, and 002 adds fields and parameters to routes 001 has not written |
-| `entitlement-client` (SDK) | Not started | **c14's outage demonstration is blocked** — there is no replica to cut off |
-| Operator SPA | Scaffold only | **Phase 6 is blocked** — there are no screens to extend |
-| `seed/`, load-test harness | Not started | **Phase 7 is blocked** — c15 needs 001's harness, and c22–c29 need seeded history |
+| `admin/` — every controller and service | Built | Phase 5 extends them |
+| `entitlement-client` (SDK) | **Built** — `Replica`, `DeltaApplier`, `FullSnapshotReader`, `ConformanceGate`, poller, disk cache, with their own tests | **c14 is demonstrable**: there is now a replica to cut off. Its test suite is also the safety net for the read-path sub-plan |
+| Operator SPA | Built — all five screens | Phase 6 extends screens 3, 4 and 5 |
+| `seed/DemoDataSeeder` | Built, disabled by default | Phase 7 extends it with a backdated trail |
+| Load demonstration | Moved to [`004-load-demonstration`](../004-load-demonstration/) | c15 is evidenced there, not here |
 
-Phases 1, 2, 3 and 5 can proceed against this baseline today. Phases 4, 6 and 7 wait on the 001 work named above, and the sequencing section below reflects that rather than assuming a finished v1.
+Every phase can now proceed against this baseline. The only remaining ordering constraint is 002's own: the last mile of c19–c21 waits on the read-path change described in [`plan-read-path.md`](./plan-read-path.md).
 
 ## Summary
 
@@ -29,7 +30,7 @@ The consequence is that **`Resolver.resolve()` does not change at all, `resolver
 
 The second structural idea is smaller and comes from the date semantics. A start begins at the start of its day and an expiry runs to the end of its day, both on one clock, so **every window boundary in the system falls at midnight**. The "clock moved" problem that `future-spec` warned would need designing turns out to be one scheduled job a day, plus a catch-up on startup for the case where the service was down over a midnight.
 
-Explanations grow. The checker must now say *there was a GRANT of 200 and it ended on 30 June* rather than *no GRANT in force*, which means `explain()` needs the overrides that `resolve()` filtered out. They travel in the management service's own snapshot, never on the feed, which keeps them on the same side of the line as reason text and authorship.
+Explanations grow. The checker must now say *there was a GRANT of 200 and it ended on 30 June* rather than *no GRANT in force*, which means `explain()` needs the overrides that `resolve()` filtered out. Those come from the record itself, read at the moment of asking — never from the feed, which keeps them on the same side of the line as reason text and authorship. That supply is what [`plan-read-path.md`](./plan-read-path.md) delivers, and why c19–c21 wait on it.
 
 ## Technical Context
 
@@ -155,7 +156,9 @@ Four lookups then build the view:
 
 ### 5. Retention is already satisfied — by 001's triggers
 
-c32 (seven years) and c33 (establishing entries kept as long as their value stands) need **no pruning logic, because 001 has none and its schema forbids adding any**: `trg_audit_no_delete` raises on `DELETE` against `audit_event`. Retention is therefore unbounded and enforced by the engine rather than by a policy someone must remember.
+c32 (seven years) and c33 (establishing entries kept as long as their value stands) need **no pruning logic on the audit trail, because its schema forbids adding any**: `trg_audit_no_delete` raises on `DELETE` against `audit_event`. Audit retention is therefore unbounded and enforced by the engine rather than by a policy someone must remember.
+
+**001 does prune, but not this table.** `SnapshotVersionPruner` enforces the delta-retention horizon on `snapshot_version`, and the two must never share a retention story: a version row exists only so a replica can be carried from *V* to *V+1*, and once no replica could still be that far behind it answers a question nobody will ask. Pruning it is what makes `410 entitlement/snapshot-too-old` reachable and the SDK's full-resync path real. Removing an audit entry, by contrast, is forbidden outright. Nothing about that pruner touches c32 or c33.
 
 002's work here is consequently small and mostly evidential: raise the documented floor from twenty-four months to seven years, and add a test that asserts a `DELETE` against `audit_event` is refused — turning a schema property into a demonstrated criterion. The plan records one obligation for the future rather than building it now: **any pruning job ever added must exclude the most recent establishing entry per `(entity_type, entity_id, capability_id)`**, and the test above is what will fail if someone forgets.
 
