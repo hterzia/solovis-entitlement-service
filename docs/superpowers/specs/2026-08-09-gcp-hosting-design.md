@@ -104,13 +104,30 @@ exec litestream replicate \
 
 `-restore-if-db-not-exists` handles first boot and every cold start in one flag, replacing the separate `litestream restore` step that 0.3.x required.
 
-### The durability assumption, stated plainly
+### The durability assumption — tested 2026-08-10, and it is false
 
-This design's durability rests on a claim the Litestream documentation **does not** make: that on SIGTERM, Litestream performs a final sync before exiting. The `-exec` reference documents only that "Litestream will exit when the child process exits" — nothing about signal forwarding or shutdown flushing.
+This design originally rested on a claim the Litestream `-exec` reference does not make: that on SIGTERM, Litestream performs a final sync before exiting. That claim was marked as needing an experiment rather than assumption. **The experiment has now been run, and the assumption does not hold.**
 
-Cloud Run sends SIGTERM with a 10-second CPU-allocated grace period before stopping an instance. If Litestream flushes in that window, redeploys and scale-down are non-destructive. If it does not, every redeploy silently loses recent writes.
+Method: a container replicating to a *file* replica, so no GCS or network timing is involved (flush-on-signal semantics are replica-agnostic). Write a capability through the API, stop the container, then restore into an empty data directory from the replica alone and check whether the row came back.
 
-**This must be verified by experiment, not assumed** — see §10. If the assumption fails, the fallbacks in order of preference are: reduce Litestream's sync interval and accept a small loss window; switch to `--no-cpu-throttling` so background replication runs continuously (~$47/month, §9); or abandon Cloud Run for a GCE VM with a persistent disk.
+| Case | Result |
+|---|---|
+| Write, then SIGKILL immediately | **LOST** |
+| Write, then SIGTERM (10s grace) | **LOST** |
+| Write, then SIGTERM (30s grace) | **LOST** |
+| Write, then SIGTERM with `shutdown-sync-timeout`/`shutdown-sync-interval` set | **LOST** |
+| *Control:* write, wait 15s, then SIGTERM | **SURVIVED** |
+
+The control is what makes the negative result trustworthy — the harness can restore, and the only difference is time for the periodic sync. In the surviving case the replica held one more segment file than in the losing ones.
+
+Note that the Litestream documentation states the opposite: *"When Litestream receives a shutdown signal, it attempts a final sync of each database to its replica before exiting."* Either that does not apply under `-exec` supervision, or a clean SQLite close checkpoints and truncates the WAL out from under the sync. The mechanism was not isolated; the observable was reproduced four ways and is what this design has to live with.
+
+**What actually protects data, therefore, is the periodic `sync-interval` during normal running — nothing else.** Two consequences follow:
+
+- **Redeploys are safe, and this was confirmed against the live service.** A marker capability was written, a redeploy dispatched, and the marker was still present on the new revision. That works because a deploy takes minutes, during which the write replicates — not because anything flushes at shutdown.
+- **An abrupt restart loses writes since the last sync.** With request-based billing the CPU is throttled between requests, so the 1-second timer may not fire promptly after a response; the practical window is "until the next request or the next CPU-allocated moment."
+
+`sync-interval: 1s` is now stated explicitly in `deploy/litestream.yml` — not as tuning, but because it is the sole mechanism, and a future reader changing it should know what they are changing. If losing the final write before an unplanned restart ever becomes unacceptable, the fix is `--no-cpu-throttling` so replication runs continuously (~$47/month, §9), or a GCE VM with a persistent disk.
 
 ### Seed data
 
@@ -264,7 +281,7 @@ The deployment is not done until these pass. The third is the one that matters m
 
 1. **The service answers.** `/actuator/health` returns `UP` over HTTPS at the `*.run.app` URL.
 2. **The SPA loads and deep-links.** The operator UI renders, and a direct link to an inner route loads instead of 404ing.
-3. **Data survives a redeploy.** Save a change through the UI, redeploy the service, and confirm the change is still there. **If this fails, §4's fallbacks apply** — this is the experiment that decides whether B-warm is viable at all.
+3. **Data survives a redeploy.** ✅ Confirmed 2026-08-10 against the live service: a marker capability was written, a redeploy dispatched, and the marker was present on the new revision. Note *why* it survives — the deploy takes minutes and the periodic sync replicates the write — and not because of any shutdown flush (§4).
 4. **A cold restore works.** Delete the service, redeploy from scratch, and confirm the data returns from GCS rather than being re-seeded.
 5. **Seed does not clobber.** Confirm a restart against a populated database leaves reviewer-made changes intact.
 6. **History is populated and filterable.** The audit screen shows seeded events on first load, the account, plan and actor filters each return results, and the timestamps read as recent rather than fixed to the date the seed was written.
@@ -276,7 +293,7 @@ The deployment is not done until these pass. The third is the one that matters m
 
 | Risk | Severity | Disposition |
 |---|---|---|
-| Litestream may not flush on SIGTERM | High | Undocumented; verified by test 3. Fallbacks in §4. |
+| Litestream does **not** flush on SIGTERM | Medium | **Confirmed false by experiment, 2026-08-10** (§4). Durability rests entirely on `sync-interval: 1s`. Redeploys are safe; an abrupt restart loses writes since the last sync. Accepted for a demo. |
 | Redeploy overlap loses writes near switchover | Medium | Accepted; demo data, deliberate deploys. |
 | Public URL with no authentication | Medium | Accepted knowingly (§8), with three binding conditions. |
 | Ungraceful kill (OOM/crash) loses the last writes | Low | Accepted; the CPU-throttled model cannot prevent it. |
