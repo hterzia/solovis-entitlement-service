@@ -47,9 +47,27 @@ jobs:
         working-directory: management/backend
         run: ./mvnw -B test
 
+  frontend-test:
+    name: Frontend tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: management/frontend/management-ui/package-lock.json
+
+      - name: Run vitest
+        working-directory: management/frontend/management-ui
+        run: |
+          npm ci
+          npm test
+
   deploy:
-    name: Build and deploy
-    needs: test
+    name: Build, smoke and deploy
+    needs: [test, frontend-test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -65,12 +83,47 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-      - name: Build and push image
+      - name: Build image
         run: |
           IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE}:${GITHUB_SHA}"
           docker build -t "$IMAGE" .
-          docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      # Runs before the push, so an image that does not render is never published.
+      #
+      # This gate exists because a regression once shipped that every other check was
+      # blind to: the JS bundle was served as text/html, so the browser refused it and
+      # every page rendered blank — while all requests returned 200, nothing 404'd, the
+      # health check stayed green, and CI passed. Status codes are not evidence the app
+      # works. Only a real browser loading the real built artifact sees this class of bug.
+      #
+      # Litestream is bypassed here (--entrypoint java): the smoke run has no GCS
+      # credentials and does not need replication to prove the UI renders.
+      - name: Browser smoke test against the built image
+        run: |
+          docker run -d --name smoke -p 8081:8081 \
+            -e ENTITLEMENT_DB_PATH=/data/smoke.db \
+            -e ENTITLEMENT_SEED_ENABLED=true \
+            --entrypoint java "$IMAGE" -jar /app/app.jar
+
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8081/actuator/health >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -sf http://localhost:8081/actuator/health >/dev/null || {
+            echo "service never became healthy"; docker logs smoke | tail -50; exit 1; }
+
+          cd deploy/smoke
+          npm install --silent --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          node smoke.mjs http://localhost:8081
+
+      - name: Smoke failure diagnostics
+        if: failure()
+        run: docker logs smoke 2>&1 | tail -80 || true
+
+      - name: Push image
+        run: docker push "$IMAGE"
 
       # --max-instances=1 is load-bearing, not a cost control: SQLite permits one
       # writer host, so this flag makes the constraint an infrastructure
