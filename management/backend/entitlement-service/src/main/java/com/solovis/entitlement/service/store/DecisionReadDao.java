@@ -118,6 +118,17 @@ public class DecisionReadDao {
 				.optional();
 	}
 
+	/** Ask's account-mention search. ACTIVE only, same reasoning as account(...) above. */
+	public List<AccountRow> searchAccounts(String q, int limit) {
+		return jdbcClient.sql("""
+				SELECT * FROM account
+				 WHERE status = 'ACTIVE'
+				   AND (external_id LIKE :q ESCAPE '\\' OR name LIKE :q ESCAPE '\\')
+				 ORDER BY id LIMIT :limit""")
+				.param("q", SqlLike.contains(q)).param("limit", limit)
+				.query(ACCOUNT_ROW_MAPPER).list();
+	}
+
 	public Optional<String> planKeyById(long planId) {
 		return jdbcClient.sql("SELECT * FROM plan WHERE id = :id")
 				.param("id", planId)

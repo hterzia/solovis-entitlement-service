@@ -9,7 +9,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
-import java.util.Optional;
 
 import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -18,17 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class AskControllerTest {
 
-	private static final CapabilityCatalogProvider EMPTY_CATALOGS = new CapabilityCatalogProvider() {
-		@Override
-		public CapabilityCatalog current() {
-			return new CapabilityCatalog(List.of());
-		}
-
-		@Override
-		public Optional<String> retiredMatch(List<String> mentions) {
-			return Optional.empty();
-		}
-	};
+	private static final CapabilityCatalogProvider EMPTY_CATALOGS = () -> new CapabilityCatalog(List.of());
 
 	private MockMvc mockMvcWithUnconfiguredService() {
 		AskService unconfigured = new AskService(null, null,

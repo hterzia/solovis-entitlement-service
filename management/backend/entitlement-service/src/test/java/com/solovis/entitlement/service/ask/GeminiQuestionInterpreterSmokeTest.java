@@ -21,10 +21,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class GeminiQuestionInterpreterSmokeTest {
 
 	private static final CapabilityCatalog CATALOG = new CapabilityCatalog(List.of(
-			new CapabilityCatalog.Entry("export.parquet", "export", "Parquet export"),
-			new CapabilityCatalog.Entry("export.pdf", "export", "PDF export"),
-			new CapabilityCatalog.Entry("api.access", "api", "API access"),
-			new CapabilityCatalog.Entry("reports.monthly", "reports", "Monthly reports")));
+			new CapabilityCatalog.Entry("export.parquet", "export", "Parquet export", false),
+			new CapabilityCatalog.Entry("export.pdf", "export", "PDF export", false),
+			new CapabilityCatalog.Entry("api.access", "api", "API access", false),
+			new CapabilityCatalog.Entry("reports.monthly", "reports", "Monthly reports", false)));
 
 	private QuestionInterpreter interpreter() {
 		ChatModel model = GoogleAiGeminiChatModel.builder()

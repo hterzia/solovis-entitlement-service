@@ -3,7 +3,6 @@ package com.solovis.entitlement.service.ask;
 import com.solovis.entitlement.service.ask.dto.AskResponse;
 import com.solovis.entitlement.service.store.AccountRow;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -39,13 +38,21 @@ public class AskService {
 		Proposal proposal = interpreter.interpret(question, catalog);
 
 		// Criterion 10: keys the interpreter proposed but the registry does not know are dropped.
+		// The catalogue carries every status, so a retired key the interpreter names survives here —
+		// retirement is decided below, from the same catalogue entry, never by dropping the key.
 		List<String> keys = proposal.capabilityKeys().stream()
 				.distinct()
 				.filter(catalog::containsKey)
 				.toList();
 
 		if (keys.isEmpty()) {
-			return capabilityNotUnderstood(proposal);
+			return capabilityNotUnderstood(proposal, catalog);
+		}
+
+		if (keys.size() == 1 && catalog.find(keys.getFirst()).map(CapabilityCatalog.Entry::retired).orElse(false)) {
+			// Criterion 7: retirement is a fact worth stating, decided locally and before any
+			// account lookup or check — asking about a retired capability never reaches the checker.
+			return AskResponse.retired(keys.getFirst());
 		}
 
 		String accountMention = proposal.accountMention();
@@ -78,19 +85,23 @@ public class AskService {
 		};
 	}
 
-	private AskResponse capabilityNotUnderstood(Proposal proposal) {
-		// Retirement is a fact worth stating (criterion 7), checked against local records only.
-		List<String> mentions = new ArrayList<>(proposal.capabilityKeys());
-		if (proposal.capabilityMention() != null) {
-			mentions.add(proposal.capabilityMention());
+	private AskResponse capabilityNotUnderstood(Proposal proposal, CapabilityCatalog catalog) {
+		// Reached only when the interpreter proposed no key the catalogue recognises at all — a
+		// proposed retired key already survived the filter above. The mention text is still worth
+		// checking against the catalogue: an operator's words ("legacy export") can name a retired
+		// capability the model failed to key, and retirement is a fact worth stating (criterion 7).
+		String mention = proposal.capabilityMention();
+		if (mention != null) {
+			for (CapabilityCatalog.Entry entry : catalog.entries()) {
+				boolean matchesText = entry.key().equalsIgnoreCase(mention)
+						|| (entry.displayName() != null && entry.displayName().equalsIgnoreCase(mention));
+				if (matchesText && entry.retired()) {
+					return AskResponse.retired(entry.key());
+				}
+			}
 		}
-		return catalogs.retiredMatch(mentions)
-				.map(AskResponse::retired)
-				.orElseGet(() -> {
-					String mention = proposal.capabilityMention();
-					return AskResponse.noMatch(null, mention, mention == null
-							? "Tell me which capability you mean."
-							: "Nothing in the registry matches '%s'.".formatted(mention));
-				});
+		return AskResponse.noMatch(null, mention, mention == null
+				? "Tell me which capability you mean."
+				: "Nothing in the registry matches '%s'.".formatted(mention));
 	}
 }
