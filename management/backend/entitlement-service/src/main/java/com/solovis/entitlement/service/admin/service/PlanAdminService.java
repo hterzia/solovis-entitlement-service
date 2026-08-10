@@ -93,7 +93,6 @@ public class PlanAdminService {
         String description = request.description() != null ? request.description() : row.description();
         String now = clock.instant().toString();
         planRepository.update(row.id(), name, description, now);
-        var plan = new Plan(key, name, Plan.Status.valueOf(row.status()), row.defaultForNewAccounts());
 
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
             .entityType("PLAN").entityId(key).action("UPDATE").planId(row.id())
@@ -203,7 +202,6 @@ public class PlanAdminService {
         }
         String now = clock.instant().toString();
         planRepository.archive(row.id(), now);
-        var plan = new Plan(key, row.name(), Plan.Status.ARCHIVED, false);
 
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
             .entityType("PLAN").entityId(key).action("ARCHIVE").planId(row.id()).build());
@@ -217,10 +215,8 @@ public class PlanAdminService {
             throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "Plan '" + key + "' is not ACTIVE.");
         }
         String now = clock.instant().toString();
-        var previousDefault = planRepository.findDefault();
         planRepository.clearDefault(now);
         planRepository.setDefault(row.id(), now);
-        var newDefaultPlan = new Plan(key, row.name(), Plan.Status.ACTIVE, true);
 
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
             .entityType("DEFAULT_PLAN").entityId(key).action("DESIGNATE").planId(row.id()).build());

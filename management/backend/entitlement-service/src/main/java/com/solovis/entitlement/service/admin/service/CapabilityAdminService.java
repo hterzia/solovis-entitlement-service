@@ -1,7 +1,6 @@
 package com.solovis.entitlement.service.admin.service;
 
 import com.solovis.entitlement.core.model.*;
-import com.solovis.entitlement.core.view.SnapshotMutator;
 import com.solovis.entitlement.service.admin.dto.*;
 import com.solovis.entitlement.service.audit.ActorResolver;
 import com.solovis.entitlement.service.audit.AuditEntry;

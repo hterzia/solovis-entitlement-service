@@ -4,7 +4,6 @@ import com.solovis.entitlement.core.engine.Explanation;
 import com.solovis.entitlement.core.engine.Resolver;
 import com.solovis.entitlement.core.model.*;
 import com.solovis.entitlement.core.view.Snapshot;
-import com.solovis.entitlement.core.view.SnapshotMutator;
 import com.solovis.entitlement.service.admin.dto.*;
 import com.solovis.entitlement.service.api.DecisionMapper;
 import com.solovis.entitlement.service.audit.ActorResolver;
@@ -69,7 +68,6 @@ public class AccountAdminService {
         var actor = actorResolver.currentActor();
         accountRepository.insert(new AccountRow(null, request.externalId(), request.name(), defaultPlan.id(), now,
             actor.kind().name(), actor.id(), "ACTIVE", now, now));
-        var assignment = new AccountAssignment(request.externalId(), defaultPlan.key());
 
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actor).source("UI").entityType("ACCOUNT")
             .entityId(request.externalId()).action("CREATE").build());
@@ -182,7 +180,6 @@ public class AccountAdminService {
         }
         String now = clock.instant().toString();
         accountRepository.updatePlanAssignment(row.id(), targetPlan.id(), now, source, actorId, now);
-        var assignment = new AccountAssignment(external, targetPlan.key());
 
         long auditSeq = auditRecorder.record(AuditEntry.builder()
             .actor(new com.solovis.entitlement.service.audit.Actor(actorId, sourceKind))

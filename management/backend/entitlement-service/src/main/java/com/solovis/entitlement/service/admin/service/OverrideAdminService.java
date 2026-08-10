@@ -2,7 +2,6 @@ package com.solovis.entitlement.service.admin.service;
 
 import com.solovis.entitlement.core.engine.Resolver;
 import com.solovis.entitlement.core.model.*;
-import com.solovis.entitlement.core.view.SnapshotMutator;
 import com.solovis.entitlement.service.admin.dto.OverrideCreateRequest;
 import com.solovis.entitlement.service.admin.dto.OverrideMutationResponseDto;
 import com.solovis.entitlement.service.api.DecisionMapper;
@@ -31,12 +30,12 @@ public class OverrideAdminService {
     private final AuditJson auditJson;
     private final ActorResolver actorResolver;
     private final SnapshotPublisher snapshotPublisher;
-    private final SnapshotHolder snapshotHolder;
+    private final RecordViewAssembler recordViewAssembler;
     private final Clock clock;
 
     public OverrideAdminService(AccountRepository accountRepository, AccountOverrideRepository accountOverrideRepository,
             CapabilityRepository capabilityRepository, AuditRecorder auditRecorder, AuditJson auditJson, ActorResolver actorResolver,
-            SnapshotPublisher snapshotPublisher, SnapshotHolder snapshotHolder, Clock clock) {
+            SnapshotPublisher snapshotPublisher, RecordViewAssembler recordViewAssembler, Clock clock) {
         this.accountRepository = accountRepository;
         this.accountOverrideRepository = accountOverrideRepository;
         this.capabilityRepository = capabilityRepository;
@@ -44,7 +43,7 @@ public class OverrideAdminService {
         this.auditJson = auditJson;
         this.actorResolver = actorResolver;
         this.snapshotPublisher = snapshotPublisher;
-        this.snapshotHolder = snapshotHolder;
+        this.recordViewAssembler = recordViewAssembler;
         this.clock = clock;
     }
 
@@ -79,12 +78,12 @@ public class OverrideAdminService {
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actor).source("UI").entityType("OVERRIDE")
             .entityId("ovr_" + id).action("CREATE").accountId(accountRow.id()).capabilityId(capRow.id())
             .reason(request.reason()).afterJson(auditJson.write(request)).build());
-        var base = snapshotHolder.current();
-        var next = SnapshotMutator.withOverrideAdded(base, base.snapshotVersion() + 1, override);
         long newVersion = snapshotPublisher.publish(auditSeq,
             new DeltaChange.OverrideCreated("ovr_" + id, external, capability.key().value(), kind.name(), ValueMapper.toDto(value)));
 
-        var explanation = Resolver.explain(next, external, capability.key(), clock.instant());
+        var explanation = Resolver.explain(
+            recordViewAssembler.pointViewInWriteTxn(external, capability.key().value()),
+            external, capability.key(), clock.instant());
         return new OverrideMutationResponseDto("ovr_" + id, DecisionMapper.toResponse(explanation, capability), newVersion, 60);
     }
 
@@ -112,11 +111,11 @@ public class OverrideAdminService {
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actor).source("UI").entityType("OVERRIDE")
             .entityId(overrideRef).action("REMOVE").accountId(accountRow.id()).capabilityId(capRow.id())
             .reason(removeReason).build());
-        var base = snapshotHolder.current();
-        var next = SnapshotMutator.withOverrideRemoved(base, base.snapshotVersion() + 1, external, capabilityKey, id);
         long newVersion = snapshotPublisher.publish(auditSeq, new DeltaChange.OverrideRemoved(overrideRef));
 
-        var explanation = Resolver.explain(next, external, capabilityKey, clock.instant());
+        var explanation = Resolver.explain(
+            recordViewAssembler.pointViewInWriteTxn(external, capabilityKey.value()),
+            external, capabilityKey, clock.instant());
         return new OverrideMutationResponseDto(overrideRef, DecisionMapper.toResponse(explanation, capability), newVersion, 60);
     }
 }
