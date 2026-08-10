@@ -57,14 +57,19 @@ function isEntitlementValue(value: unknown): value is EntitlementValue {
  * (see the write paths in `AccountAdminService`/`CapabilityAdminService`/`PlanAdminService`/
  * `OverrideAdminService`). There is no single wire type for "the value of a change," so this
  * renders whatever it's given rather than assuming it's always a bare `EntitlementValue`.
+ *
+ * `tiers` is the declared tier list of the capability the event is about, so a TIER value prints
+ * the name every other screen shows instead of its raw key. Safe against a historical record
+ * because a tier's display name cannot change in v1: `addCapabilityTier` only appends, and the
+ * capability PATCH route cannot touch an existing tier.
  */
-export function formatAuditValue(value: unknown): string {
+export function formatAuditValue(value: unknown, tiers?: CapabilityTier[]): string {
   if (value === null || value === undefined) return '—'
-  if (isEntitlementValue(value)) return formatValue(value)
-  if (Array.isArray(value)) return value.length === 0 ? '—' : value.map((v) => formatAuditValue(v)).join('; ')
+  if (isEntitlementValue(value)) return formatValue(value, tiers)
+  if (Array.isArray(value)) return value.length === 0 ? '—' : value.map((v) => formatAuditValue(v, tiers)).join('; ')
   if (typeof value === 'object') {
     const entries = Object.entries(value as Record<string, unknown>)
-    return entries.length === 0 ? '—' : entries.map(([k, v]) => `${k}: ${formatAuditValue(v)}`).join(', ')
+    return entries.length === 0 ? '—' : entries.map(([k, v]) => `${k}: ${formatAuditValue(v, tiers)}`).join(', ')
   }
   return String(value)
 }

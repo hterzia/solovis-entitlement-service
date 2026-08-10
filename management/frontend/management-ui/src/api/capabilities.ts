@@ -1,4 +1,5 @@
 import { apiGet, apiPost, apiPatch } from './http'
+import { enc } from './path'
 import type { Capability, CapabilityTier } from '../types/domain'
 
 export function listCapabilities(params?: { area?: string; q?: string; status?: 'ACTIVE' | 'RETIRED' | 'ALL' }) {
@@ -11,7 +12,7 @@ export function listCapabilities(params?: { area?: string; q?: string; status?: 
 }
 
 export function getCapability(key: string) {
-  return apiGet<Capability & { usage: { plans: string[]; liveOverrides: number } }>(`/capabilities/${key}`)
+  return apiGet<Capability & { usage: { plans: string[]; liveOverrides: number } }>(`/capabilities/${enc(key)}`)
 }
 
 export interface CreateCapabilityInput {
@@ -29,11 +30,11 @@ export function createCapability(input: CreateCapabilityInput) {
 }
 
 export function updateCapability(key: string, patch: Partial<Pick<Capability, 'displayName' | 'description' | 'default' | 'offValue'>>) {
-  return apiPatch<Capability>(`/capabilities/${key}`, patch)
+  return apiPatch<Capability>(`/capabilities/${enc(key)}`, patch)
 }
 
 export function addCapabilityTier(key: string, tier: { tier: string; displayName: string }) {
-  return apiPost<Capability>(`/capabilities/${key}/tiers`, tier)
+  return apiPost<Capability>(`/capabilities/${enc(key)}/tiers`, tier)
 }
 
 export interface CapabilityRetireResult {
@@ -42,7 +43,7 @@ export interface CapabilityRetireResult {
 }
 
 export function retireCapability(key: string) {
-  return apiPost<CapabilityRetireResult>(`/capabilities/${key}/retire`)
+  return apiPost<CapabilityRetireResult>(`/capabilities/${enc(key)}/retire`)
 }
 
 export type { CapabilityTier }

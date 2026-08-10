@@ -1,17 +1,25 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { listAccounts, createAccount } from '../../api/accounts'
 import { queryKeys } from '../../queries/keys'
+import { ErrorNotice } from '../../components/ErrorNotice'
 
 export function AccountsListRoute() {
   const [q, setQ] = useState('')
   const [newExternal, setNewExternal] = useState('')
-  const [cursor, setCursor] = useState<string | undefined>(undefined)
-  const query = useQuery({
-    queryKey: queryKeys.accounts({ q, cursor }),
-    queryFn: () => listAccounts({ q: q || undefined, cursor }),
+  // The cursor is the query's own paging state, not the screen's: pages accumulate under one key,
+  // and changing the search term is a different key, so a new search starts from the first page
+  // instead of appending to rows the operator is no longer looking at.
+  const query = useInfiniteQuery({
+    queryKey: queryKeys.accounts({ q }),
+    queryFn: ({ pageParam }) => listAccounts({ q: q || undefined, cursor: pageParam ?? undefined }),
+    initialPageParam: null as string | null,
+    // `nextCursor` is null on the last page even when that page is exactly `limit` rows long
+    // (contracts/admin-api.md), so page length says nothing about whether another page exists.
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
   })
+  const accounts = query.data?.pages.flatMap((page) => page.accounts) ?? []
   const queryClient = useQueryClient()
   const createMutation = useMutation({
     mutationFn: () => createAccount({ externalId: newExternal }),
@@ -21,9 +29,10 @@ export function AccountsListRoute() {
   return (
     <div className="app-panel">
       <h1 className="app-page-title">Accounts</h1>
-      <input className="sv-field" aria-label="Search accounts" value={q} onChange={(e) => { setQ(e.target.value); setCursor(undefined) }} placeholder="Search by account or name" />
+      <input className="sv-field" aria-label="Search accounts" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by account or name" />
+      <ErrorNotice error={query.error} action="Could not load the accounts" />
       <ul>
-        {query.data?.accounts.map((a) => (
+        {accounts.map((a) => (
           <li key={a.account}>
             <Link to="/accounts/$external" params={{ external: a.account }} className="sv-link">
               {a.name ? `${a.name} (${a.account})` : a.account}
@@ -31,8 +40,8 @@ export function AccountsListRoute() {
           </li>
         ))}
       </ul>
-      {query.data?.nextCursor && (
-        <button type="button" className="sv-btn--secondary" onClick={() => setCursor(query.data!.nextCursor!)}>
+      {query.hasNextPage && (
+        <button type="button" className="sv-btn--secondary" disabled={query.isFetchingNextPage} onClick={() => query.fetchNextPage()}>
           Load more
         </button>
       )}
@@ -40,6 +49,7 @@ export function AccountsListRoute() {
         <input className="sv-field" aria-label="New account external id" value={newExternal} onChange={(e) => setNewExternal(e.target.value)} />
         <button type="submit" className="sv-btn" disabled={!newExternal}>Create account</button>
       </form>
+      <ErrorNotice error={createMutation.error} action="Could not create the account" />
     </div>
   )
 }

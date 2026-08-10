@@ -1,4 +1,5 @@
 import { apiGet, apiPost, apiPut } from './http'
+import { enc } from './path'
 import type { EntitlementValue } from '../types/value'
 import type { Plan, PlanEntitlementDiffEntry, Trace } from '../types/domain'
 
@@ -11,7 +12,7 @@ export function createPlan(input: { key: string; name: string; description?: str
 }
 
 export function getPlan(key: string) {
-  return apiGet<Plan & { entitlements: Record<string, EntitlementValue> }>(`/plans/${key}`)
+  return apiGet<Plan & { entitlements: Record<string, EntitlementValue> }>(`/plans/${enc(key)}`)
 }
 
 export interface PlanEntitlementEditInput {
@@ -38,7 +39,7 @@ export interface PlanPreviewResult {
 }
 
 export function previewPlanEntitlements(key: string, input: PlanEntitlementEditInput) {
-  return apiPost<PlanPreviewResult>(`/plans/${key}/entitlements/preview`, input)
+  return apiPost<PlanPreviewResult>(`/plans/${enc(key)}/entitlements/preview`, input)
 }
 
 export interface PlanApplyResult {
@@ -50,11 +51,11 @@ export interface PlanApplyResult {
 }
 
 export function applyPlanEntitlements(key: string, input: { set: Record<string, EntitlementValue>; unset: string[]; previewToken: string }) {
-  return apiPut<PlanApplyResult>(`/plans/${key}/entitlements`, input)
+  return apiPut<PlanApplyResult>(`/plans/${enc(key)}/entitlements`, input)
 }
 
 export function archivePlan(key: string) {
-  return apiPost<Plan>(`/plans/${key}/archive`)
+  return apiPost<Plan>(`/plans/${enc(key)}/archive`)
 }
 
 export function setDefaultPlan(planKey: string) {

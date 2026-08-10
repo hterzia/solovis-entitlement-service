@@ -236,6 +236,32 @@ export const handlers = [
     return HttpResponse.json({ overrideId: created.id, decision: { allowed: true, value: body.value, trace: RESULT_TRACE }, snapshotVersion: 48212, changeVisibleEverywhereWithinSeconds: 60 }, { status: 201 })
   }),
 
+  // What the decision becomes if this override were removed — the answer the confirmation shows
+  // before the operator commits (c14/c15). The real service re-resolves the current snapshot with
+  // the one override excluded; a handler cannot, so this returns the fixture's own scenario:
+  // ovr_7788 is a winning HOLD of 0 capping a GRANT of 200, so lifting it restores 200. Whether the
+  // *service* computes the right answer is proved by the backend tests and the end-to-end run
+  // against a real service, not here.
+  http.get('/admin/v1/accounts/:external/overrides/:id/removal-preview', ({ params }) => {
+    if (params.external !== db.account.account) return problem(404, 'entitlement/unknown-account', `No account '${params.external}'.`)
+    const override = db.account.overrides.find((o) => o.id === params.id)
+    if (!override) return problem(422, 'entitlement/validation-failed', `No override '${params.id}'.`)
+    return HttpResponse.json({
+      account: db.account.account,
+      capability: override.capability,
+      allowed: true,
+      value: { type: 'QUANTITY', amount: 200 },
+      snapshotVersion: 48211,
+      evaluatedAt: '2026-08-10T00:00:00.000Z',
+      trace: {
+        ...RESULT_TRACE,
+        holds: [],
+        holdStep: { applied: false, why: 'NO_HOLDS' },
+        result: { value: { type: 'QUANTITY', amount: 200 }, allowed: true, allowedReason: 'NO_OFF_VALUE_DECLARED' },
+      },
+    })
+  }),
+
   http.delete('/admin/v1/accounts/:external/overrides/:id', ({ params }) => {
     if (params.external !== db.account.account) return problem(404, 'entitlement/unknown-account', `No account '${params.external}'.`)
     db.account.overrides = db.account.overrides.filter((o) => o.id !== params.id)

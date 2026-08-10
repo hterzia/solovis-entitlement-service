@@ -61,19 +61,21 @@ test.describe('Screen 2 — plans', () => {
   test('lists plans with the account counts the service computed', async ({ page }) => {
     await page.goto('/plans')
     await expect(page.getByRole('heading', { name: 'Plans' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Pro' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Free' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Pro', exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Free', exact: true })).toBeVisible()
 
     // c6: a plan with accounts on it cannot be archived, and the UI says why rather than just
     // greying out. The count in that tooltip came from the service.
     await expect(page.getByRole('button', { name: 'Archive pro' })).toBeDisabled()
+    // The count is the service's, and it is stated in the operator's language: one account is
+    // "1 account", not "1 accounts".
     await expect(page.getByRole('button', { name: 'Archive pro' }))
-      .toHaveAttribute('title', /accounts are on this plan/)
+      .toHaveAttribute('title', /1 account is on this plan/)
   })
 
   test('the editor refuses to save until a preview has stated the blast radius', async ({ page }) => {
     await page.goto('/plans')
-    await page.getByRole('link', { name: /pro/i }).first().click()
+    await page.getByRole('link', { name: 'Pro', exact: true }).click()
 
     await expect(page.getByRole('heading', { name: 'Pro' })).toBeVisible()
 
@@ -109,12 +111,14 @@ test.describe('Screen 3 — account view', () => {
     await page.goto('/accounts/acct_9931')
     await expect(page.getByRole('heading', { name: 'Effective entitlements' })).toBeVisible()
 
-    // c39: each value marked as coming from a default, a plan, a GRANT or a HOLD. The seeded
+    // c39: each value marked as coming from a default, a plan, a GRANT or a HOLD — in the
+    // contract's vocabulary (`default` · `plan` · `GRANT` · `HOLD`), not the wire enum. The seeded
     // account has one of each of the first three.
-    const table = page.locator('table')
-    await expect(table.getByText('GRANT').first()).toBeVisible()
-    await expect(table.getByText('PLAN').first()).toBeVisible()
-    await expect(table.getByText('CAPABILITY_DEFAULT').first()).toBeVisible()
+    await expect(page.getByTestId('entitlement-reports.monthly')).toContainText('GRANT')
+    await expect(page.getByTestId('entitlement-api.access')).toContainText('plan')
+    await expect(page.getByTestId('entitlement-seats.count')).toContainText('default')
+    // The wire enum must not reach the operator.
+    await expect(page.getByText('CAPABILITY_DEFAULT')).toHaveCount(0)
   })
 
   test('the seeded GRANT is listed with its reason and current effect', async ({ page }) => {
@@ -262,5 +266,109 @@ test.describe('Cross-cutting', () => {
     await expect(
       page.getByText(`Saved. Active everywhere within ${meta.changeVisibleEverywhereWithinSeconds} seconds.`),
     ).toBeVisible()
+  })
+})
+
+/**
+ * The gaps closed on 2026-08-10, each proved against the real service rather than a handler.
+ *
+ * Every one of these was invisible to the MSW-backed component tests by construction: a mock cannot
+ * disagree with itself, and the failures below were all a disagreement between the SPA and the
+ * service — an endpoint that did not exist, a browser API absent on the origin this is served from,
+ * or a rejected write the operator was never shown.
+ */
+test.describe('Closed gaps — verified end to end', () => {
+  test('a rejected write is shown, not swallowed', async ({ page }) => {
+    await page.goto('/accounts')
+    // acct_1177 is seeded, so creating it again is a real 422 from the real service.
+    await page.getByLabel('New account external id').fill('acct_1177')
+    await page.getByRole('button', { name: 'Create account' }).click()
+
+    await expect(page.getByRole('alert')).toBeVisible()
+  })
+
+  test('an unknown account is an error, not a permanent Loading', async ({ page }) => {
+    await page.goto('/accounts/no-such-account-e2e')
+
+    await expect(page.getByRole('alert')).toBeVisible()
+    await expect(page.getByText('Loading…')).toHaveCount(0)
+  })
+
+  test('an unknown capability is an error, not a permanent Loading', async ({ page }) => {
+    await page.goto('/capabilities/no.such.capability.e2e')
+
+    await expect(page.getByRole('alert')).toBeVisible()
+    await expect(page.getByText('Loading…')).toHaveCount(0)
+  })
+
+  // c14/c15. The value the account returns to is computed by the service and rendered here; the
+  // SPA never re-runs the combining rule. acct_9931 carries a winning GRANT of 200 over a plan
+  // baseline of 50, so lifting it must say 50 — before anything is removed.
+  test('the removal confirmation states what the value returns to, before confirming', async ({ page }) => {
+    await page.goto('/accounts/acct_9931')
+    await expect(page.getByRole('heading', { name: 'Overrides' })).toBeVisible()
+    await page.getByTestId('remove-ovr_1').click()
+
+    const preview = page.getByTestId('removal-preview')
+    await expect(preview).toBeVisible()
+    await expect(preview).toContainText('reports.monthly')
+    await expect(preview).toContainText('50')
+
+    // It is a preview: nothing was removed by opening it.
+    await page.getByRole('button', { name: 'Cancel' }).click()
+    await expect(page.getByTestId('remove-ovr_1')).toBeVisible()
+  })
+
+  test('the checker names a declared tier rather than its raw key', async ({ page }) => {
+    await page.goto('/checker')
+    await page.getByLabel('Account').fill('acct_9931')
+    await page.getByLabel('Capability', { exact: true }).fill('support.tier')
+    await page.getByRole('button', { name: 'Check' }).click()
+
+    const trace = page.locator('.trace-view')
+    await expect(trace).toBeVisible()
+    // The seed sets Pro to the 'standard' tier, whose display name is 'Standard'.
+    await expect(trace).toContainText('Standard')
+    await expect(trace.getByText('standard', { exact: true })).toHaveCount(0)
+  })
+
+  // The console is served over plain HTTP on a LAN host, where navigator.clipboard does not exist.
+  // Driving this over 127.0.0.1 would pass on a secure context and prove nothing, so this test
+  // deliberately uses the machine's LAN origin — the one an operator actually types.
+  test('copy explanation works on the non-secure origin the console is served from', async ({ page }) => {
+    const failures: string[] = []
+    page.on('pageerror', (e) => failures.push(e.message))
+
+    await page.goto('http://172.17.192.221:5199/checker')
+    // `e2e/` compiles under tsconfig.node.json, which has no DOM lib — this callback runs in the
+    // browser, so the shape is asserted here rather than borrowed from the compiler.
+    const secureContext = await page.evaluate(
+      () => (globalThis as unknown as { isSecureContext: boolean }).isSecureContext,
+    )
+    expect(secureContext).toBe(false)
+
+    await page.getByLabel('Account').fill('acct_9931')
+    await page.getByLabel('Capability', { exact: true }).fill('reports.monthly')
+    await page.getByRole('button', { name: 'Check' }).click()
+    await expect(page.locator('.trace-view')).toBeVisible()
+
+    await page.getByRole('button', { name: 'Copy explanation' }).click()
+
+    await expect(page.getByRole('status')).toBeVisible()
+    expect(failures).toEqual([])
+  })
+
+  test('effective entitlements are grouped by area', async ({ page }) => {
+    await page.goto('/accounts/acct_9931')
+    await expect(page.getByRole('heading', { name: 'Effective entitlements' })).toBeVisible()
+
+    // c40/c39: one group per area, not a single flat wall of rows.
+    const areas = page.getByTestId(/^entitlement-area-/)
+    expect(await areas.count()).toBeGreaterThan(1)
+  })
+
+  test('an override names the capability it applies to', async ({ page }) => {
+    await page.goto('/accounts/acct_9931')
+    await expect(page.getByTestId('override-ovr_1')).toContainText('reports.monthly')
   })
 })
