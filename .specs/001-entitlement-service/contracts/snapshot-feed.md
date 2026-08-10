@@ -40,16 +40,18 @@ Fetched once at replica startup, and again only after `entitlement/snapshot-too-
 
 ```
 {"kind":"header","version":48211,"format":1,"resolverContract":1,"publishedAt":"2026-08-09T14:03:10.900Z","counts":{"capabilities":512,"plans":9,"accounts":100000,"overrides":48734}}
-{"kind":"capability","key":"reports.monthly","area":"reports","valueType":"QUANTITY","default":{"type":"QUANTITY","amount":0},"offValue":null,"tiers":null,"status":"ACTIVE"}
-{"kind":"capability","key":"support","area":"support","valueType":"TIER","default":{"type":"TIER","tier":"community","ordinal":0},"offValue":null,"tiers":[{"tier":"community","ordinal":0},{"tier":"standard","ordinal":1},{"tier":"gold","ordinal":2}],"status":"ACTIVE"}
+{"kind":"capability","key":"reports.monthly","area":"reports","valueType":"QUANTITY","default":{"type":"QUANTITY","amount":0},"status":"ACTIVE"}
+{"kind":"capability","key":"support.tier","area":"support","valueType":"TIER","default":{"type":"TIER","tier":"community","ordinal":0},"tiers":[{"tier":"community","ordinal":0},{"tier":"standard","ordinal":1},{"tier":"gold","ordinal":2}],"status":"ACTIVE"}
 {"kind":"plan","key":"pro","status":"ACTIVE","isDefaultForNewAccounts":false,"entitlements":{"reports.monthly":{"type":"QUANTITY","amount":50},"api.access":{"type":"SWITCH","enabled":true}}}
 {"kind":"account","external":"acct_9931","planKey":"pro"}
-{"kind":"override","ref":"ovr_4471","account":"acct_9931","capability":"reports.monthly","kind":"GRANT","value":{"type":"QUANTITY","amount":200}}
+{"kind":"override","ref":"ovr_4471","account":"acct_9931","capability":"reports.monthly","overrideKind":"GRANT","value":{"type":"QUANTITY","amount":200}}
 {"kind":"conformance","id":"cv_017","model":{ /* self-contained fragment */ },"expect":{"allowed":true,"value":{"type":"QUANTITY","amount":0}}}
 {"kind":"footer","version":48211,"recordCount":100563}
 ```
 
 The `override` record carries **no `reason`, `createdBy` or `createdAt`** — see the note at the top of this file. `ref` is an opaque correlation handle: it lets a support engineer paste an id from a consumer's debug log into the operator UI, and it is meaningless to resolution.
+
+A capability's `offValue` and `tiers` are **omitted keys when absent, never present with a `null` value** — the service serialises them with a not-null-inclusion rule, so a `SWITCH` or `QUANTITY` capability with no declared off-value has no `offValue` key at all, and a non-`TIER` capability has no `tiers` key at all. A replica must treat "key absent" and "key present as `null`" as the same thing on read, but must not expect to see the latter on the wire.
 
 Rules the replica must enforce:
 
@@ -89,7 +91,7 @@ Everything needed to move a replica from `since` to the current version.
       "unset": [ "export.parquet" ] },
 
     { "version": 48210, "kind": "override.created",
-      "ref": "ovr_9002", "account": "acct_1177", "capability": "seats",
+      "ref": "ovr_9002", "account": "acct_1177", "capability": "billing.seats",
       "overrideKind": "HOLD", "value": { "type": "QUANTITY", "amount": 100 } },
 
     { "version": 48211, "kind": "override.removed", "ref": "ovr_7788" }
@@ -111,6 +113,8 @@ Everything needed to move a replica from `since` to the current version.
 | `override.created` | projected override record | add |
 | `override.removed` | `ref` | drop |
 | `conformance.changed` | replacement vector set | re-run the gate before serving |
+
+The vector set is part of the service's build, not its data, so `conformance.changed` is published **at service startup**, and only when the set differs from the one already announced. It exists because a delta-derived replica inherits its predecessor's vectors — only a full resync fetches a new set — so a replica that stays up across a service deployment would otherwise keep validating against the vectors it started with, which is exactly the case a newly added vector was meant to catch. It carries the whole set rather than a diff, because a partial set could not be gated. It advances the version and changes nothing a decision depends on.
 
 Overrides are immutable once created — creation and removal are the only override mutations, and the admin API exposes no edit — so every override change on this feed is `override.created` or `override.removed`, and no write can ever touch a field the projection omits.
 

@@ -1,9 +1,11 @@
 package com.solovis.entitlement.service.admin;
 
+import com.jayway.jsonpath.JsonPath;
 import com.solovis.entitlement.service.admin.dto.AccountCreateRequest;
 import com.solovis.entitlement.service.admin.dto.CapabilityCreateRequest;
 import com.solovis.entitlement.service.admin.dto.OverrideCreateRequest;
 import com.solovis.entitlement.service.admin.dto.PlanCreateRequest;
+import com.solovis.entitlement.service.admin.dto.PlanPatchRequest;
 import com.solovis.entitlement.service.admin.service.AccountAdminService;
 import com.solovis.entitlement.service.admin.service.CapabilityAdminService;
 import com.solovis.entitlement.service.admin.service.OverrideAdminService;
@@ -15,6 +17,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -48,6 +51,19 @@ class AuditControllerTest {
     }
 
     @Test
+    void listByAccountIncludesTheAccountsOwnCreationEventWithItsDefaultPlanKey() throws Exception {
+        planService.create(new PlanCreateRequest("tacct.audit-default-plan", "Tacct Audit Default Plan", null));
+        planService.designateDefault("tacct.audit-default-plan");
+
+        accountService.create(new AccountCreateRequest("acct_tacct_2", null));
+
+        mockMvc.perform(get("/admin/v1/audit").param("account", "acct_tacct_2"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.events[?(@.entityType=='ACCOUNT' && @.action=='CREATE')].after.planKey")
+                .value(org.hamcrest.Matchers.hasItem("tacct.audit-default-plan")));
+    }
+
+    @Test
     void listByEntityTypeFiltersToJustThatEntityType() throws Exception {
         capabilityService.create(new CapabilityCreateRequest("t8.audit.filter-probe", "Audit filter probe", null, "SWITCH",
             new ValueDto("SWITCH", false, null, null, null, null), null, null));
@@ -65,5 +81,93 @@ class AuditControllerTest {
             .andExpect(status().isUnprocessableEntity())
             .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
             .andExpect(jsonPath("$.type").value("entitlement/validation-failed"));
+    }
+
+    @Test
+    void listByPlanKeyFiltersToJustThatPlan() throws Exception {
+        planService.create(new PlanCreateRequest("t29a.plan", "T29a Plan", null));
+        planService.create(new PlanCreateRequest("t29b.plan", "T29b Plan", null));
+        // Produces a second, PLAN/UPDATE audit event scoped to t29a.plan, alongside the
+        // PLAN/CREATE event from create() above.
+        planService.patch("t29a.plan", new PlanPatchRequest("T29a Plan Renamed", null));
+
+        mockMvc.perform(get("/admin/v1/audit").param("planKey", "t29a.plan"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.events[*].planKey", org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is("t29a.plan"))))
+            .andExpect(jsonPath("$.events[?(@.entityType=='PLAN' && @.action=='UPDATE')].planKey")
+                .value(org.hamcrest.Matchers.hasItem("t29a.plan")));
+    }
+
+    @Test
+    void nextCursorIsNullWhenTheLastPageIsShortOfTheLimit() throws Exception {
+        planService.create(new PlanCreateRequest("tcur.short.plan", "Tcur Short Plan", null));
+        planService.designateDefault("tcur.short.plan");
+        accountService.create(new AccountCreateRequest("acct_tcur_short", null));
+
+        // Exactly one audit event is scoped to this account (its own ACCOUNT/CREATE), so a
+        // generous limit leaves nothing beyond this page.
+        mockMvc.perform(get("/admin/v1/audit").param("account", "acct_tcur_short").param("limit", "50"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.events.length()").value(1))
+            .andExpect(jsonPath("$.nextCursor").doesNotExist());
+    }
+
+    @Test
+    void nextCursorIsNullWhenTheLastPageIsExactlyFull() throws Exception {
+        planService.create(new PlanCreateRequest("tcur.exact.plan", "Tcur Exact Plan", null));
+        planService.designateDefault("tcur.exact.plan");
+        accountService.create(new AccountCreateRequest("acct_tcur_exact", null));
+
+        // The page is exactly full, but there is no further row. A cursor here would send the
+        // History screen (c33) to an empty page it had no way to predict.
+        mockMvc.perform(get("/admin/v1/audit").param("account", "acct_tcur_exact").param("limit", "1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.events.length()").value(1))
+            .andExpect(jsonPath("$.nextCursor").doesNotExist());
+    }
+
+    @Test
+    void nextCursorIsPresentWhileFurtherRowsRemain() throws Exception {
+        planService.create(new PlanCreateRequest("tcur.more.plan", "Tcur More Plan", null));
+        planService.patch("tcur.more.plan", new PlanPatchRequest("Tcur More Plan Renamed", null));
+
+        // Two events on this plan (CREATE then UPDATE), so a page of one has a successor.
+        mockMvc.perform(get("/admin/v1/audit").param("planKey", "tcur.more.plan").param("limit", "1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.events.length()").value(1))
+            .andExpect(jsonPath("$.nextCursor").isString());
+    }
+
+    @Test
+    void cursorPagingWalksStrictlyDescendingSeqsWithNoRepeats() throws Exception {
+        capabilityService.create(new CapabilityCreateRequest("t29.cursor.one", "Cursor probe one", null, "SWITCH",
+            new ValueDto("SWITCH", false, null, null, null, null), null, null));
+        capabilityService.create(new CapabilityCreateRequest("t29.cursor.two", "Cursor probe two", null, "SWITCH",
+            new ValueDto("SWITCH", false, null, null, null, null), null, null));
+        capabilityService.create(new CapabilityCreateRequest("t29.cursor.three", "Cursor probe three", null, "SWITCH",
+            new ValueDto("SWITCH", false, null, null, null, null), null, null));
+
+        String page1Body = mockMvc.perform(get("/admin/v1/audit").param("limit", "1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.events.length()").value(1))
+            .andReturn().getResponse().getContentAsString();
+        long seq1 = ((Number) JsonPath.read(page1Body, "$.events[0].seq")).longValue();
+        String cursor1 = JsonPath.read(page1Body, "$.nextCursor");
+
+        String page2Body = mockMvc.perform(get("/admin/v1/audit").param("limit", "1").param("cursor", cursor1))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.events.length()").value(1))
+            .andReturn().getResponse().getContentAsString();
+        long seq2 = ((Number) JsonPath.read(page2Body, "$.events[0].seq")).longValue();
+        String cursor2 = JsonPath.read(page2Body, "$.nextCursor");
+
+        String page3Body = mockMvc.perform(get("/admin/v1/audit").param("limit", "1").param("cursor", cursor2))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.events.length()").value(1))
+            .andReturn().getResponse().getContentAsString();
+        long seq3 = ((Number) JsonPath.read(page3Body, "$.events[0].seq")).longValue();
+
+        assertThat(seq1).isGreaterThan(seq2);
+        assertThat(seq2).isGreaterThan(seq3);
     }
 }

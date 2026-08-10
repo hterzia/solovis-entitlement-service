@@ -21,6 +21,13 @@ entitlement:
     id: "${ENTITLEMENT_DEV_ACTOR:dev-operator}"
   seed:
     enabled: "${ENTITLEMENT_SEED_ENABLED:false}"
+  snapshot:
+    # snapshot-feed.md: a replica asking for a version older than this is told to full-resync.
+    # Seven days is generous enough that a consuming service can be down for a long weekend and
+    # still catch up by delta.
+    delta-retention: 7d
+    prune-interval: 1h
+    prune-enabled: true
 
 management:
   endpoints:

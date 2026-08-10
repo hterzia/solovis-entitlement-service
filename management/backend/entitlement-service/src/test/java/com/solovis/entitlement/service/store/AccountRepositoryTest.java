@@ -30,7 +30,11 @@ class AccountRepositoryTest {
 	}
 
 	private AccountRow account(String externalId, long planId) {
-		return new AccountRow(null, externalId, "Northwind Capital", planId,
+		return account(externalId, planId, "Northwind Capital");
+	}
+
+	private AccountRow account(String externalId, long planId, String name) {
+		return new AccountRow(null, externalId, name, planId,
 				"2026-08-09T00:00:00.000Z", "SYSTEM", "billing-sync", "ACTIVE",
 				"2026-08-09T00:00:00.000Z", "2026-08-09T00:00:00.000Z");
 	}
@@ -80,6 +84,18 @@ class AccountRepositoryTest {
 		assertThat(saved.planId()).isEqualTo(otherPlanId);
 		assertThat(saved.planAssignmentSource()).isEqualTo("PERSON");
 		assertThat(saved.planAssignmentActor()).isEqualTo("a.reyes");
+	}
+
+	@Test
+	void searchEscapesLikeWildcardsInTheQuery() {
+		repository.insert(account("t-sqllike-100pct", planId, "100% cotton"));
+		repository.insert(account("t-sqllike-5otton", planId, "5_otton"));
+		repository.insert(account("t-sqllike-plaincotton", planId, "cotton"));
+
+		assertThat(repository.search("100%", null, 0, 50)).extracting(AccountRow::externalId)
+				.containsExactly("t-sqllike-100pct");
+		assertThat(repository.search("_otton", null, 0, 50)).extracting(AccountRow::externalId)
+				.containsExactly("t-sqllike-5otton");
 	}
 
 	@Test

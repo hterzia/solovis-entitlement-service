@@ -5,13 +5,20 @@ import com.solovis.entitlement.service.store.SnapshotVersionRow;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import java.time.Clock;
+import com.solovis.entitlement.service.time.Timestamps;
 
 /**
  * The one place a write path advances the model. Must be called from inside a {@code @Transactional}
  * method, as the last step, after the row-level mutation and its audit_event are already written on
  * the same connection (admin-api.md, "Write semantics common to every mutating route"; c30). The
  * snapshot_version row commits with everything else; reads answer directly from SQLite, so there is
- * no in-memory swap to defer. The returned version is the row's autoincrement key.
+ * no in-memory swap to defer. The returned version is the row's autoincrement key — the number lives
+ * in exactly one place, the database.
+ *
+ * <p>The transaction check is the first statement on purpose. An autocommitted {@code snapshot_version}
+ * row outside its business transaction would be a lie in the feed: it announces a change no reader
+ * can see. Checking after the insert would let exactly that row reach the database before the guard
+ * fired.
  */
 @Component
 public class SnapshotPublisher {
@@ -31,6 +38,6 @@ public class SnapshotPublisher {
         }
         String deltaJson = DeltaJson.write(delta);
         return snapshotVersionRepository.insert(new SnapshotVersionRow(
-            null, clock.instant().toString(), lastAuditSeq, deltaJson));
+            null, Timestamps.iso(clock.instant()), lastAuditSeq, deltaJson));
     }
 }

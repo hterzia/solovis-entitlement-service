@@ -2,6 +2,7 @@ package com.solovis.entitlement.service.admin;
 
 import com.solovis.entitlement.service.admin.dto.*;
 import com.solovis.entitlement.service.admin.service.PlanAdminService;
+import com.solovis.entitlement.service.store.DecisionReadDao;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -12,12 +13,16 @@ import java.util.List;
 public class PlanAdminController {
 
     private final PlanAdminService service;
+    private final DecisionReadDao decisionReadDao;
 
-    public PlanAdminController(PlanAdminService service) { this.service = service; }
+    public PlanAdminController(PlanAdminService service, DecisionReadDao decisionReadDao) {
+        this.service = service;
+        this.decisionReadDao = decisionReadDao;
+    }
 
     @GetMapping
-    public java.util.Map<String, Object> list() {
-        return java.util.Map.of("plans", service.list());
+    public PlanListResponseDto list() {
+        return new PlanListResponseDto(service.list(), decisionReadDao.latestVersion());
     }
 
     @PostMapping

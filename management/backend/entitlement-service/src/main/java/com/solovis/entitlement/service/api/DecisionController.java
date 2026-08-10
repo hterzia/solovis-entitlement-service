@@ -8,6 +8,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.time.Duration;
 
+/**
+ * A thin mapper over {@link DecisionReadService}: the read transaction, the resolution and the
+ * version all belong to the service, and every {@code /v1} response is stamped with the version the
+ * transaction that produced it actually saw.
+ */
 @RestController
 @RequestMapping("/v1")
 public class DecisionController {
@@ -24,7 +29,7 @@ public class DecisionController {
         @RequestParam(required = false) Long minSnapshotVersion) {
         var result = decisionReadService.single(accountExternalId, capabilityKey, minSnapshotVersion);
         return ResponseEntity.ok()
-            .header("X-Entitlement-Snapshot-Version", String.valueOf(result.snapshotVersion()))
+            .header(SnapshotVersionHeader.NAME, String.valueOf(result.snapshotVersion()))
             .cacheControl(CacheControl.maxAge(Duration.ofSeconds(10)).staleIfError(Duration.ofHours(24)))
             .body(result.body());
     }
@@ -32,18 +37,26 @@ public class DecisionController {
     @GetMapping("/accounts/{accountExternalId}/entitlements")
     public ResponseEntity<WholeAccountResponseDto> whole(@PathVariable String accountExternalId) {
         var result = decisionReadService.whole(accountExternalId);
-        return ResponseEntity.ok().header("X-Entitlement-Snapshot-Version", String.valueOf(result.snapshotVersion())).body(result.body());
+        return ResponseEntity.ok()
+            .header(SnapshotVersionHeader.NAME, String.valueOf(result.snapshotVersion()))
+            .body(result.body());
     }
 
     @GetMapping("/capabilities")
-    public CapabilityListResponseDto list(
+    public ResponseEntity<CapabilityListResponseDto> list(
         @RequestParam(required = false) String area,
         @RequestParam(required = false, defaultValue = "ACTIVE") String status) {
-        return decisionReadService.capabilityList(area, status);
+        var body = decisionReadService.capabilityList(area, status);
+        return ResponseEntity.ok()
+            .header(SnapshotVersionHeader.NAME, String.valueOf(body.snapshotVersion()))
+            .body(body);
     }
 
     @GetMapping("/capabilities/{capabilityKey}")
-    public CapabilityDescriptorDto one(@PathVariable String capabilityKey) {
-        return decisionReadService.capabilityOne(capabilityKey);
+    public ResponseEntity<CapabilityDescriptorDto> one(@PathVariable String capabilityKey) {
+        var result = decisionReadService.capabilityOne(capabilityKey);
+        return ResponseEntity.ok()
+            .header(SnapshotVersionHeader.NAME, String.valueOf(result.snapshotVersion()))
+            .body(result.body());
     }
 }

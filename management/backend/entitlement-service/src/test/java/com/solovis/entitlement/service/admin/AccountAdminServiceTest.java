@@ -8,6 +8,10 @@ import com.solovis.entitlement.service.admin.service.PlanAdminService;
 import com.solovis.entitlement.service.dto.ValueDto;
 import com.solovis.entitlement.service.error.EntitlementApiException;
 import com.solovis.entitlement.service.error.ErrorCode;
+import com.solovis.entitlement.service.store.AccountRepository;
+import com.solovis.entitlement.service.store.AuditEventFilter;
+import com.solovis.entitlement.service.store.AuditEventRepository;
+import com.solovis.entitlement.service.store.PlanRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -24,6 +28,9 @@ class AccountAdminServiceTest {
     @Autowired PlanAdminService planService;
     @Autowired CapabilityAdminService capabilityService;
     @Autowired OverrideAdminService overrideService;
+    @Autowired AccountRepository accountRepository;
+    @Autowired AuditEventRepository auditEventRepository;
+    @Autowired PlanRepository planRepository;
 
     @Test
     void createAssignsTheDesignatedDefaultPlan() {
@@ -37,17 +44,19 @@ class AccountAdminServiceTest {
 
     @Test
     void createFailsWithoutADesignatedDefaultPlan() {
-        // relies on a fresh test datasource per JVM run with no default plan designated yet in this test class's ordering;
-        // if another test in this class already designated one, this assertion instead documents that create()
-        // always resolves *some* default rather than failing arbitrarily — adapt per actual execution order.
-        assertThatThrownBy(() -> {
-            if (planService.list().stream().noneMatch(PlanSummaryDto::isDefaultForNewAccounts)) {
-                accountService.create(new AccountCreateRequest("acct_should_fail", null));
-            } else {
-                throw new EntitlementApiException(ErrorCode.DEFAULT_PLAN_REQUIRED, "skip: a default already exists");
-            }
-        }).isInstanceOf(EntitlementApiException.class)
-          .extracting("errorCode").isEqualTo(ErrorCode.DEFAULT_PLAN_REQUIRED);
+        // Force the true no-default-plan state directly rather than relying on test ordering, then
+        // exercise the real create() call — this test class isn't @Transactional (see
+        // PlanAdminControllerTest's note on why), so restore whatever default plan was previously
+        // designated afterwards to avoid leaking state into other tests sharing this JVM fork's SQLite file.
+        var previousDefault = planRepository.findDefault();
+        planRepository.clearDefault("2026-08-09T00:00:00.000Z");
+        try {
+            assertThatThrownBy(() -> accountService.create(new AccountCreateRequest("acct_t26acct_1", "No Default Plan Co")))
+                .isInstanceOf(EntitlementApiException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.DEFAULT_PLAN_REQUIRED);
+        } finally {
+            previousDefault.ifPresent(row -> planRepository.setDefault(row.id(), "2026-08-09T00:00:00.000Z"));
+        }
     }
 
     @Test
@@ -117,5 +126,43 @@ class AccountAdminServiceTest {
         var detail = accountService.get("acct_grant_only");
         assertThat(detail.overrides()).extracting(AccountDetailDto.OverrideRow::effectNow)
             .containsExactly("NO_EFFECT_PLAN_MORE_GENEROUS");
+    }
+
+    @Test
+    void createRecordsAnAuditEventVisibleToTheAccountFilter() {
+        planService.create(new PlanCreateRequest("tacct.default-plan", "Tacct Default Plan", null));
+        planService.designateDefault("tacct.default-plan");
+
+        accountService.create(new AccountCreateRequest("acct_tacct_1", "Tacct One"));
+
+        var accountRow = accountRepository.findByExternalId("acct_tacct_1").orElseThrow();
+        var defaultPlan = planRepository.findByKey("tacct.default-plan").orElseThrow();
+
+        var events = auditEventRepository.find(
+            new AuditEventFilter(accountRow.id(), null, null, "ACCOUNT", null, null, null, 10));
+
+        assertThat(events).hasSize(1);
+        var event = events.get(0);
+        assertThat(event.action()).isEqualTo("CREATE");
+        assertThat(event.planId()).isEqualTo(defaultPlan.id());
+        assertThat(event.afterJson()).contains("tacct.default-plan");
+    }
+
+    @Test
+    void searchPagesByCursorWhenMoreAccountsExist() {
+        planService.create(new PlanCreateRequest("cursor-test-plan", "Cursor test plan", null));
+        planService.designateDefault("cursor-test-plan");
+        accountService.create(new AccountCreateRequest("acct_cursor_page_0", null));
+        accountService.create(new AccountCreateRequest("acct_cursor_page_1", null));
+        accountService.create(new AccountCreateRequest("acct_cursor_page_2", null));
+
+        var firstPage = accountService.search("acct_cursor_page", null, 0, 2);
+        assertThat(firstPage.accounts()).hasSize(2);
+        assertThat(firstPage.nextCursor()).isNotNull();
+
+        long afterId = com.solovis.entitlement.service.error.RefId.parse(firstPage.nextCursor(), "acct_");
+        var secondPage = accountService.search("acct_cursor_page", null, afterId, 2);
+        assertThat(secondPage.accounts()).hasSize(1);
+        assertThat(secondPage.nextCursor()).isNull();
     }
 }

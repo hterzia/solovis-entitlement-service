@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createCapability } from '../../api/capabilities'
 import type { CreateCapabilityInput } from '../../api/capabilities'
@@ -6,12 +6,13 @@ import { getMeta } from '../../api/meta'
 import { queryKeys } from '../../queries/keys'
 import { ValueEditor } from '../../components/ValueEditor'
 import { SaveConfirmation } from '../../components/SaveConfirmation'
+import { ErrorNotice } from '../../components/ErrorNotice'
 import { zeroValueFor } from '../../types/value'
 import type { EntitlementValue, ValueType } from '../../types/value'
 
 interface TierDraft { tier: string; displayName: string }
 
-export function CapabilityCreateForm({ onCreated }: { onCreated: () => void }) {
+export function CapabilityCreateForm({ onCreated, onPendingChange }: { onCreated: () => void; onPendingChange?: (pending: boolean) => void }) {
   const [key, setKey] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [description, setDescription] = useState('')
@@ -41,6 +42,11 @@ export function CapabilityCreateForm({ onCreated }: { onCreated: () => void }) {
   const validTiers = tierDrafts.filter((t) => t.tier.trim() && t.displayName.trim())
   const canSubmitTiers = valueType !== 'TIER' || validTiers.length >= 2
   const canSubmit = key.trim() !== '' && displayName.trim() !== '' && canSubmitTiers && !mutation.isPending
+
+  // Dismissing the form while its write is in flight unmounts the notice that would have reported
+  // the outcome — the request is already sent, so the result would be lost rather than cancelled.
+  // The parent disables its Cancel control for the round trip instead.
+  useEffect(() => { onPendingChange?.(mutation.isPending) }, [mutation.isPending, onPendingChange])
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -121,8 +127,8 @@ export function CapabilityCreateForm({ onCreated }: { onCreated: () => void }) {
       )}
 
       <button type="submit" className="sv-btn" disabled={!canSubmit}>Declare capability</button>
-      {mutation.isSuccess && meta.data && <SaveConfirmation seconds={meta.data.changeVisibleEverywhereWithinSeconds} />}
-      {mutation.isError && <p className="sv-tag" style={{ color: 'var(--sv-danger)' }}>{(mutation.error as Error).message}</p>}
+      {mutation.isSuccess && <SaveConfirmation seconds={meta.data?.changeVisibleEverywhereWithinSeconds} />}
+      <ErrorNotice error={mutation.error} action="Could not declare this capability" />
     </form>
   )
 }

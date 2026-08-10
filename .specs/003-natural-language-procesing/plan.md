@@ -134,9 +134,26 @@ Feature discovery: `GET /admin/v1/meta` gains `"askEnabled": true|false`.
 - **UI** — Vitest for `AskBox` states; one Playwright flow: ask → answer with trace; ask box disabled when meta says off.
 - **Criterion 14** (load results unchanged) — no k6 work needed: the ask endpoint shares no code or thread pool with the decision paths; the 001 load demonstration simply remains the evidence, run on a build containing this feature.
 
+## Implementation state — 2026-08-09
+
+Scaffolded and committed on branch `worktree-entitlement-ask-nlp` (`.claude/worktrees/entitlement-ask-nlp`, commit `39af421`), on top of `main` at the DB-layer merge. Note the modules live under `management/backend/` (001's plan shows them at the repo root, which is stale).
+
+**Built and verified:**
+
+- The complete `ask` package (the file layout below, plus `AskProperties`, `AskUnavailableException`, `AccountMatch`, and `DbCapabilityCatalogProvider`/`DbAccountMatcher` riding on the merged DB layer's repositories) and the `entitlement.ask.*` configuration — the interpreter bean's absence is the feature flag
+- All 60 module tests green: 10 `AskService` status-branch tests against hand stubs, catalogue rendering, controller 503 + validation; the application context boots with the new configuration
+- **Live Gemini smoke test passing** against `gemini-3.5-flash-lite` (~2 s for both cases): canonical extraction correct, nonsense capability correctly returns an empty key list. Gated on `GOOGLE_AI_GEMINI_API_KEY`; reads the key from the repo-root `.env`
+
+**The two seams still open (by design):**
+
+1. `CheckerPort` — no implementation until the api-layer worktree delivers the checker; until then `POST /admin/v1/check/ask` answers `503 ASK_UNAVAILABLE`. Implementing this one interface (and narrowing `Object` to the checker's DTO) completes criteria 1–4.
+2. `AskBox` — waits for the checker screen to exist in the SPA.
+
+Remaining after the seams close: the MockMvc payload-equality test against the real `/check` (criterion 1), the wire-level `ChatModelListener` assertion (criterion 9's second half), Playwright coverage, and the criterion 14 note against the 001 load run.
+
 ## Rollout and coordination
 
-- **Sequencing**: 001 is being implemented now in three worktrees (backend, UI, DB). This feature touches only `entitlement-service` (new `ask` package, one dependency, config) and `entitlement-ui` (one component, one meta field) — it builds **after** the 001 worktrees merge, as its own small branch. Nothing here blocks or is blocked by the DB layer or the SDK.
+- **Sequencing**: the DB layer has merged to `main`; 001's api-layer and UI worktrees are still in flight. This feature's branch (`worktree-entitlement-ask-nlp`) adds only new files plus two small edits (`pom.xml`, `application.yaml`), so it rebases cleanly onto whatever 001 lands; the two seams above close after the api-layer and UI merges respectively. Nothing here blocks or is blocked by the SDK.
 - **Safe-off default**: no API key ⇒ feature invisible. Merging the code changes no behaviour anywhere.
 - **No new deployable, no schema change, no migration.** The audit trail is untouched by design (spec §9).
 

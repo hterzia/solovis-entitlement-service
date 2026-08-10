@@ -42,11 +42,18 @@ public class AuditController {
         Long accountId = account == null ? null : accountRepository.findByExternalId(account).map(a -> a.id()).orElse(-1L);
         Long planId = planKey == null ? null : planRepository.findByKey(planKey).map(p -> p.id()).orElse(-1L);
         Long beforeSeq = cursor == null ? null : RefId.parse(cursor, "aud_");
+        int pageSize = limit > 0 ? limit : DEFAULT_LIMIT;
 
+        // Over-fetch by one to learn whether a further page exists, then drop the probe row. A
+        // cursor emitted from a page that happens to be exactly full would send the History screen
+        // to an empty page it had no way to predict — "there are more" and "this filled the page"
+        // are different facts, and only the probe row distinguishes them.
         var rows = auditEventRepository.find(new AuditEventFilter(accountId, planId, actor, entityType, from, to,
-            beforeSeq, limit > 0 ? limit : DEFAULT_LIMIT));
+            beforeSeq, pageSize + 1));
+        boolean hasMore = rows.size() > pageSize;
+        var page = hasMore ? rows.subList(0, pageSize) : rows;
 
-        var events = rows.stream().map(row -> new AuditEventDto(row.seq(), row.occurredAt(),
+        var events = page.stream().map(row -> new AuditEventDto(row.seq(), row.occurredAt(),
             new AuditEventDto.Actor(row.actorId(), row.actorKind()), row.source(), row.entityType(), row.entityId(), row.action(),
             row.planId() == null ? null : planRepository.findById(row.planId()).map(p -> p.key()).orElse(null),
             row.accountId() == null ? null : accountRepository.findById(row.accountId()).map(a -> a.externalId()).orElse(null),
@@ -54,7 +61,7 @@ public class AuditController {
             readTree(row.beforeJson()), readTree(row.afterJson()), row.reason(), row.affectedAccountCount()))
             .toList();
 
-        String next = events.isEmpty() ? null : "aud_" + events.get(events.size() - 1).seq();
+        String next = hasMore ? "aud_" + events.get(events.size() - 1).seq() : null;
         return new AuditListResponseDto(events, next);
     }
 

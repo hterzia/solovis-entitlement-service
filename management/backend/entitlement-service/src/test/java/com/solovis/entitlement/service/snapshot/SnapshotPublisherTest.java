@@ -7,9 +7,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 // snapshot_version.last_audit_seq carries a hard FK to audit_event(seq) (V1__baseline.sql) — every
 // publish() call here must reference a real row, so each test seeds one via AuditEventRepository
@@ -39,6 +41,8 @@ class SnapshotPublisherTest {
             versions[1] = publisher.publish(auditSeq2, new DeltaChange.PlanArchived("does-not-exist-2"));
         });
 
+        // Two publishes in one transaction simply produce two consecutive rows: the version has one
+        // home now, the table's autoincrement.
         assertThat(versions[1]).isEqualTo(versions[0] + 1);
         assertThat(snapshotVersionRepository.findByVersion(versions[0])).isPresent();
         assertThat(snapshotVersionRepository.findByVersion(versions[1])).isPresent();
@@ -62,11 +66,14 @@ class SnapshotPublisherTest {
         long auditSeq = seedAuditEvent();
         long latestBefore = snapshotVersionRepository.findLatest().map(row -> row.version()).orElse(0L);
 
-        assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
-        org.assertj.core.api.Assertions.assertThatThrownBy(
-            () -> publisher.publish(auditSeq, new DeltaChange.PlanArchived("does-not-exist")))
-            .isInstanceOf(IllegalStateException.class);
+        // No TransactionTemplate here, and this class is not @Transactional: publish() is invoked
+        // with no active transaction, which is exactly the case the guard exists for.
+        assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+        assertThatThrownBy(() -> publisher.publish(auditSeq, new DeltaChange.PlanArchived("does-not-exist")))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("active transaction");
 
+        // "Before writing anything": the guard fires ahead of the insert, so no row autocommitted.
         assertThat(snapshotVersionRepository.findLatest().map(row -> row.version()).orElse(0L)).isEqualTo(latestBefore);
     }
 }

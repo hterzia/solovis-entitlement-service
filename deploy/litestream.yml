@@ -16,6 +16,15 @@
 # and an age-based deletion rule will happily remove a base that current segments
 # still depend on, so the restore fails exactly when it is needed.
 
+# sync-interval is stated explicitly because it is the ONLY thing protecting data here,
+# not a tuning knob. Measured 2026-08-10: a write made immediately before a graceful stop
+# is LOST. Tested four ways — SIGKILL, SIGTERM with a 10s grace, SIGTERM with a 30s grace,
+# and SIGTERM with shutdown-sync-timeout/shutdown-sync-interval configured — all four lost
+# it. The control (same write, 15s wait, then SIGTERM) survived. So durability comes
+# entirely from this periodic sync during normal running; nothing at shutdown rescues a
+# write that has not already been replicated.
+sync-interval: 1s
+
 dbs:
   - path: /data/entitlement.db
     replica:

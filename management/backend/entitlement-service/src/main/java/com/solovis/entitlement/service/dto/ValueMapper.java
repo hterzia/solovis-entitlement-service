@@ -5,6 +5,7 @@ import com.solovis.entitlement.core.model.EntitlementValue;
 import com.solovis.entitlement.core.model.ValueType;
 import com.solovis.entitlement.service.error.EntitlementApiException;
 import com.solovis.entitlement.service.error.ErrorCode;
+import java.util.List;
 import java.util.Map;
 
 /** Converts between the wire {@link ValueDto} and the core {@link EntitlementValue}. */
@@ -42,6 +43,9 @@ public final class ValueMapper {
                 if (hasAmount == hasUnlimited) {
                     throw validationFailed("A QUANTITY value must carry exactly one of 'amount' or 'unlimited'.");
                 }
+                if (dto.amount() != null && dto.amount() < 0) {
+                    throw validationFailed("A QUANTITY amount must not be negative.");
+                }
                 yield hasUnlimited ? EntitlementValue.Quantity.unbounded() : EntitlementValue.Quantity.of(dto.amount());
             }
             case TIER -> {
@@ -76,6 +80,6 @@ public final class ValueMapper {
     }
 
     private static EntitlementApiException validationFailed(String detail) {
-        return new EntitlementApiException(ErrorCode.VALIDATION_FAILED, detail);
+        return new EntitlementApiException(ErrorCode.VALIDATION_FAILED, detail, Map.of("violations", List.of(detail)));
     }
 }

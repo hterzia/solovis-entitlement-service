@@ -2,10 +2,16 @@ package com.solovis.entitlement.service.admin;
 
 import com.solovis.entitlement.service.admin.dto.*;
 import com.solovis.entitlement.service.admin.service.CapabilityAdminService;
+import com.solovis.entitlement.service.dto.CapabilityDescriptorDto;
+import com.solovis.entitlement.service.error.EntitlementApiException;
+import com.solovis.entitlement.service.error.ErrorCode;
 import com.solovis.entitlement.service.store.DecisionReadDao;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/admin/v1/capabilities")
@@ -20,11 +26,28 @@ public class CapabilityAdminController {
     }
 
     @GetMapping
-    public CapabilityListResponseDto list(
+    public Object list(
         @RequestParam(required = false) String area,
         @RequestParam(required = false, defaultValue = "ACTIVE") String status,
-        @RequestParam(required = false) String q) {
-        return new CapabilityListResponseDto(service.list(area, status, q), decisionReadDao.latestVersion());
+        @RequestParam(required = false) String q,
+        @RequestParam(required = false) String groupBy) {
+        List<CapabilityDescriptorDto> capabilities = service.list(area, status, q);
+        long snapshotVersion = decisionReadDao.latestVersion();
+        if (groupBy == null) {
+            return new CapabilityListResponseDto(capabilities, snapshotVersion);
+        }
+        if (!groupBy.equals("area")) {
+            throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "groupBy must be 'area'.",
+                Map.of("violations", List.of("groupBy must be 'area'.")));
+        }
+        Map<String, List<CapabilityDescriptorDto>> byArea = new LinkedHashMap<>();
+        for (var capability : capabilities) {
+            byArea.computeIfAbsent(capability.area(), key -> new java.util.ArrayList<>()).add(capability);
+        }
+        List<CapabilityAreasResponseDto.AreaGroup> areas = byArea.entrySet().stream()
+            .map(entry -> new CapabilityAreasResponseDto.AreaGroup(entry.getKey(), entry.getValue()))
+            .toList();
+        return new CapabilityAreasResponseDto(areas, snapshotVersion);
     }
 
     @PostMapping
@@ -34,7 +57,7 @@ public class CapabilityAdminController {
     }
 
     @GetMapping("/{key}")
-    public com.solovis.entitlement.service.dto.CapabilityDescriptorDto get(@PathVariable String key) {
+    public CapabilityDetailResponseDto get(@PathVariable String key) {
         return service.get(key);
     }
 

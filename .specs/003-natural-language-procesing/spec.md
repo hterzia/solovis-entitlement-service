@@ -1,6 +1,6 @@
 # Plain-English Checker — Business Specification
 
-**Status:** Draft for review
+**Status:** In implementation — the service side is built and tested (§13); the checker connection and the ask box await the entitlement service's own checker
 **Date:** 2026-08-09
 **Companion documents:** [`001-entitlement-service/spec.md`](../001-entitlement-service/spec.md) — the entitlement service this extends · [`plan.md`](./plan.md) — how it will be built
 
@@ -170,3 +170,23 @@ Accepted knowingly:
 | No conversation | Each question stands alone; follow-ups are not understood |
 | Interpretation is best-effort | A well-formed question may still fail to interpret; the classic checker is always available and always authoritative |
 | Phrasing is English-first | Other languages may work but are not promised |
+
+---
+
+## 13. Implementation status — 2026-08-09
+
+The service side of this feature is built and its behaviour demonstrated by tests, including live questions answered by the outside language service. Two connections remain open by design, because both depend on entitlement-service work still in progress under 001: the link to the classic checker itself, and the ask box on the checker screen. Until the checker link exists, asking answers "unavailable" — which is the posture §6 requires anyway.
+
+| What | State |
+|---|---|
+| Interpretation of real questions by the outside language service | **Working and demonstrated live** — a canonical question resolves to the right account mention and capability; a question about a capability the registry does not know comes back empty rather than guessed |
+| Never a silent guess — candidates, missing parts, unmatched parts, retirement stated as a fact (criteria 5–8, 10) | **Built and demonstrated by tests** covering every outcome |
+| The interpreter's confines (§4, criterion 9) | **Built structurally** — the interpreter component is given the question and the catalogue and can reach nothing else |
+| Asking changes nothing (criterion 11) | **Built** — the ask path touches nothing that records changes |
+| Graceful absence (§6, criterion 12) | **Service half built and demonstrated** — unconfigured or unreachable answers a plain "unavailable"; the ask-box half waits on the checker screen |
+| Answers are the classic checker's, with interpretation shown (criteria 1–4) | **Built up to the connection point** — waits for the checker itself, in progress under 001 |
+| Speed (criterion 13) | The interpretation step measures well inside the 3-second target; end to end waits for the checker |
+| Load results unchanged (criterion 14) | Waits for the 001 volume demonstration, run on a build containing this feature |
+| Commercial terms for submitted text (§7) | **Verified** — the language service is used under paid terms that exclude retaining submitted text for the provider's own use |
+
+The feature ships dark: without its configuration it is invisible, so its code can merge at any time without changing behaviour anywhere.

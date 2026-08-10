@@ -18,7 +18,12 @@ public enum ErrorCode {
     SNAPSHOT_BEHIND("entitlement/snapshot-behind", HttpStatus.CONFLICT, "Snapshot behind"),
     VALIDATION_FAILED("entitlement/validation-failed", HttpStatus.UNPROCESSABLE_ENTITY, "Validation failed"),
     PREVIEW_TOKEN_INVALID("entitlement/preview-token-invalid", HttpStatus.CONFLICT, "Preview token invalid or stale"),
-    INTERNAL_ERROR("entitlement/internal-error", HttpStatus.INTERNAL_SERVER_ERROR, "Internal error");
+    INTERNAL_ERROR("entitlement/internal-error", HttpStatus.INTERNAL_SERVER_ERROR, "Internal error"),
+    WRITE_CONFLICT("entitlement/conflict", HttpStatus.CONFLICT, "Conflict"),
+    // Same `type` slug as VALIDATION_FAILED (contracts/README.md's error table has no dedicated
+    // slug for a uniqueness conflict) but a different HttpStatus — callers branch on `type`, and
+    // 409 is the correct status for "key already declared" (admin-api.md, "Capabilities — screen 1").
+    DUPLICATE_KEY("entitlement/validation-failed", HttpStatus.CONFLICT, "Validation failed");
 
     private final String type;
     private final HttpStatus status;

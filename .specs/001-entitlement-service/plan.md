@@ -22,17 +22,17 @@ Because consumers hold a copy of the rule but never a trace, drift between repli
 
 **Storage**: SQLite in WAL mode, single file, single writer process — durable system of record for capabilities, plans, accounts, overrides, the append-only audit trail, and published snapshot versions. Every read on a decision path is served directly from SQLite, through a dedicated read connection pool, inside a read-only transaction — WAL mode gives that transaction one coherent view of the database from its first statement onward.
 
-**Testing**: JUnit 5 + AssertJ unit tests on `entitlement-core`; jqwik property tests for the order-independence guarantees (criteria 12, 13, 16); Spring Boot slice/integration tests against a temp-file SQLite database; SDK tests against a stubbed feed including outage and stale-resync paths; Vitest + Testing Library for SPA components, Playwright for the five screens; k6 for the volume demonstration (criteria 25–31) run with a concurrent write-churn generator.
+**Testing**: JUnit 5 + AssertJ unit tests on `entitlement-core`; jqwik property tests for the order-independence guarantees (criteria 12, 13, 16); Spring Boot slice/integration tests against a temp-file SQLite database; SDK tests against a stubbed feed including outage and stale-resync paths; Vitest + Testing Library for SPA components, Playwright for the five screens; a browser smoke check against the built image in CI, which asserts the deployed artifact renders rather than merely responds.
 
 **Target Platform**: Linux x86-64, JVM 21, one container per role. Management service: single instance (single SQLite writer). Consuming services: any number, each embedding the SDK with its own snapshot replica. Operator SPA is static assets served by the management service.
 
 **Project Type**: Multi-module JVM monorepo (Maven reactor) — one pure library, one Spring Boot service, one distributable client library, one React SPA, one load-demonstration harness.
 
-**Performance Goals**: 5,000 single-capability decisions/second sustained with p99 ≤ 10 ms; whole-account p99 ≤ 50 ms; both held **while plans and overrides are being written**; a committed change visible in decisions everywhere within 60 s end to end; callers reuse an answer for no longer than 10 s.
+**Performance Goals**: none stated. Throughput and latency targets were withdrawn on 2026-08-10 with the client base settled at 300 (spec §7; `future-spec.md` item 13). What remains are freshness and coherence promises, which hold at any size: a committed change visible in decisions everywhere within 60 s end to end; callers reuse an answer for no longer than 10 s; one evaluation reflects one coherent moment; an operator sees their own write immediately.
 
 **Constraints**: SQLite permits exactly one writer host, so the management service does not horizontally scale — availability of the *decision* path comes from SDK replicas, not from service redundancy. Every decision resolves inside one read-only transaction, which WAL mode gives a single coherent view of the database for its entire duration (one coherent moment, criterion 31). Explanations are produced only by the management service, so the operator UI is the estate's single diagnostic surface for "why". Capabilities are retired, never deleted; overrides are removed by soft-delete; the audit trail is append-only and enforced as such by SQLite triggers. No authentication and no role enforcement in v1 (user decision). No plan rollback and no override expiry (spec §8, §12). Value types must carry a total order, so `unlimited` is a distinct value and never a large number.
 
-**Scale/Scope**: 100,000 accounts; an assumed ~500 capabilities across ~15 areas (the spec's twelve-region residency example implies sets are wide); ~10 plans; an assumed ~50,000 live overrides. Snapshot working set estimated at well under 100 MB; a 1 GB heap is comfortable. Audit retention 24 months minimum, append-only. Five operator screens.
+**Scale/Scope**: 300 clients; an assumed ~500 capabilities across ~15 areas (the spec's twelve-region residency example implies sets are wide); ~10 plans. The snapshot is well under a megabyte, so working-set size is not a design consideration at this scale. Audit retention 24 months minimum, append-only. Five operator screens.
 
 ## Constitution Check
 
@@ -45,7 +45,7 @@ No constitution is defined for this project ("None defined"), so this gate is no
 **Post-Phase-1 re-check (Step 5): still N-A.** The Phase 1 design introduced no constitutional question because there is no constitution to answer to. The design was instead re-checked against the specification's own 41 acceptance criteria, which surfaced two things worth recording and nothing that blocks Phase 2:
 
 - **Two readings that could reasonably go the other way**, now recorded as decisions in "Recorded interpretations" below rather than left implicit: the scope of criterion 21's trace requirement, and append-only tier ordering.
-- **Criteria 25–31 are designed for but not yet evidenced.** The spec's definition of done requires a demonstration at 100,000 accounts and 5,000 decisions/second *against data changing during the demonstration*. The design makes those targets easy in principle (a single-capability decision is a handful of indexed SQLite reads inside one read-only transaction, against a database sized to sit comfortably in the OS page cache), but "easy in principle" is not evidence — these criteria remain designed for and unmeasured.
+- **Criteria 25–27 no longer exist.** They were throughput and latency targets, withdrawn on 2026-08-10 when the supported client base was settled at 300 (spec §7; `future-spec.md` item 13). The criterion numbering is deliberately left with a gap, because `(cNN)` identifiers are cited across the code and these documents and renumbering would repoint every citation at a different requirement. Criteria 28–31 — freshness and coherence — remain, hold at any size, and are demonstrable without special apparatus.
 - **One risk the design creates and must answer for**: the resolution rule now runs in every consuming service, so two replicas on different SDK versions could disagree about the same account — the scattered-logic failure §1 exists to prevent, reappearing one layer down. It is dormant while §4's rule is frozen, and becomes live the moment `future-spec.md` §1 (time-bounded overrides) or §3 (relative grants) changes what "most generous" means. Answered by the `resolverContract` version and startup conformance vectors (`research.md` §20), not by discipline.
 
 The one deviation from the specification, below, is unchanged by Phase 1.
@@ -94,7 +94,7 @@ Each feature owns one directory under `.specs/`, holding its business specificat
 ### Source Code (repository root)
 
 ```
-pom.xml                                    # Maven reactor: core, service, client, loadtest
+pom.xml                                    # Maven reactor: core, service, client
 mvnw / mvnw.cmd / .mvn/                    # wrapper — no Maven on this host
 
 entitlement-core/                          # pure Java, no Spring, no I/O
@@ -154,17 +154,11 @@ entitlement-ui/                            # React SPA, built by Vite
     │                                      search), AffectedAccountsBanner, LivenessNotice
     └── styles/tokens.css                  imported from .claude/design/solovis/tokens.css
 
-entitlement-loadtest/
-├── k6/decision-single.js                  criterion 25
-├── k6/whole-account.js                    criterion 26
-├── k6/churn-writer.js                     concurrent mutation for criterion 27
-├── k6/freshness-probe.js                  criteria 28-29
-└── scripts/run-demo.sh                    orchestrates seed → churn → load → report
 ```
 
 **Structure Decision**: The split exists to serve one requirement that everything else follows from — a decision must be answerable *inside a consuming service, from a local replica, while the management service is unavailable*. That is only honest if the code producing the answer is literally the same code in both places, so `entitlement-core` is a dependency-free library holding the domain model, the total order over values, the resolver and the trace. `entitlement-service` adds persistence, mutation, audit and the operator API around it; `entitlement-client` adds replication and staleness accounting around it. Neither owns any resolution logic, which is what makes criteria 20 and 24 structural rather than aspirational.
 
-`entitlement-ui` is a separate Vite build whose output is copied into the service's static resources, so there is one deployable artifact and no CORS story, while the front end keeps its own toolchain. `entitlement-loadtest` is separate because criteria 25–31 must be demonstrated against a running deployment with data changing underneath it, not from inside the test suite.
+`entitlement-ui` is a separate Vite build whose output is embedded in the packaged jar, so there is one deployable artifact and no CORS story, while the front end keeps its own toolchain. There is no load-test module: the throughput criteria it would have evidenced were withdrawn on 2026-08-10 (spec §7; `future-spec.md` item 13).
 
 ## Complexity Tracking
 

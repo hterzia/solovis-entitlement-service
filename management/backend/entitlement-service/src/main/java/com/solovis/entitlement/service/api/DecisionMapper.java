@@ -5,7 +5,7 @@ import com.solovis.entitlement.core.model.Capability;
 import com.solovis.entitlement.core.model.EntitlementValue;
 import com.solovis.entitlement.service.api.dto.DecisionResponseDto;
 import com.solovis.entitlement.service.dto.ValueMapper;
-import java.time.Instant;
+import com.solovis.entitlement.service.time.Timestamps;
 
 public final class DecisionMapper {
 
@@ -15,7 +15,7 @@ public final class DecisionMapper {
         var decision = explanation.decision();
         return new DecisionResponseDto(
             decision.accountExternalId(), decision.capabilityKey(), decision.allowed(),
-            ValueMapper.toDto(decision.value()), decision.snapshotVersion(), decision.evaluatedAt().toString(),
+            ValueMapper.toDto(decision.value()), decision.snapshotVersion(), Timestamps.iso(decision.evaluatedAt()),
             toTraceDto(explanation.trace(), capability));
     }
 
@@ -39,7 +39,7 @@ public final class DecisionMapper {
         return new DecisionResponseDto.TraceDto.CandidateDto(
             entry.overrideId().isPresent() ? "ovr_" + entry.overrideId().getAsLong() : null,
             ValueMapper.toDto(entry.value()), entry.reason().orElse(null), entry.createdBy().orElse(null),
-            entry.createdAt().map(Instant::toString).orElse(null), entry.outcome().map(Enum::name).orElse(null));
+            entry.createdAt().map(Timestamps::iso).orElse(null), entry.outcome().map(Enum::name).orElse(null));
     }
 
     private static DecisionResponseDto.TraceDto.GrantStepDto toGrantStepDto(Trace trace) {

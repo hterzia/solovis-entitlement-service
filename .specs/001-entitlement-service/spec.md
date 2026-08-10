@@ -204,16 +204,17 @@ An unknown account, an unknown capability, or a retired capability is a **clear 
 
 | Property | Target |
 |---|---|
-| Accounts | 100,000 |
-| Decision volume | 5,000 single-capability decisions per second, sustained |
-| Decision speed | 99 of every 100 single-capability decisions answered within 10 milliseconds |
-| Whole-account speed | 99 of every 100 whole-account requests answered within 50 milliseconds |
+| Clients | 300 |
 | Change visibility | a saved change is reflected in decisions within **60 seconds**, end to end |
 | Answer reuse by callers | calling products may reuse an answer for no longer than **10 seconds** |
 
+**There is no throughput or latency rubric.** At three hundred clients the question answers itself: a decision is a lookup against a model small enough to hold in memory, and no plausible volume from a client base this size makes speed the thing that decides whether this design works. Stating a decisions-per-second target would be inventing a requirement nobody has, and inventing one has a cost — it would sit permanently unevidenced, making the service read as incomplete against a bar that was never asked for, and hiding the gaps that are real. If the client base or the volume per client grows to where speed is genuinely in question, [`future-spec.md`](../future-spec.md) records what to reinstate and when.
+
+What remains below are not performance targets. They are promises about *freshness and coherence* — when a change takes effect, and what a single answer is allowed to reflect. Those hold at any size, and they are what this section exists to fix.
+
 Additional guarantees:
 
-- **Targets hold while plans and overrides are being changed**, not only at rest. A system that is fast only when nothing is happening has not met this requirement.
+- **These guarantees hold while plans and overrides are being changed**, not only at rest. A system that is coherent only when nothing is happening has not met this requirement.
 - **One coherent moment per decision.** A single evaluation reflects the state as of one moment. It can never mix a new plan with the old plan's overrides, or one capability's new value with another's stale one.
 - **Operators see their own changes at once.** An operator who saves a change and immediately re-checks in the UI sees their own change. This guarantee is scoped to the UI; everywhere else gets the 60-second bound.
 - **Answers may be reused only briefly.** Calling products must not reuse an answer for longer than 10 seconds. The 60-second guarantee is an end-to-end promise, so it holds only if callers are bound too — a product reusing hour-old answers makes it fiction. The one exception is stated in §11: while the service cannot answer at all, products carry on with the last answer they saw — holding onto it then, for as long as the outage lasts, is exactly what is required.
@@ -305,9 +306,8 @@ The spec is satisfied when every criterion below can be demonstrated.
 
 ### Speed, freshness and consistency
 
-25. With 100,000 accounts and 5,000 single-capability decisions per second sustained, 99 of every 100 decisions are answered within 10 milliseconds.
-26. Whole-account requests are measured separately: 99 of every 100 are answered within 50 milliseconds.
-27. Targets 25 and 26 hold while plans and overrides are being changed, not only at rest.
+*(25, 26 and 27 were throughput and latency criteria, withdrawn with the load rubric in §7. The numbering is left as it stands rather than closed up: these identifiers are cited across the code and the engineering documents, and renumbering would silently repoint every one of those citations at a different requirement. See [`future-spec.md`](../future-spec.md) for what reinstates them.)*
+
 28. A saved change is reflected in decisions within 60 seconds, end to end.
 29. The 10-second bound on reusing answers is documented as a condition of criterion 28, and callers are held to it.
 30. An operator re-checking in the UI immediately after saving sees their own change.
@@ -331,7 +331,11 @@ The spec is satisfied when every criterion below can be demonstrated.
 
 ### Definition of done
 
-Every criterion above is demonstrable through the UI or the evaluation interface by someone with no access to internals, and criteria 25–31 are evidenced by a demonstration at the stated volumes, run **against data that is changing during the demonstration**.
+Every criterion above is demonstrable through the UI or the evaluation interface by someone with no access to internals.
+
+Criteria 28 to 31 — change visibility, the reuse bound, an operator seeing their own write, one coherent moment — are shown the same way as everything else: save a change and watch where it lands. They need no special apparatus, and they are demonstrated **against data that is changing at the time**, because that is the only condition under which they mean anything.
+
+Nothing in this document now requires a separate measurement exercise to be considered done.
 
 ---
 

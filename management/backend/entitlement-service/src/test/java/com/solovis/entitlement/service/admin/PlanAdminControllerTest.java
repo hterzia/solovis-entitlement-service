@@ -166,4 +166,25 @@ class PlanAdminControllerTest {
         // the single-default unique constraint (e.g. DecisionControllerTest's own seed). Clear it.
         planRepository.clearDefault("2026-08-09T00:00:00.000Z");
     }
+
+    @Test
+    void listCarriesSnapshotVersion() throws Exception {
+        mockMvc.perform(get("/admin/v1/plans"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.snapshotVersion").isNumber())
+            .andExpect(jsonPath("$.plans").isArray());
+    }
+
+    @Test
+    void creatingADuplicatePlanKeyReturns409() throws Exception {
+        String body = """
+            {"key":"tplanc-duplicate","name":"Tplanc Duplicate"}
+            """;
+        mockMvc.perform(post("/admin/v1/plans").contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/admin/v1/plans").contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.type").value("entitlement/validation-failed"));
+    }
 }

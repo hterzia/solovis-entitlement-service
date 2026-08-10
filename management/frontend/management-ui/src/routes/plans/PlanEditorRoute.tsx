@@ -9,9 +9,15 @@ import { CapabilityTree } from '../../components/CapabilityTree'
 import { ValueEditor, ValueBadge } from '../../components/ValueEditor'
 import { TraceView } from '../../components/TraceView'
 import { SaveConfirmation } from '../../components/SaveConfirmation'
+import { ErrorNotice } from '../../components/ErrorNotice'
 import { formatValue } from '../../types/value'
 import type { EntitlementValue } from '../../types/value'
 import type { Capability } from '../../types/domain'
+
+/** The count is the service's; only the grammar around it is ours. */
+function affectedAccounts(count: number) {
+  return count === 1 ? '1 account' : `${count} accounts`
+}
 
 interface PlanEditorRow {
   key: string
@@ -54,9 +60,20 @@ export function PlanEditorRoute({ planKey }: { planKey?: string } = {}) {
     },
   })
 
+  // A failed load is not a slow load: guarding on `data` alone left a 404 showing "Loading…" for
+  // ever. Each query reports its own failure, so the operator is told which read did not answer.
+  if (planQuery.isError || capabilitiesQuery.isError) {
+    return (
+      <div className="app-panel">
+        <ErrorNotice error={planQuery.error} action="Could not load this plan" />
+        <ErrorNotice error={capabilitiesQuery.error} action="Could not load the capabilities" />
+      </div>
+    )
+  }
+
   if (!planQuery.data || !capabilitiesQuery.data) return <p>Loading…</p>
 
-  const originalByCapability = new Map(planQuery.data.entitlements.map((e) => [e.capability, e.value]))
+  const originalByCapability = new Map(Object.entries(planQuery.data.entitlements))
   const hasPendingChanges = Object.keys(pendingSet).length > 0 || pendingUnset.size > 0
 
   const rows: PlanEditorRow[] = capabilitiesQuery.data.capabilities.map((cap) => {
@@ -129,14 +146,15 @@ export function PlanEditorRoute({ planKey }: { planKey?: string } = {}) {
             <input className="sv-field" value={previewAccountInput} onChange={(e) => setPreviewAccountInput(e.target.value)} aria-label="Preview account" />
           </label>
           <button type="button" className="sv-btn--secondary" onClick={() => reviewMutation.mutate()}>Review changes</button>
+          <ErrorNotice error={reviewMutation.error} action="Could not review this change" />
 
           {preview && (
             <div>
-              <p role="alert">{`This change affects ${preview.affectedAccountCount} accounts.`}</p>
+              <p role="alert">{`This change affects ${affectedAccounts(preview.affectedAccountCount)}.`}</p>
               <ul>
                 {preview.diff.map((d) => (
                   <li key={d.capability}>
-                    {d.capability}: {d.before ? formatValue(d.before) : '—'} → {d.after ? formatValue(d.after) : '—'}
+                    {d.capability}: {d.before ? formatValue(d.before, tiersFor(d.capability)) : '—'} → {d.after ? formatValue(d.after, tiersFor(d.capability)) : '—'}
                     {d.note && ` (${d.note})`}
                   </li>
                 ))}
@@ -167,6 +185,7 @@ export function PlanEditorRoute({ planKey }: { planKey?: string } = {}) {
             <p className="sv-tag">Provide a preview account above to enable Save.</p>
           )}
           <button type="button" className="sv-btn" disabled={!canSave} onClick={() => saveMutation.mutate()}>Save</button>
+          <ErrorNotice error={saveMutation.error} action="Could not save this change" />
           {applyResult && <SaveConfirmation seconds={applyResult.changeVisibleEverywhereWithinSeconds} />}
         </div>
       )}

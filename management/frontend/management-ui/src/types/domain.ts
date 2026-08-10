@@ -95,9 +95,10 @@ export interface AccountDetail {
 }
 
 export interface AccountSummary {
-  external: string
+  account: string
   name: string | null
   planKey: string
+  status: 'ACTIVE' | 'CLOSED'
 }
 
 export type TraceBaselineSource = 'PLAN' | 'CAPABILITY_DEFAULT'
@@ -157,8 +158,12 @@ export interface AuditEvent {
   planKey: string | null
   account: string | null
   capability: string | null
-  before: EntitlementValue | null
-  after: EntitlementValue | null
+  // The audit write path logs whatever shape is natural to the change being recorded — a bare
+  // EntitlementValue for an override or plan-entitlement edit, a capability descriptor for a
+  // capability create/update, a `{planKey}` map for a plan reassignment, and so on. There is no
+  // single shape here; see types/value.ts's formatAuditValue for how it's rendered generically.
+  before: unknown
+  after: unknown
   reason: string | null
   affectedAccountCount: number | null
 }

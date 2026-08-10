@@ -94,6 +94,30 @@ class CapabilityRepositoryTest {
 	}
 
 	@Test
+	void findAllEscapesLikeWildcardsInTheQuery() {
+		repository.insert(new CapabilityRow(null, "t-sqllike.100pct", null, "100% off", "A description",
+				"SWITCH", false, null, false, null,
+				false, null, null,
+				"ACTIVE", null,
+				"2026-08-09T00:00:00.000Z", "2026-08-09T00:00:00.000Z"));
+		repository.insert(new CapabilityRow(null, "t-sqllike.5otton", null, "5_otton", "A description",
+				"SWITCH", false, null, false, null,
+				false, null, null,
+				"ACTIVE", null,
+				"2026-08-09T00:00:00.000Z", "2026-08-09T00:00:00.000Z"));
+		repository.insert(new CapabilityRow(null, "t-sqllike.plaincotton", null, "cotton", "A description",
+				"SWITCH", false, null, false, null,
+				false, null, null,
+				"ACTIVE", null,
+				"2026-08-09T00:00:00.000Z", "2026-08-09T00:00:00.000Z"));
+
+		assertThat(repository.findAll(null, null, "100%")).extracting(CapabilityRow::key)
+				.containsExactly("t-sqllike.100pct");
+		assertThat(repository.findAll(null, null, "_otton")).extracting(CapabilityRow::key)
+				.containsExactly("t-sqllike.5otton");
+	}
+
+	@Test
 	void updateChangesDisplayFieldsAndDefaultButNeverValueType() {
 		long id = repository.insert(switchCapability("api.access"));
 		CapabilityRow original = repository.findById(id).orElseThrow();

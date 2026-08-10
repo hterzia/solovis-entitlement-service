@@ -19,6 +19,7 @@ import java.util.Map;
     @JsonSubTypes.Type(value = DeltaChange.AccountUpserted.class, name = "account.upserted"),
     @JsonSubTypes.Type(value = DeltaChange.OverrideCreated.class, name = "override.created"),
     @JsonSubTypes.Type(value = DeltaChange.OverrideRemoved.class, name = "override.removed"),
+    @JsonSubTypes.Type(value = DeltaChange.ConformanceChanged.class, name = "conformance.changed"),
 })
 public sealed interface DeltaChange {
     record CapabilityUpserted(CapabilityDescriptorDto capability) implements DeltaChange {}
@@ -30,4 +31,15 @@ public sealed interface DeltaChange {
     record AccountUpserted(String external, String planKey) implements DeltaChange {}
     record OverrideCreated(String ref, String account, String capability, String overrideKind, ValueDto value) implements DeltaChange {}
     record OverrideRemoved(String ref) implements DeltaChange {}
+
+    /**
+     * A replacement conformance vector set (snapshot-feed.md, "Change kinds"). Carries the whole set
+     * rather than a diff: the replica's job on receipt is to re-run its gate against the new set
+     * before serving, and a partial set could not be gated at all.
+     *
+     * <p>Unlike every other change kind here, this one describes the service's <em>build</em> rather
+     * than the model. It changes nothing a decision depends on, which is why it can be published
+     * without an audit event of its own.
+     */
+    record ConformanceChanged(List<ConformanceVectorDto> vectors) implements DeltaChange {}
 }

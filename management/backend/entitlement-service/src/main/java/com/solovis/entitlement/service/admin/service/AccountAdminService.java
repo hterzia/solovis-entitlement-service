@@ -9,6 +9,7 @@ import com.solovis.entitlement.service.audit.ActorResolver;
 import com.solovis.entitlement.service.audit.AuditEntry;
 import com.solovis.entitlement.service.audit.AuditJson;
 import com.solovis.entitlement.service.audit.AuditRecorder;
+import com.solovis.entitlement.service.audit.AuditSource;
 import com.solovis.entitlement.service.dto.ValueMapper;
 import com.solovis.entitlement.service.error.EntitlementApiException;
 import com.solovis.entitlement.service.error.ErrorCode;
@@ -17,6 +18,7 @@ import com.solovis.entitlement.service.store.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
+import com.solovis.entitlement.service.time.Timestamps;
 import java.util.*;
 
 @Service
@@ -29,13 +31,14 @@ public class AccountAdminService {
     private final AuditRecorder auditRecorder;
     private final AuditJson auditJson;
     private final ActorResolver actorResolver;
+    private final AuditSource auditSource;
     private final SnapshotPublisher snapshotPublisher;
     private final RecordViewAssembler recordViewAssembler;
     private final Clock clock;
 
     public AccountAdminService(AccountRepository accountRepository, AccountOverrideRepository accountOverrideRepository,
             PlanRepository planRepository, CapabilityRepository capabilityRepository, AuditRecorder auditRecorder,
-            AuditJson auditJson, ActorResolver actorResolver, SnapshotPublisher snapshotPublisher,
+            AuditJson auditJson, ActorResolver actorResolver, AuditSource auditSource, SnapshotPublisher snapshotPublisher,
             RecordViewAssembler recordViewAssembler, Clock clock) {
         this.accountRepository = accountRepository;
         this.accountOverrideRepository = accountOverrideRepository;
@@ -44,17 +47,23 @@ public class AccountAdminService {
         this.auditRecorder = auditRecorder;
         this.auditJson = auditJson;
         this.actorResolver = actorResolver;
+        this.auditSource = auditSource;
         this.snapshotPublisher = snapshotPublisher;
         this.recordViewAssembler = recordViewAssembler;
         this.clock = clock;
     }
 
-    public List<AccountSummaryDto> search(String q, String planKey, long afterId, int limit) {
+    public AccountSearchResponseDto search(String q, String planKey, long afterId, int limit) {
         Long planId = planKey == null ? null : planRepository.findByKey(planKey).map(PlanRow::id).orElse(-1L);
-        return accountRepository.search(q, planId, afterId, limit).stream()
+        var rows = accountRepository.search(q, planId, afterId, limit + 1);
+        boolean hasMore = rows.size() > limit;
+        var page = hasMore ? rows.subList(0, limit) : rows;
+        var accounts = page.stream()
             .map(row -> new AccountSummaryDto(row.externalId(), row.name(),
                 planRepository.findById(row.planId()).map(PlanRow::key).orElseThrow(), row.status()))
             .toList();
+        String nextCursor = hasMore ? "acct_" + page.get(page.size() - 1).id() : null;
+        return new AccountSearchResponseDto(accounts, nextCursor);
     }
 
     @Transactional
@@ -64,13 +73,19 @@ public class AccountAdminService {
         }
         var defaultPlan = planRepository.findDefault()
             .orElseThrow(() -> new EntitlementApiException(ErrorCode.DEFAULT_PLAN_REQUIRED, "No default plan is designated."));
-        String now = clock.instant().toString();
+        String now = Timestamps.iso(clock.instant());
         var actor = actorResolver.currentActor();
-        accountRepository.insert(new AccountRow(null, request.externalId(), request.name(), defaultPlan.id(), now,
+        long accountId = accountRepository.insert(new AccountRow(null, request.externalId(), request.name(), defaultPlan.id(), now,
             actor.kind().name(), actor.id(), "ACTIVE", now, now));
 
-        long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actor).source("UI").entityType("ACCOUNT")
-            .entityId(request.externalId()).action("CREATE").build());
+        var afterState = new LinkedHashMap<String, Object>();
+        afterState.put("account", request.externalId());
+        afterState.put("name", request.name());
+        afterState.put("planKey", defaultPlan.key());
+        afterState.put("status", "ACTIVE");
+        long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actor).source(auditSource.current()).entityType("ACCOUNT")
+            .entityId(request.externalId()).action("CREATE").accountId(accountId).planId(defaultPlan.id())
+            .afterJson(auditJson.write(afterState)).build());
         snapshotPublisher.publish(auditSeq, new DeltaChange.AccountUpserted(request.externalId(), defaultPlan.key()));
 
         return new AccountSummaryDto(request.externalId(), request.name(), defaultPlan.key(), "ACTIVE");
@@ -178,12 +193,12 @@ public class AccountAdminService {
         } catch (IllegalArgumentException e) {
             throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "Unknown actor source '" + source + "'.");
         }
-        String now = clock.instant().toString();
+        String now = Timestamps.iso(clock.instant());
         accountRepository.updatePlanAssignment(row.id(), targetPlan.id(), now, source, actorId, now);
 
         long auditSeq = auditRecorder.record(AuditEntry.builder()
             .actor(new com.solovis.entitlement.service.audit.Actor(actorId, sourceKind))
-            .source("UI").entityType("ACCOUNT_PLAN").entityId(external).action("ASSIGN").accountId(row.id())
+            .source(auditSource.current()).entityType("ACCOUNT_PLAN").entityId(external).action("ASSIGN").accountId(row.id())
             .planId(targetPlan.id()).reason(request.reason())
             .beforeJson(auditJson.write(Map.of("planKey", planRepository.findById(row.planId()).map(PlanRow::key).orElse(null))))
             .afterJson(auditJson.write(Map.of("planKey", targetPlan.key()))).build());

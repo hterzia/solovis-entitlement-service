@@ -1,6 +1,7 @@
 package com.solovis.entitlement.service.error;
 
 import com.solovis.entitlement.core.error.UnknownAccountException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -40,5 +41,10 @@ class ThrowingController {
 
     @GetMapping("/test/typed-param")
     void typedParam(@RequestParam int value) {
+    }
+
+    @GetMapping("/test/data-integrity-violation")
+    void dataIntegrityViolation() {
+        throw new DataIntegrityViolationException("UNIQUE constraint failed: override.id");
     }
 }

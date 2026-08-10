@@ -91,6 +91,26 @@ class ResolverExplainTest {
     }
 
     @Test
+    void grantOverDefaultedBaselineRaisesTheResult() {
+        var onlyGrant = new AccountOverride(OptionalLong.of(1), "acct_1", REPORTS, OverrideKind.GRANT,
+            EntitlementValue.Quantity.of(200), Optional.of("r"), Optional.of("a"), Optional.of(NOW));
+
+        var snapshot = new SnapshotBuilder()
+            .capability(new Capability(REPORTS, "Monthly reports", null, ValueType.QUANTITY,
+                EntitlementValue.Quantity.of(0), Optional.empty(), TierOrder.NONE, Capability.Status.ACTIVE, null))
+            .plan(new Plan("free", "Free", Plan.Status.ACTIVE, true))
+            .account(new AccountAssignment("acct_1", "free"))
+            .override(onlyGrant)
+            .build(1);
+
+        var explanation = Resolver.explain(snapshot, "acct_1", REPORTS, NOW);
+
+        assertThat(Resolver.resolve(snapshot, "acct_1", REPORTS, NOW).value()).isEqualTo(EntitlementValue.Quantity.of(200));
+        assertThat(explanation.trace().baseline().source()).isEqualTo(TraceSource.CAPABILITY_DEFAULT);
+        assertThat(explanation.trace().result()).isEqualTo(EntitlementValue.Quantity.of(200));
+    }
+
+    @Test
     void tiedGrantsAreWonByTheHighestOverrideId() {
         var older = new AccountOverride(OptionalLong.of(1), "acct_1", REPORTS, OverrideKind.GRANT,
             EntitlementValue.Quantity.of(200), Optional.of("r1"), Optional.of("a1"), Optional.of(NOW));

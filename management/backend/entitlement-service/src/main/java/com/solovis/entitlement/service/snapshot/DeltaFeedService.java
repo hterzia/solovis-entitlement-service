@@ -8,6 +8,7 @@ import com.solovis.entitlement.service.store.DecisionReadDao;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
+import com.solovis.entitlement.service.time.Timestamps;
 import java.util.List;
 import java.util.Map;
 
@@ -35,14 +36,19 @@ public class DeltaFeedService {
                 Map.of("currentVersion", current));
         }
         if (since == current) {
-            return new SnapshotDeltaResponseDto(1, current, current, clock.instant().toString(), List.of());
+            return new SnapshotDeltaResponseDto(1, current, current, Timestamps.iso(clock.instant()), List.of());
         }
         var rows = decisionReadDao.findSince(since, MAX_ROWS_PER_REQUEST);
+        if (rows.isEmpty() || rows.get(0).version() != since + 1) {
+            throw new EntitlementApiException(ErrorCode.SNAPSHOT_TOO_OLD,
+                "Versions after " + since + " are no longer retained; a full resync is required.",
+                Map.of("currentVersion", current));
+        }
         var changes = rows.stream()
             .map(row -> new SnapshotDeltaResponseDto.Change(row.version(), DeltaJson.read(row.deltaJson())))
             .toList();
-        long toVersion = changes.isEmpty() ? current : changes.get(changes.size() - 1).version();
-        String publishedAt = rows.isEmpty() ? clock.instant().toString() : rows.get(rows.size() - 1).publishedAt();
+        long toVersion = changes.get(changes.size() - 1).version();
+        String publishedAt = rows.get(rows.size() - 1).publishedAt();
         return new SnapshotDeltaResponseDto(1, since, toVersion, publishedAt, changes);
     }
 

@@ -86,6 +86,20 @@ class ValueMapperTest {
     }
 
     @Test
+    void fromDtoRejectsNegativeAmount() {
+        var dto = new ValueDto("QUANTITY", null, -5L, null, null, null);
+        assertThatThrownBy(() -> ValueMapper.fromDto(dto, QUANTITY_CAP))
+            .isInstanceOf(EntitlementApiException.class)
+            .satisfies(ex -> {
+                var apiEx = (EntitlementApiException) ex;
+                assertThat(apiEx.errorCode()).isEqualTo(com.solovis.entitlement.service.error.ErrorCode.VALIDATION_FAILED);
+                @SuppressWarnings("unchecked")
+                var violations = (List<String>) apiEx.extraProperties().get("violations");
+                assertThat(violations).isNotEmpty();
+            });
+    }
+
+    @Test
     void fromDtoRejectsUndeclaredTier() {
         var dto = new ValueDto("TIER", null, null, null, "platinum", null);
         assertThatThrownBy(() -> ValueMapper.fromDto(dto, TIER_CAP))

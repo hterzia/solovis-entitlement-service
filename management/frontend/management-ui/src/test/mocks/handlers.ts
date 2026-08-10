@@ -109,10 +109,10 @@ export const handlers = [
     if (!cap) return problem(404, 'entitlement/unknown-capability', `No capability '${params.key}'.`)
     if (cap.status === 'RETIRED') return problem(409, 'entitlement/validation-failed', 'Already retired.')
     cap.status = 'RETIRED'
-    return HttpResponse.json({ ...cap, usage: { plans: ['pro'], liveOverrides: 1 } })
+    return HttpResponse.json({ capability: cap, usage: { plans: ['pro'], liveOverrides: 1 } })
   }),
 
-  http.get('/admin/v1/plans', () => HttpResponse.json({ plans: db.plans, snapshotVersion: 48211 })),
+  http.get('/admin/v1/plans', () => HttpResponse.json({ plans: db.plans })),
 
   http.post('/admin/v1/plans', async ({ request }) => {
     const body = (await request.json()) as { key: string; name: string; description?: string }
@@ -124,7 +124,7 @@ export const handlers = [
   http.get('/admin/v1/plans/:key', ({ params }) => {
     const plan = db.plans.find((p) => p.key === params.key)
     if (!plan) return problem(404, 'entitlement/unknown-capability', `No plan '${params.key}'.`)
-    return HttpResponse.json({ ...plan, entitlements: [{ capability: 'reports.monthly', value: { type: 'QUANTITY', amount: 50 } }] })
+    return HttpResponse.json({ ...plan, entitlements: { 'reports.monthly': { type: 'QUANTITY', amount: 50 } } })
   }),
 
   http.post('/admin/v1/plans/:key/entitlements/preview', async ({ params, request }) => {
@@ -183,17 +183,17 @@ export const handlers = [
   http.get('/admin/v1/accounts', ({ request }) => {
     const url = new URL(request.url)
     const q = url.searchParams.get('q')?.toLowerCase()
-    const all = [db.account, ...db.createdAccounts].map((a) => ({ external: a.account, name: a.name, planKey: a.plan.key }))
-    const filtered = q ? all.filter((a) => a.external.toLowerCase().includes(q) || a.name?.toLowerCase().includes(q)) : all
+    const all = [db.account, ...db.createdAccounts].map((a) => ({ account: a.account, name: a.name, planKey: a.plan.key, status: a.status }))
+    const filtered = q ? all.filter((a) => a.account.toLowerCase().includes(q) || a.name?.toLowerCase().includes(q)) : all
     return HttpResponse.json({ accounts: filtered, nextCursor: null })
   }),
 
   http.post('/admin/v1/accounts', async ({ request }) => {
-    const body = (await request.json()) as { external: string; name?: string }
+    const body = (await request.json()) as { externalId: string; name?: string }
     const defaultPlan = db.plans.find((p) => p.isDefaultForNewAccounts)
     if (!defaultPlan) return problem(422, 'entitlement/default-plan-required', 'No default plan is designated.')
-    const created: AccountDetail = {
-      account: body.external,
+    const detail: AccountDetail = {
+      account: body.externalId,
       name: body.name ?? null,
       status: 'ACTIVE',
       plan: { key: defaultPlan.key, name: defaultPlan.name, assignedAt: new Date(0).toISOString(), assignedBy: 'dev-operator', source: 'PERSON' },
@@ -201,8 +201,8 @@ export const handlers = [
       entitlements: [],
       overrides: [],
     }
-    db.createdAccounts.push(created)
-    return HttpResponse.json(created, { status: 201 })
+    db.createdAccounts.push(detail)
+    return HttpResponse.json({ account: detail.account, name: detail.name, planKey: defaultPlan.key, status: detail.status }, { status: 201 })
   }),
 
   http.get('/admin/v1/accounts/:external', ({ params }) => {
@@ -215,7 +215,7 @@ export const handlers = [
     if (params.external !== db.account.account) return problem(404, 'entitlement/unknown-account', `No account '${params.external}'.`)
     const body = (await request.json()) as { planKey: string; source: 'PERSON' | 'SYSTEM'; actor: string }
     db.account.plan = { key: body.planKey, name: body.planKey, assignedAt: new Date(0).toISOString(), assignedBy: body.actor, source: body.source }
-    return HttpResponse.json({ ...db.account, retainedOverrideCount: db.account.overrides.length })
+    return HttpResponse.json({ account: db.account.account, planKey: body.planKey, retainedOverrideCount: db.account.overrides.length, snapshotVersion: db.account.snapshotVersion })
   }),
 
   http.post('/admin/v1/accounts/:external/overrides', async ({ params, request }) => {
@@ -233,13 +233,44 @@ export const handlers = [
       effectNow: 'WINNING' as const,
     }
     db.account.overrides.push(created)
-    return HttpResponse.json({ override: created, decision: { allowed: true, value: body.value, trace: RESULT_TRACE }, snapshotVersion: 48212, changeVisibleEverywhereWithinSeconds: 60 }, { status: 201 })
+    return HttpResponse.json({ overrideId: created.id, decision: { allowed: true, value: body.value, trace: RESULT_TRACE }, snapshotVersion: 48212, changeVisibleEverywhereWithinSeconds: 60 }, { status: 201 })
+  }),
+
+  // What the decision becomes if this override were removed — the answer the confirmation shows
+  // before the operator commits (c14/c15). The real service re-resolves the current snapshot with
+  // the one override excluded; a handler cannot, so this returns the fixture's own scenario:
+  // ovr_7788 is a winning HOLD of 0 capping a GRANT of 200, so lifting it restores 200. Whether the
+  // *service* computes the right answer is proved by the backend tests and the end-to-end run
+  // against a real service, not here.
+  http.get('/admin/v1/accounts/:external/overrides/:id/removal-preview', ({ params }) => {
+    if (params.external !== db.account.account) return problem(404, 'entitlement/unknown-account', `No account '${params.external}'.`)
+    const override = db.account.overrides.find((o) => o.id === params.id)
+    if (!override) return problem(422, 'entitlement/validation-failed', `No override '${params.id}'.`)
+    return HttpResponse.json({
+      account: db.account.account,
+      capability: override.capability,
+      allowed: true,
+      value: { type: 'QUANTITY', amount: 200 },
+      snapshotVersion: 48211,
+      evaluatedAt: '2026-08-10T00:00:00.000Z',
+      trace: {
+        ...RESULT_TRACE,
+        holds: [],
+        holdStep: { applied: false, why: 'NO_HOLDS' },
+        result: { value: { type: 'QUANTITY', amount: 200 }, allowed: true, allowedReason: 'NO_OFF_VALUE_DECLARED' },
+      },
+    })
   }),
 
   http.delete('/admin/v1/accounts/:external/overrides/:id', ({ params }) => {
     if (params.external !== db.account.account) return problem(404, 'entitlement/unknown-account', `No account '${params.external}'.`)
     db.account.overrides = db.account.overrides.filter((o) => o.id !== params.id)
-    return HttpResponse.json({ decision: { allowed: true, value: { type: 'QUANTITY', amount: 50 }, trace: RESULT_TRACE }, snapshotVersion: 48212 })
+    return HttpResponse.json({
+      overrideId: String(params.id),
+      decision: { allowed: true, value: { type: 'QUANTITY', amount: 50 }, trace: RESULT_TRACE },
+      snapshotVersion: 48212,
+      changeVisibleEverywhereWithinSeconds: 60,
+    })
   }),
 
   http.get('/admin/v1/check', ({ request }) => {

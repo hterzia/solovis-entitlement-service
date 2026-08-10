@@ -52,6 +52,12 @@
 		</dependency>
 
 		<dependency>
+			<groupId>com.solovis.entitlement</groupId>
+			<artifactId>entitlement-client</artifactId>
+			<version>${project.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator-test</artifactId>
 			<scope>test</scope>
@@ -83,6 +89,72 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+
+			<!--
+				Builds the operator SPA and embeds it in this jar's static resources — "one deployable,
+				no CORS story" (CLAUDE.md, plan.md). Bound to prepare-package (after `test`), not
+				generate-resources, so `mvn test`/`./mvnw -pl entitlement-service -am test` stays fast and
+				network-independent; only `mvn package`/`mvn install` (producing the actual deployable)
+				pays for the npm install and build. `mvn spring-boot:run` invoked as a bare goal does not
+				traverse the lifecycle either — run `mvn generate-resources spring-boot:run` (or just
+				`mvn package && java -jar target/*.jar`) to get a build that actually serves the UI; for
+				day-to-day frontend iteration, run the Vite dev server directly instead (management/frontend/
+				management-ui, `npm run dev`).
+			-->
+			<plugin>
+				<groupId>com.github.eirslett</groupId>
+				<artifactId>frontend-maven-plugin</artifactId>
+				<version>2.0.0</version>
+				<configuration>
+					<workingDirectory>${project.basedir}/../../frontend/management-ui</workingDirectory>
+					<installDirectory>${project.build.directory}/frontend</installDirectory>
+				</configuration>
+				<executions>
+					<execution>
+						<id>install-node-and-npm</id>
+						<goals><goal>install-node-and-npm</goal></goals>
+						<phase>prepare-package</phase>
+						<configuration>
+							<nodeVersion>v22.22.1</nodeVersion>
+						</configuration>
+					</execution>
+					<execution>
+						<id>npm-ci</id>
+						<goals><goal>npm</goal></goals>
+						<phase>prepare-package</phase>
+						<configuration>
+							<arguments>ci</arguments>
+						</configuration>
+					</execution>
+					<execution>
+						<id>npm-build</id>
+						<goals><goal>npm</goal></goals>
+						<phase>prepare-package</phase>
+						<configuration>
+							<arguments>run build</arguments>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-resources-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>copy-operator-ui</id>
+						<phase>prepare-package</phase>
+						<goals><goal>copy-resources</goal></goals>
+						<configuration>
+							<outputDirectory>${project.build.outputDirectory}/static</outputDirectory>
+							<resources>
+								<resource>
+									<directory>${project.basedir}/../../frontend/management-ui/dist</directory>
+								</resource>
+							</resources>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 		</plugins>
 	</build>

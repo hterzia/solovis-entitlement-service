@@ -34,6 +34,7 @@ Three things about the way v1 is being built change what the items below cost, a
 | 10 | Plan inheritance | Plan definitions duplicate one another | — | Low |
 | 11 | Customer-facing entitlement view | Self-service visibility | — | Speculative |
 | 12 | Affected-account warning for capability edits | Default and off-value edits reach every unset account with no warning | — | Medium |
+| 13 | Throughput and latency targets | Not a gap today; reinstate only when a decision path is plausibly the constraint | — | Speculative |
 
 ---
 
@@ -267,6 +268,22 @@ The off-value half is a different question. Counting who a default edit reaches 
 **Trigger:** Before capability administration is opened to more than one operator — which is now the same moment sign-in lands — or the first time a default edit surprises anyone.
 
 **Depends on:** Nothing. The plan editor's existing preview is the natural foundation for the default half.
+
+---
+
+## 13. Throughput and latency targets, and the demonstration that evidences them
+
+**What:** A stated decisions-per-second figure with percentile latency bounds, and the load demonstration that proves them — a seeder building a body of data at the stated size, a sustained request load against a running deployment, and someone changing plans and overrides throughout so the numbers are measured against moving data rather than a still pond.
+
+**Why deferred:** Withdrawn 2026-08-10 when the supported client base was settled at 300. The previous rubric — a hundred thousand accounts and five thousand decisions a second — described a system nobody asked for. At three hundred clients a decision is a lookup against a model small enough to hold in memory, and speed is not what decides whether the design works.
+
+**Why it matters:** Not because the targets are missed, but because of what carrying them cost. Criteria 25 to 27 sat in the acceptance list unevidenced from the day they were written. They made v1 read as incomplete against a bar that was never a real requirement, and a permanently unmet criterion is worse than an absent one — it trains everyone to discount the list, which is exactly what makes a genuine gap easy to miss. Withdrawing them is not a lowering of standards; it removes a fake gap so the real ones stay legible.
+
+**What this does not withdraw:** The freshness and coherence promises in [`spec.md`](./001-entitlement-service/spec.md) §7 — a change visible within 60 seconds, the 10-second reuse bound, an operator seeing their own write, one coherent moment per decision — are unaffected. They hold at any size, they are criteria 28 to 31, and they are demonstrable without special apparatus.
+
+**Trigger:** When the client base or the volume per client grows to the point where a decision path is plausibly the constraint — concretely, when any consuming product cannot absorb a decision inside its own request budget, or when the model outgrows what an instance can hold in memory. Either of those makes speed a design question again, and at that point the targets should be derived from the observed load rather than reinstated from this document.
+
+**Depends on:** Nothing. It is measurement, not construction — but it needs a running deployment and someone changing data during the run, which is why it was a feature of its own rather than a task.
 
 ---
 

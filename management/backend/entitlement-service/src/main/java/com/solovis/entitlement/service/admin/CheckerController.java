@@ -37,11 +37,26 @@ public class CheckerController {
                 .orElseThrow(() -> new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "No override '" + override + "'."));
             var accountRow = accountRepository.findById(row.accountId()).orElseThrow();
             var capRow = capabilityRepository.findById(row.capabilityId()).orElseThrow();
-            return decisionController.single(accountRow.externalId(), capRow.key(), null);
+            return noStore(decisionController.single(accountRow.externalId(), capRow.key(), null));
         }
         if (account == null || capability == null) {
             throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "Either 'override', or both 'account' and 'capability', are required.");
         }
-        return decisionController.single(account, capability, null);
+        return noStore(decisionController.single(account, capability, null));
+    }
+
+    /**
+     * The decision API sets {@code Cache-Control: max-age=10, stale-if-error=86400} for
+     * product-caller reuse; the checker must never let that leak into a browser cache, or an
+     * operator's own save could appear stale on their very next re-check (c30).
+     */
+    private static ResponseEntity<Object> noStore(ResponseEntity<Object> upstream) {
+        return ResponseEntity.status(upstream.getStatusCode())
+            .headers(h -> {
+                h.addAll(upstream.getHeaders());
+                h.remove(org.springframework.http.HttpHeaders.CACHE_CONTROL);
+            })
+            .cacheControl(org.springframework.http.CacheControl.noStore())
+            .body(upstream.getBody());
     }
 }

@@ -188,9 +188,9 @@ Callers need the tier order to answer "at least tier X" *(c3)* and the off-value
 
 | Route | Target |
 |---|---|
-| `GET /v1/accounts/{id}/capabilities/{key}` | 5,000 req/s sustained, p99 ≤ 10 ms, held while plans and overrides are being written *(c25, c27)* |
+| `GET /v1/accounts/{id}/capabilities/{key}` | No throughput or latency target. Answers stay coherent while plans and overrides are being written *(c31)* |
 | `GET /v1/accounts/{id}/entitlements` | p99 ≤ 50 ms, measured separately *(c26)* |
 
 Both are served from the in-memory snapshot and touch no database.
 
-Route 1 builds a full trace on every call, so it carries the allocation cost the whole-account route avoids — a few microseconds against a 10 ms budget, comfortably inside it. This is why the split matters elsewhere: `resolve()` is what runs 5,000 times a second inside each consuming service, where the trace would be pure garbage.
+Route 1 builds a full trace on every call, so it carries an allocation cost the whole-account route avoids. That is why the split exists at all: `resolve()` is what runs inside each consuming service, where a trace nobody reads would be pure waste — and, more importantly, where override reason text must never arrive.

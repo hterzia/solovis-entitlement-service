@@ -18,3 +18,10 @@ refs/
 *.db
 *.db-shm
 *.db-wal
+
+# Generated walkthrough of the v1 service. A point-in-time snapshot, not a
+# maintained document: the copy written on 2026-08-09 still described the client
+# SDK as a stub four hours after the SDK merged, and its test counts drift with
+# every commit. Kept local so it cannot go stale in the repository — regenerate
+# it when you need it rather than trusting a checked-in copy.
+docs/entitlement-service-explained.html

@@ -1,5 +1,8 @@
 package com.solovis.entitlement.service.store;
 
+import com.solovis.entitlement.service.admin.dto.PlanCreateRequest;
+import com.solovis.entitlement.service.admin.dto.PlanPatchRequest;
+import com.solovis.entitlement.service.admin.service.PlanAdminService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -19,6 +22,9 @@ class AuditEventRepositoryTest {
 
 	@Autowired
 	AccountRepository accountRepository;
+
+	@Autowired
+	PlanAdminService planAdminService;
 
 	private AuditEventRow event(String actorId, Long accountId, String occurredAt) {
 		return new AuditEventRow(null, occurredAt, "PERSON", actorId, "UI",
@@ -69,5 +75,43 @@ class AuditEventRepositoryTest {
 		var byEntityType = repository.find(
 				new AuditEventFilter(null, null, null, "PLAN_ENTITLEMENT", null, null, null, 10));
 		assertThat(byEntityType).hasSize(2);
+	}
+
+	@Test
+	void findFiltersByPlanId() {
+		planAdminService.create(new PlanCreateRequest("t29a.plan", "T29a Plan", null));
+		planAdminService.create(new PlanCreateRequest("t29b.plan", "T29b Plan", null));
+
+		// Produces a second PLAN/UPDATE audit event scoped to t29a.plan's planId, in addition
+		// to the PLAN/CREATE event from create() above.
+		planAdminService.patch("t29a.plan", new PlanPatchRequest("T29a Plan Renamed", null));
+
+		long t29aPlanId = planRepository.findByKey("t29a.plan").orElseThrow().id();
+		long t29bPlanId = planRepository.findByKey("t29b.plan").orElseThrow().id();
+
+		var byPlan = repository.find(new AuditEventFilter(null, t29aPlanId, null, null, null, null, null, 50));
+
+		assertThat(byPlan).isNotEmpty();
+		assertThat(byPlan).allMatch(row -> row.planId() != null && row.planId() == t29aPlanId);
+		assertThat(byPlan).noneMatch(row -> row.planId() != null && row.planId() == t29bPlanId);
+		assertThat(byPlan).anyMatch(row -> row.entityType().equals("PLAN") && row.action().equals("UPDATE")
+				&& row.entityId().equals("t29a.plan"));
+	}
+
+	@Test
+	void findFiltersByOccurredAtWindowInclusiveFromExclusiveTo() {
+		// occurredAt is a literal we control directly (this repository never derives it from
+		// a Clock), so the from/to bounds below are exact - no millisecond-collision risk to
+		// guard against.
+		long e1 = repository.insert(event("t.window", null, "2026-08-09T00:00:00.000Z"));
+		long e2 = repository.insert(event("t.window", null, "2026-08-09T00:01:00.000Z"));
+		long e3 = repository.insert(event("t.window", null, "2026-08-09T00:02:00.000Z"));
+
+		var windowed = repository.find(new AuditEventFilter(null, null, "t.window", null,
+				"2026-08-09T00:01:00.000Z", "2026-08-09T00:02:00.000Z", null, 10));
+
+		// e2's occurredAt equals the from bound (inclusive) and e3's equals the to bound
+		// (exclusive), so only e2 should come back; e1 is before the from bound.
+		assertThat(windowed).extracting(AuditEventRow::seq).containsExactly(e2).doesNotContain(e1, e3);
 	}
 }

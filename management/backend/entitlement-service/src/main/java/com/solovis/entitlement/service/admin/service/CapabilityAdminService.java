@@ -6,6 +6,7 @@ import com.solovis.entitlement.service.audit.ActorResolver;
 import com.solovis.entitlement.service.audit.AuditEntry;
 import com.solovis.entitlement.service.audit.AuditJson;
 import com.solovis.entitlement.service.audit.AuditRecorder;
+import com.solovis.entitlement.service.audit.AuditSource;
 import com.solovis.entitlement.service.dto.CapabilityDescriptorDto;
 import com.solovis.entitlement.service.dto.CapabilityDescriptorMapper;
 import com.solovis.entitlement.service.dto.ValueMapper;
@@ -18,8 +19,10 @@ import com.solovis.entitlement.service.store.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
+import com.solovis.entitlement.service.time.Timestamps;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -32,12 +35,13 @@ public class CapabilityAdminService {
     private final AuditRecorder auditRecorder;
     private final AuditJson auditJson;
     private final ActorResolver actorResolver;
+    private final AuditSource auditSource;
     private final SnapshotPublisher snapshotPublisher;
     private final Clock clock;
 
     public CapabilityAdminService(CapabilityRepository capabilityRepository, PlanEntitlementRepository planEntitlementRepository,
             AccountOverrideRepository accountOverrideRepository, PlanRepository planRepository, AuditRecorder auditRecorder,
-            AuditJson auditJson, ActorResolver actorResolver, SnapshotPublisher snapshotPublisher, Clock clock) {
+            AuditJson auditJson, ActorResolver actorResolver, AuditSource auditSource, SnapshotPublisher snapshotPublisher, Clock clock) {
         this.capabilityRepository = capabilityRepository;
         this.planEntitlementRepository = planEntitlementRepository;
         this.accountOverrideRepository = accountOverrideRepository;
@@ -45,6 +49,7 @@ public class CapabilityAdminService {
         this.auditRecorder = auditRecorder;
         this.auditJson = auditJson;
         this.actorResolver = actorResolver;
+        this.auditSource = auditSource;
         this.snapshotPublisher = snapshotPublisher;
         this.clock = clock;
     }
@@ -57,15 +62,30 @@ public class CapabilityAdminService {
             .toList();
     }
 
-    public CapabilityDescriptorDto get(String key) {
-        return CapabilityDescriptorMapper.toDescriptor(loadDomain(key));
+    public CapabilityDetailResponseDto get(String key) {
+        var row = capabilityRepository.findByKey(key)
+            .orElseThrow(() -> new com.solovis.entitlement.core.error.UnknownCapabilityException(key));
+        var domain = com.solovis.entitlement.service.snapshot.RowMappers.toCapability(row, capabilityRepository.findTiers(row.id()));
+        return new CapabilityDetailResponseDto(CapabilityDescriptorMapper.toDescriptor(domain), usageOf(row));
     }
 
     @Transactional
     public CapabilityDescriptorDto create(CapabilityCreateRequest request) {
         if (capabilityRepository.existsByKey(request.key())) {
-            throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED,
+            throw new EntitlementApiException(ErrorCode.DUPLICATE_KEY,
                 "Capability key '" + request.key() + "' is already declared.");
+        }
+        if (request.valueType() == null) {
+            throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "valueType is required.",
+                Map.of("violations", List.of("valueType is required.")));
+        }
+        if (request.defaultValue() == null) {
+            throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "default is required.",
+                Map.of("violations", List.of("default is required.")));
+        }
+        if (request.defaultValue().type() == null) {
+            throw new EntitlementApiException(ErrorCode.VALIDATION_FAILED, "default.type is required.",
+                Map.of("violations", List.of("default.type is required.")));
         }
         ValueType valueType = parseValueType(request.valueType());
         if (!request.defaultValue().type().equals(valueType.name())) {
@@ -81,7 +101,7 @@ public class CapabilityAdminService {
         Capability capability = buildCapability(new CapabilityKey(request.key()), request.displayName(),
             request.description(), valueType, defaultValue, offValue, tierOrder, Capability.Status.ACTIVE, null);
 
-        String now = clock.instant().toString();
+        String now = Timestamps.iso(clock.instant());
         var columns = ValueColumnCodec.toColumns(defaultValue);
         var offColumns = offValue.map(ov -> ValueColumnCodec.toColumns(ov.value()));
         long id = capabilityRepository.insert(new CapabilityRow(null, capability.key().value(), capability.area(),
@@ -95,7 +115,7 @@ public class CapabilityAdminService {
 
         var descriptor = CapabilityDescriptorMapper.toDescriptor(capability);
         long auditSeq = auditRecorder.record(AuditEntry.builder()
-            .actor(actorResolver.currentActor()).source("UI").entityType("CAPABILITY")
+            .actor(actorResolver.currentActor()).source(auditSource.current()).entityType("CAPABILITY")
             .entityId(capability.key().value()).action("CREATE").capabilityId(id)
             .afterJson(auditJson.write(descriptor)).build());
 
@@ -106,6 +126,10 @@ public class CapabilityAdminService {
 
     @Transactional
     public CapabilityDescriptorDto patch(String key, CapabilityPatchRequest request) {
+        if (request.valueType() != null) {
+            throw new EntitlementApiException(ErrorCode.IMMUTABLE_FIELD,
+                "A capability's valueType is immutable (c1); create a new capability instead.");
+        }
         Capability current = loadDomain(key);
         var row = capabilityRepository.findByKey(key).orElseThrow();
 
@@ -119,7 +143,7 @@ public class CapabilityAdminService {
         Capability updated = buildCapability(current.key(), displayName, description, current.valueType(),
             defaultValue, offValue, current.tierOrder(), current.status(), current.retiredAt());
 
-        String now = clock.instant().toString();
+        String now = Timestamps.iso(clock.instant());
         var columns = ValueColumnCodec.toColumns(defaultValue);
         var offColumns = offValue.map(ov -> ValueColumnCodec.toColumns(ov.value()));
         capabilityRepository.update(new CapabilityRow(row.id(), row.key(), row.area(), displayName, description,
@@ -130,7 +154,7 @@ public class CapabilityAdminService {
 
         var descriptor = CapabilityDescriptorMapper.toDescriptor(updated);
         long auditSeq = auditRecorder.record(AuditEntry.builder()
-            .actor(actorResolver.currentActor()).source("UI").entityType("CAPABILITY")
+            .actor(actorResolver.currentActor()).source(auditSource.current()).entityType("CAPABILITY")
             .entityId(key).action("UPDATE").capabilityId(row.id())
             .beforeJson(auditJson.write(CapabilityDescriptorMapper.toDescriptor(current)))
             .afterJson(auditJson.write(descriptor)).build());
@@ -159,7 +183,7 @@ public class CapabilityAdminService {
 
         var descriptor = CapabilityDescriptorMapper.toDescriptor(updated);
         long auditSeq = auditRecorder.record(AuditEntry.builder()
-            .actor(actorResolver.currentActor()).source("UI").entityType("CAPABILITY_TIER")
+            .actor(actorResolver.currentActor()).source(auditSource.current()).entityType("CAPABILITY_TIER")
             .entityId(key).action("CREATE").capabilityId(row.id())
             .afterJson(auditJson.write(descriptor)).build());
 
@@ -174,7 +198,7 @@ public class CapabilityAdminService {
             throw new EntitlementApiException(ErrorCode.RETIRED_CAPABILITY, "Capability '" + key + "' is already retired.");
         }
         var row = capabilityRepository.findByKey(key).orElseThrow();
-        String now = clock.instant().toString();
+        String now = Timestamps.iso(clock.instant());
         boolean retired = capabilityRepository.retire(row.id(), now, now);
         if (!retired) {
             throw new EntitlementApiException(ErrorCode.RETIRED_CAPABILITY, "Capability '" + key + "' is already retired.");
@@ -183,25 +207,30 @@ public class CapabilityAdminService {
             current.valueType(), current.defaultValue(), current.offValue(), current.tierOrder(),
             Capability.Status.RETIRED, java.time.Instant.parse(now));
 
-        var planKeys = planEntitlementRepository.findPlanIdsUsingCapability(row.id()).stream()
-            .map(planId -> planRepository.findById(planId).orElseThrow().key()).toList();
-        long liveOverrides = accountOverrideRepository.countLiveForCapability(row.id());
+        var usage = usageOf(row);
 
         var descriptor = CapabilityDescriptorMapper.toDescriptor(updated);
         long auditSeq = auditRecorder.record(AuditEntry.builder()
-            .actor(actorResolver.currentActor()).source("UI").entityType("CAPABILITY")
+            .actor(actorResolver.currentActor()).source(auditSource.current()).entityType("CAPABILITY")
             .entityId(key).action("RETIRE").capabilityId(row.id())
             .afterJson(auditJson.write(descriptor)).build());
 
         snapshotPublisher.publish(auditSeq, new DeltaChange.CapabilityRetired(key));
 
-        return new CapabilityRetireResponseDto(descriptor, new CapabilityRetireResponseDto.Usage(planKeys, liveOverrides));
+        return new CapabilityRetireResponseDto(descriptor, usage);
     }
 
     private Capability loadDomain(String key) {
         var row = capabilityRepository.findByKey(key)
             .orElseThrow(() -> new com.solovis.entitlement.core.error.UnknownCapabilityException(key));
         return com.solovis.entitlement.service.snapshot.RowMappers.toCapability(row, capabilityRepository.findTiers(row.id()));
+    }
+
+    private CapabilityRetireResponseDto.Usage usageOf(CapabilityRow row) {
+        var planKeys = planEntitlementRepository.findPlanIdsUsingCapability(row.id()).stream()
+            .map(planId -> planRepository.findById(planId).orElseThrow().key()).toList();
+        long liveOverrides = accountOverrideRepository.countLiveForCapability(row.id());
+        return new CapabilityRetireResponseDto.Usage(planKeys, liveOverrides);
     }
 
     private static ValueType parseValueType(String raw) {

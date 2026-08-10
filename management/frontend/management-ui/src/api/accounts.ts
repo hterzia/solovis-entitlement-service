@@ -1,6 +1,7 @@
 import { apiGet, apiPost, apiPut, apiDelete } from './http'
+import { enc } from './path'
 import type { EntitlementValue } from '../types/value'
-import type { AccountDetail, AccountSummary, AssignmentSource, Decision, Override, OverrideKind } from '../types/domain'
+import type { AccountDetail, AccountSummary, AssignmentSource, Decision, OverrideKind } from '../types/domain'
 
 export function listAccounts(params?: { q?: string; planKey?: string; cursor?: string }) {
   const search = new URLSearchParams()
@@ -11,16 +12,23 @@ export function listAccounts(params?: { q?: string; planKey?: string; cursor?: s
   return apiGet<{ accounts: AccountSummary[]; nextCursor: string | null }>(`/accounts${qs ? `?${qs}` : ''}`)
 }
 
-export function createAccount(input: { external: string; name?: string }) {
-  return apiPost<AccountDetail>('/accounts', input)
+export function createAccount(input: { externalId: string; name?: string }) {
+  return apiPost<AccountSummary>('/accounts', input)
 }
 
 export function getAccount(external: string) {
-  return apiGet<AccountDetail>(`/accounts/${external}`)
+  return apiGet<AccountDetail>(`/accounts/${enc(external)}`)
+}
+
+export interface PlanReassignResult {
+  account: string
+  planKey: string
+  retainedOverrideCount: number
+  snapshotVersion: number
 }
 
 export function setAccountPlan(external: string, input: { planKey: string; source: AssignmentSource; actor: string; reason?: string }) {
-  return apiPut<AccountDetail & { retainedOverrideCount: number }>(`/accounts/${external}/plan`, input)
+  return apiPut<PlanReassignResult>(`/accounts/${enc(external)}/plan`, input)
 }
 
 export interface AddOverrideInput {
@@ -30,13 +38,29 @@ export interface AddOverrideInput {
   reason: string
 }
 
+export interface OverrideMutationResult {
+  overrideId: string
+  decision: Decision
+  snapshotVersion: number
+  changeVisibleEverywhereWithinSeconds: number
+}
+
 export function addOverride(external: string, input: AddOverrideInput) {
-  return apiPost<{ override: Override; decision: Decision; snapshotVersion: number; changeVisibleEverywhereWithinSeconds: number }>(
-    `/accounts/${external}/overrides`,
-    input,
-  )
+  return apiPost<OverrideMutationResult>(`/accounts/${enc(external)}/overrides`, input)
+}
+
+/**
+ * What the decision becomes if this override were removed, for the confirmation shown *before* the
+ * operator commits *(c14, c15)*. Read-only: it publishes nothing and audits nothing.
+ *
+ * The service answers this, not the SPA. Working it out here would mean re-running §4's combining
+ * rule over the remaining overrides in TypeScript — a second implementation of the one rule this
+ * service exists to centralise (`DECISIONS.md` §2).
+ */
+export function previewOverrideRemoval(external: string, id: string) {
+  return apiGet<Decision>(`/accounts/${enc(external)}/overrides/${enc(id)}/removal-preview`)
 }
 
 export function removeOverride(external: string, id: string, reason?: string) {
-  return apiDelete<{ decision: Decision; snapshotVersion: number }>(`/accounts/${external}/overrides/${id}`, reason ? { reason } : undefined)
+  return apiDelete<OverrideMutationResult>(`/accounts/${enc(external)}/overrides/${enc(id)}`, reason ? { reason } : undefined)
 }

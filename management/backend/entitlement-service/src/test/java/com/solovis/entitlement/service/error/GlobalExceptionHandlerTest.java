@@ -1,8 +1,12 @@
 package com.solovis.entitlement.service.error;
 
+import com.solovis.entitlement.service.store.DecisionReadDao;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -10,8 +14,23 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+/**
+ * The handler asks {@link DecisionReadDao} for the {@code /v1} snapshot-version header. Every route
+ * here lives under {@code /test/**}, where the handler short-circuits before asking — so this slice
+ * supplies a DAO that is never consulted rather than standing up a datasource it would never read.
+ */
 @WebMvcTest(controllers = ThrowingController.class)
+@Import(GlobalExceptionHandlerTest.UnusedDao.class)
 class GlobalExceptionHandlerTest {
+
+    @TestConfiguration
+    static class UnusedDao {
+        /** Never invoked: no route in this slice is under {@code /v1/}, so no version is ever read. */
+        @Bean
+        DecisionReadDao decisionReadDao() {
+            return new DecisionReadDao(null);
+        }
+    }
 
     @Autowired MockMvc mockMvc;
 
@@ -48,17 +67,21 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void queryParamTypeMismatchMapsTo400NotTheUnexpectedExceptionFallback() throws Exception {
+    void queryParamTypeMismatchMapsToStableValidationFailedSlugNotAboutBlank() throws Exception {
         mockMvc.perform(get("/test/typed-param").param("value", "not-a-number"))
-            .andExpect(status().isBadRequest())
-            .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+            .andExpect(jsonPath("$.type").value("entitlement/validation-failed"))
+            .andExpect(jsonPath("$.violations").isNotEmpty());
     }
 
     @Test
-    void missingRequiredQueryParamMapsTo400NotTheUnexpectedExceptionFallback() throws Exception {
+    void missingRequiredQueryParamMapsToStableValidationFailedSlugNotAboutBlank() throws Exception {
         mockMvc.perform(get("/test/typed-param"))
-            .andExpect(status().isBadRequest())
-            .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+            .andExpect(jsonPath("$.type").value("entitlement/validation-failed"))
+            .andExpect(jsonPath("$.violations").isNotEmpty());
     }
 
     @Test
@@ -66,5 +89,13 @@ class GlobalExceptionHandlerTest {
         mockMvc.perform(post("/test/unknown-account"))
             .andExpect(status().isMethodNotAllowed())
             .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+    }
+
+    @Test
+    void dataIntegrityViolationMapsTo409ConflictSlug() throws Exception {
+        mockMvc.perform(get("/test/data-integrity-violation"))
+            .andExpect(status().isConflict())
+            .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+            .andExpect(jsonPath("$.type").value("entitlement/conflict"));
     }
 }

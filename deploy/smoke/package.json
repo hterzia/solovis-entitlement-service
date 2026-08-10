@@ -1,0 +1,12 @@
+{
+  "name": "entitlement-smoke",
+  "private": true,
+  "type": "module",
+  "description": "Browser smoke test gating deploys — asserts the built image renders, not merely that it responds",
+  "scripts": {
+    "smoke": "node smoke.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.50.0"
+  }
+}

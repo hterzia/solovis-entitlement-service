@@ -2,9 +2,12 @@ package com.solovis.entitlement.service.admin;
 
 import com.solovis.entitlement.service.admin.dto.CapabilityCreateRequest;
 import com.solovis.entitlement.service.admin.service.CapabilityAdminService;
+import com.solovis.entitlement.service.audit.AuditSource;
 import com.solovis.entitlement.service.dto.ValueDto;
 import com.solovis.entitlement.service.error.EntitlementApiException;
 import com.solovis.entitlement.service.error.ErrorCode;
+import com.solovis.entitlement.service.store.AuditEventFilter;
+import com.solovis.entitlement.service.store.AuditEventRepository;
 import com.solovis.entitlement.service.store.DecisionReadDao;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +31,22 @@ class CapabilityAdminServiceTest {
 
     @Autowired CapabilityAdminService service;
     @Autowired DecisionReadDao decisionReadDao;
+    @Autowired AuditSource auditSource;
+    @Autowired AuditEventRepository auditEventRepository;
+
+    @Test
+    void createInsideRunAsSeedRecordsASeedSourcedAuditEvent() {
+        var request = new CapabilityCreateRequest("taudit.probe", "Audit source probe", null, "SWITCH",
+            new ValueDto("SWITCH", false, null, null, null, null), null, null);
+
+        auditSource.runAs("SEED", () -> service.create(request));
+
+        var events = auditEventRepository.find(
+            new AuditEventFilter(null, null, null, "CAPABILITY", null, null, null, 50));
+        var created = events.stream().filter(e -> e.entityId().equals("taudit.probe")).findFirst();
+        assertThat(created).isPresent();
+        assertThat(created.get().source()).isEqualTo("SEED");
+    }
 
     @Test
     void createPublishesTheCapabilityDurablyToReads() {
@@ -48,7 +67,7 @@ class CapabilityAdminServiceTest {
 
         assertThatThrownBy(() -> service.create(request))
             .isInstanceOf(EntitlementApiException.class)
-            .extracting("errorCode").isEqualTo(ErrorCode.VALIDATION_FAILED);
+            .extracting("errorCode").isEqualTo(ErrorCode.DUPLICATE_KEY);
     }
 
     @Test
@@ -88,13 +107,13 @@ class CapabilityAdminServiceTest {
             new ValueDto("QUANTITY", null, 10L, null, null, null), null, null);
         service.create(create);
 
-        var patch = new com.solovis.entitlement.service.admin.dto.CapabilityPatchRequest("Invoices v2", "new desc", null, null);
+        var patch = new com.solovis.entitlement.service.admin.dto.CapabilityPatchRequest("Invoices v2", "new desc", null, null, null);
         var updated = service.patch("billing.invoices", patch);
 
         assertThat(updated.displayName()).isEqualTo("Invoices v2");
         assertThat(updated.description()).isEqualTo("new desc");
         assertThat(updated.defaultValue().amount()).isEqualTo(10L);
-        assertThat(service.get("billing.invoices").displayName()).isEqualTo("Invoices v2");
+        assertThat(service.get("billing.invoices").descriptor().displayName()).isEqualTo("Invoices v2");
         assertThat(decisionReadDao.capabilityByKey("billing.invoices").orElseThrow().displayName()).isEqualTo("Invoices v2");
     }
 
@@ -105,7 +124,7 @@ class CapabilityAdminServiceTest {
         service.create(create);
 
         var patch = new com.solovis.entitlement.service.admin.dto.CapabilityPatchRequest(null, null,
-            new ValueDto("QUANTITY", null, 50L, null, null, null), new ValueDto("QUANTITY", null, 0L, null, null, null));
+            new ValueDto("QUANTITY", null, 50L, null, null, null), new ValueDto("QUANTITY", null, 0L, null, null, null), null);
         var updated = service.patch("billing.seats", patch);
 
         assertThat(updated.defaultValue().amount()).isEqualTo(50L);
@@ -118,7 +137,7 @@ class CapabilityAdminServiceTest {
             new ValueDto("SWITCH", true, null, null, null, null), null, null);
         var created = service.create(create);
 
-        assertThat(service.get("billing.plans")).isEqualTo(created);
+        assertThat(service.get("billing.plans").descriptor()).isEqualTo(created);
     }
 
     @Test
@@ -144,6 +163,44 @@ class CapabilityAdminServiceTest {
         var result = service.retire("export.parquet");
 
         assertThat(result.capability().status()).isEqualTo("RETIRED");
+        assertThat(result.usage().plans()).isEmpty();
+        assertThat(result.usage().liveOverrides()).isZero();
+
+        var afterward = service.get("export.parquet");
+        assertThat(afterward.descriptor().status()).isEqualTo("RETIRED");
+        assertThat(afterward.descriptor().key()).isEqualTo("export.parquet");
+        assertThat(afterward.descriptor().displayName()).isEqualTo("Export");
+    }
+
+    @Test
+    void appendTierRejectsADuplicateTierKeyButAcceptsANewOne() {
+        var create = new CapabilityCreateRequest("t26cap.support.tier", "Support", null, "TIER",
+            new ValueDto("TIER", null, null, null, "community", null), null,
+            List.of(new CapabilityCreateRequest.TierRequest("community", "Community"),
+                    new CapabilityCreateRequest.TierRequest("standard", "Standard")));
+        service.create(create);
+
+        assertThatThrownBy(() -> service.appendTier("t26cap.support.tier",
+                new com.solovis.entitlement.service.admin.dto.TierAppendRequest("community", "Community Again")))
+            .isInstanceOf(EntitlementApiException.class)
+            .extracting("errorCode").isEqualTo(ErrorCode.IMMUTABLE_FIELD);
+
+        var updated = service.appendTier("t26cap.support.tier",
+            new com.solovis.entitlement.service.admin.dto.TierAppendRequest("platinum", "Platinum"));
+
+        assertThat(updated.tiers()).extracting(t -> t.tier()).containsExactly("community", "standard", "platinum");
+        assertThat(updated.tiers().get(2).ordinal()).isEqualTo(2);
+    }
+
+    @Test
+    void getIncludesUsage() {
+        var create = new CapabilityCreateRequest("t8.export.csv", "Export CSV", null, "SWITCH",
+            new ValueDto("SWITCH", false, null, null, null, null), null, null);
+        service.create(create);
+
+        var result = service.get("t8.export.csv");
+
+        assertThat(result.descriptor().key()).isEqualTo("t8.export.csv");
         assertThat(result.usage().plans()).isEmpty();
         assertThat(result.usage().liveOverrides()).isZero();
     }
