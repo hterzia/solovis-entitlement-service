@@ -65,8 +65,9 @@ public class AskService {
 			case AccountMatch.One(AccountRow account) -> {
 				AskResponse.AccountRef ref = new AskResponse.AccountRef(account.externalId(), account.name());
 				if (keys.size() == 1) {
+					// asAt is always null until T7 adds date resolution — every question is about now.
 					yield AskResponse.answered(ref, keys.getFirst(),
-							checker.explain(account.externalId(), keys.getFirst()));
+							checker.explain(account.externalId(), keys.getFirst(), null));
 				}
 				// Account resolved, capability ambiguous: the pick runs the classic check.
 				yield AskResponse.clarify(mention, List.of(ref), null, keys);

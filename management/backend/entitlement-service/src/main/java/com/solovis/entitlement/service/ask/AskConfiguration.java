@@ -29,16 +29,15 @@ class AskConfiguration {
 	}
 
 	/**
-	 * Always present so the controller can answer an honest 503. It becomes functional when both
-	 * optional collaborators exist: the interpreter (needs the api-key) and the checker port
-	 * (needs the api-layer worktree to merge).
+	 * Always present so the controller can answer an honest 503. The checker port is a real bean
+	 * unconditionally; only the interpreter is optional, since an absent api-key is the whole
+	 * feature flag (§ available()).
 	 */
 	@Bean
 	AskService askService(ObjectProvider<QuestionInterpreter> interpreter,
-			ObjectProvider<CheckerPort> checker,
+			CheckerPort checker,
 			AccountMatcher accountMatcher,
 			CapabilityCatalogProvider catalogs) {
-		return new AskService(interpreter.getIfAvailable(), checker.getIfAvailable(),
-				accountMatcher, catalogs);
+		return new AskService(interpreter.getIfAvailable(), checker, accountMatcher, catalogs);
 	}
 }

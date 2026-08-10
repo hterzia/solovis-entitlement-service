@@ -5,7 +5,9 @@ import java.util.List;
 /**
  * One response shape, four statuses. Jackson is configured non_null, so each status serialises
  * only its own fields. {@code result} is exactly the {@code GET /admin/v1/check} payload —
- * TODO(003): narrow from {@link Object} to the checker's DTO once the api layer merges.
+ * {@link Object} on purpose (see {@link com.solovis.entitlement.service.ask.CheckerPort}):
+ * narrowing it would throw {@code ClassCastException} on every past-dated question, since a
+ * present-tense and a past answer are two different, unrelated DTOs on the wire.
  */
 public record AskResponse(
 		String status,
