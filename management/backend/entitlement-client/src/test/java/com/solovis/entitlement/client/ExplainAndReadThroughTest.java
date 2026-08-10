@@ -253,6 +253,25 @@ class ExplainAndReadThroughTest {
             .satisfies(e -> assertThat(((ReplicaUnknownAccountException) e).readThroughAttempted()).isTrue());
     }
 
+    /**
+     * Pins a deliberate, previously untested promise of {@code readThrough}: {@code
+     * UnknownCapabilityException}/{@code RetiredCapabilityException} from the service survive the
+     * read-through unchanged rather than being folded into {@code ReplicaUnknownAccountException}.
+     * The service did answer — just not about the account — so the capability error is the real
+     * one and must not be masked as the replica's account gap.
+     */
+    @Test
+    void aReadThroughThatFindsAnUnknownCapabilityLetsThatErrorSurviveRatherThanMaskingItAsAnUnknownAccount()
+            throws Exception {
+        var client = client(ClientMetrics.NO_OP);
+        stub.failWith(404, """
+            {"type":"entitlement/unknown-capability","title":"Unknown capability","status":404,\
+            "detail":"No capability is declared with key 'no.such.capability'."}""");
+
+        assertThatThrownBy(() -> client.check("acct_brand_new", "no.such.capability"))
+            .isInstanceOf(com.solovis.entitlement.core.error.UnknownCapabilityException.class);
+    }
+
     @Test
     void anUnreachableServiceOnAnUnknownAccountStillThrowsBecauseThereIsNoLastAnswerToCarryOn() throws Exception {
         var client = client(ClientMetrics.NO_OP);
