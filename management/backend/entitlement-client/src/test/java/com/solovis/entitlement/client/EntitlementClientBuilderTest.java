@@ -293,4 +293,31 @@ class EntitlementClientBuilderTest {
                 .isEqualTo((double) ResolverContract.VERSION);
         }
     }
+
+    /**
+     * Pins the fix for the finding that the disk-cache startup path never checked {@code format}
+     * or {@code resolverContract} — only {@link com.solovis.entitlement.client.replica.ConformanceGate}
+     * did, and that never runs on a cache load. Both integers are persisted and restored by {@link
+     * DiskCache} (unlike the vectors, which are deliberately not persisted), so they must be
+     * checked directly: a product upgrading its SDK across a {@code resolverContract} bump and
+     * restarting while the service is down must not have {@code ALLOW_DISK_CACHE} serve a replica
+     * the contract says this engine must refuse.
+     */
+    @Test
+    void buildFromDiskCacheHoldingAResolverContractThisSdkDoesNotImplementThrowsRatherThanServingIt(
+            @TempDir Path cacheDir) throws Exception {
+        var mismatched = FEED.replace("\"resolverContract\":1", "\"resolverContract\":99");
+        new DiskCache(cacheDir).store(FullSnapshotReader.read(
+            new ByteArrayInputStream(mismatched.getBytes(StandardCharsets.UTF_8))));
+        var unreachable = deadEnd();
+
+        assertThatThrownBy(() -> EntitlementClient.builder()
+                .serviceUrl(unreachable.toString())
+                .startupMode(StartupMode.ALLOW_DISK_CACHE)
+                .diskCache(cacheDir)
+                .startupTimeout(Duration.ofMillis(300))
+                .build())
+            .isInstanceOf(EntitlementClientStartupException.class)
+            .hasMessageContaining("resolverContract");
+    }
 }

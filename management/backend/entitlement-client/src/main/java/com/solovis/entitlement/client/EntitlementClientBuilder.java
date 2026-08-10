@@ -7,6 +7,7 @@ import com.solovis.entitlement.client.replica.ConformanceGate;
 import com.solovis.entitlement.client.replica.DiskCache;
 import com.solovis.entitlement.client.replica.Replica;
 import com.solovis.entitlement.client.transport.FeedHttpClient;
+import com.solovis.entitlement.core.conformance.ResolverContract;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -16,6 +17,7 @@ import java.time.Duration;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Logger;
 
 /**
  * Configures and constructs an {@link EntitlementClient}. Obtained from {@link
@@ -27,6 +29,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * A client is never handed back half-initialized.
  */
 public final class EntitlementClientBuilder {
+
+    private static final Logger LOG = Logger.getLogger(EntitlementClientBuilder.class.getName());
 
     private static final Duration DEFAULT_POLL_INTERVAL = Duration.ofSeconds(5);   // keeps answers inside the 10s reuse bound (c29)
     private static final Duration DEFAULT_STALE_AFTER = Duration.ofSeconds(60);    // matches the §7 promise
@@ -142,6 +146,14 @@ public final class EntitlementClientBuilder {
      * unreachable-service case: the alternative is refusing to start during an outage, which is
      * the exact failure the cache exists to prevent.
      *
+     * <p>{@code format} and {@code resolverContract} are a different matter: unlike the vectors,
+     * {@link DiskCache} does persist them, so they are checked directly against {@link
+     * ConformanceGate#SUPPORTED_FORMAT} and {@link ResolverContract#VERSION} before a cache-loaded
+     * replica is trusted. This is the scenario a product upgrading its SDK across a {@code
+     * resolverContract} bump, then restarting while the service happens to be down, must not be
+     * allowed to hit: without this check {@code ALLOW_DISK_CACHE} would serve a replica the
+     * contract says this engine must refuse.
+     *
      * @throws IllegalStateException if {@code serviceUrl} was never set
      * @throws EntitlementClientStartupException if no snapshot could be loaded and trusted
      */
@@ -183,7 +195,27 @@ public final class EntitlementClientBuilder {
                         + (cache != null ? " and no usable disk cache was found." : "."),
                     transportExhausted.getCause());
             }
-            holder.set(cached.get());
+            var fromCache = cached.get();
+            // DiskCache does not persist conformance vectors (see markUngatedAtStartup()), but it
+            // does persist format and resolverContract, and those two are checked here directly —
+            // unlike the vectors, there is no reason to defer this to the first sync. Serving a
+            // replica across a resolverContract bump the cache predates is exactly the failure
+            // this SDK exists to prevent, not merely to eventually detect.
+            if (fromCache.format() != ConformanceGate.SUPPORTED_FORMAT
+                    || fromCache.resolverContract() != ResolverContract.VERSION) {
+                var reason = "Disk cache at " + diskCache + " holds format " + fromCache.format()
+                    + " / resolverContract " + fromCache.resolverContract()
+                    + "; this SDK implements format " + ConformanceGate.SUPPORTED_FORMAT
+                    + " / resolverContract " + ResolverContract.VERSION
+                    + ". Refusing to serve a cached replica this engine can no longer trust.";
+                LOG.severe(reason);
+                feed.close();
+                throw new EntitlementClientStartupException(
+                    "Could not load an entitlement snapshot from " + serviceUrl + " within "
+                        + startupTimeout + ", and the disk cache was unusable: " + reason,
+                    transportExhausted.getCause());
+            }
+            holder.set(fromCache);
             startingFromCache = true;
         }
 
