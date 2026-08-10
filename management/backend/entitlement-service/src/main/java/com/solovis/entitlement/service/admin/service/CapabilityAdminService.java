@@ -100,8 +100,7 @@ public class CapabilityAdminService {
             .entityId(capability.key().value()).action("CREATE").capabilityId(id)
             .afterJson(auditJson.write(descriptor)).build());
 
-        snapshotPublisher.publish((base, v) -> SnapshotMutator.withCapability(base, v, capability), auditSeq,
-            new DeltaChange.CapabilityUpserted(descriptor));
+        snapshotPublisher.publish(auditSeq, new DeltaChange.CapabilityUpserted(descriptor));
 
         return descriptor;
     }
@@ -137,8 +136,7 @@ public class CapabilityAdminService {
             .beforeJson(auditJson.write(CapabilityDescriptorMapper.toDescriptor(current)))
             .afterJson(auditJson.write(descriptor)).build());
 
-        snapshotPublisher.publish((base, v) -> SnapshotMutator.withCapability(base, v, updated), auditSeq,
-            new DeltaChange.CapabilityUpserted(descriptor));
+        snapshotPublisher.publish(auditSeq, new DeltaChange.CapabilityUpserted(descriptor));
         return descriptor;
     }
 
@@ -166,8 +164,7 @@ public class CapabilityAdminService {
             .entityId(key).action("CREATE").capabilityId(row.id())
             .afterJson(auditJson.write(descriptor)).build());
 
-        snapshotPublisher.publish((base, v) -> SnapshotMutator.withCapability(base, v, updated), auditSeq,
-            new DeltaChange.CapabilityUpserted(descriptor));
+        snapshotPublisher.publish(auditSeq, new DeltaChange.CapabilityUpserted(descriptor));
         return descriptor;
     }
 
@@ -197,8 +194,7 @@ public class CapabilityAdminService {
             .entityId(key).action("RETIRE").capabilityId(row.id())
             .afterJson(auditJson.write(descriptor)).build());
 
-        snapshotPublisher.publish((base, v) -> SnapshotMutator.withCapability(base, v, updated), auditSeq,
-            new DeltaChange.CapabilityRetired(key));
+        snapshotPublisher.publish(auditSeq, new DeltaChange.CapabilityRetired(key));
 
         return new CapabilityRetireResponseDto(descriptor, new CapabilityRetireResponseDto.Usage(planKeys, liveOverrides));
     }

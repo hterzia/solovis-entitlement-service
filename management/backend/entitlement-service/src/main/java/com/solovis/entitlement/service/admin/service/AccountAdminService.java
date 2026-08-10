@@ -73,8 +73,7 @@ public class AccountAdminService {
 
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actor).source("UI").entityType("ACCOUNT")
             .entityId(request.externalId()).action("CREATE").build());
-        snapshotPublisher.publish((base, v) -> SnapshotMutator.withAccount(base, v, assignment), auditSeq,
-            new DeltaChange.AccountUpserted(request.externalId(), defaultPlan.key()));
+        snapshotPublisher.publish(auditSeq, new DeltaChange.AccountUpserted(request.externalId(), defaultPlan.key()));
 
         return new AccountSummaryDto(request.externalId(), request.name(), defaultPlan.key(), "ACTIVE");
     }
@@ -191,8 +190,7 @@ public class AccountAdminService {
             .planId(targetPlan.id()).reason(request.reason())
             .beforeJson(auditJson.write(Map.of("planKey", planRepository.findById(row.planId()).map(PlanRow::key).orElse(null))))
             .afterJson(auditJson.write(Map.of("planKey", targetPlan.key()))).build());
-        long newVersion = snapshotPublisher.publish((base, v) -> SnapshotMutator.withAccount(base, v, assignment), auditSeq,
-            new DeltaChange.AccountUpserted(external, targetPlan.key()));
+        long newVersion = snapshotPublisher.publish(auditSeq, new DeltaChange.AccountUpserted(external, targetPlan.key()));
 
         long retained = accountOverrideRepository.findLiveForAccount(row.id()).size();
         return new PlanReassignResponseDto(external, targetPlan.key(), retained, newVersion);

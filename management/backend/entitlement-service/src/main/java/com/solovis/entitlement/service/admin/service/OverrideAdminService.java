@@ -81,7 +81,7 @@ public class OverrideAdminService {
             .reason(request.reason()).afterJson(auditJson.write(request)).build());
         var base = snapshotHolder.current();
         var next = SnapshotMutator.withOverrideAdded(base, base.snapshotVersion() + 1, override);
-        long newVersion = snapshotPublisher.publish((b, v) -> next, auditSeq,
+        long newVersion = snapshotPublisher.publish(auditSeq,
             new DeltaChange.OverrideCreated("ovr_" + id, external, capability.key().value(), kind.name(), ValueMapper.toDto(value)));
 
         var explanation = Resolver.explain(next, external, capability.key(), clock.instant());
@@ -114,7 +114,7 @@ public class OverrideAdminService {
             .reason(removeReason).build());
         var base = snapshotHolder.current();
         var next = SnapshotMutator.withOverrideRemoved(base, base.snapshotVersion() + 1, external, capabilityKey, id);
-        long newVersion = snapshotPublisher.publish((b, v) -> next, auditSeq, new DeltaChange.OverrideRemoved(overrideRef));
+        long newVersion = snapshotPublisher.publish(auditSeq, new DeltaChange.OverrideRemoved(overrideRef));
 
         var explanation = Resolver.explain(next, external, capabilityKey, clock.instant());
         return new OverrideMutationResponseDto(overrideRef, DecisionMapper.toResponse(explanation, capability), newVersion, 60);

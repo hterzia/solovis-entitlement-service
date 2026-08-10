@@ -81,8 +81,7 @@ public class PlanAdminService {
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
             .entityType("PLAN").entityId(request.key()).action("CREATE").planId(requireRow(request.key()).id())
             .afterJson(auditJson.write(request)).build());
-        snapshotPublisher.publish((base, v) -> SnapshotMutator.withPlan(base, v, plan), auditSeq,
-            new DeltaChange.PlanUpserted(plan.key(), plan.name(), "ACTIVE", false));
+        snapshotPublisher.publish(auditSeq, new DeltaChange.PlanUpserted(plan.key(), plan.name(), "ACTIVE", false));
 
         return new PlanSummaryDto(request.key(), request.name(), "ACTIVE", false, 0, 0);
     }
@@ -99,8 +98,7 @@ public class PlanAdminService {
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
             .entityType("PLAN").entityId(key).action("UPDATE").planId(row.id())
             .beforeJson(auditJson.write(Map.of("name", row.name()))).afterJson(auditJson.write(Map.of("name", name))).build());
-        snapshotPublisher.publish((base, v) -> SnapshotMutator.withPlan(base, v, plan), auditSeq,
-            new DeltaChange.PlanUpserted(key, name, row.status(), row.defaultForNewAccounts()));
+        snapshotPublisher.publish(auditSeq, new DeltaChange.PlanUpserted(key, name, row.status(), row.defaultForNewAccounts()));
 
         return new PlanSummaryDto(key, name, row.status(), row.defaultForNewAccounts(), planRepository.countAccounts(row.id()),
             planEntitlementRepository.findByPlan(row.id()).size());
@@ -189,18 +187,7 @@ public class PlanAdminService {
             .entityType("PLAN_ENTITLEMENT").entityId(key).action("UPDATE").planId(row.id())
             .afterJson(auditJson.write(setDtos)).affectedAccountCount(affected).build());
 
-        long newVersion = snapshotPublisher.publish((base, v) -> {
-            Snapshot next = base;
-            for (var entry : request.set().entrySet()) {
-                var capability = requireDomainCapability(entry.getKey());
-                var value = ValueMapper.fromDto(entry.getValue(), capability);
-                next = SnapshotMutator.withPlanEntitlement(next, v, new PlanEntitlement(key, capability.key(), value));
-            }
-            for (var capabilityKey : request.unset()) {
-                next = SnapshotMutator.withPlanEntitlementRemoved(next, v, key, new CapabilityKey(capabilityKey));
-            }
-            return next;
-        }, auditSeq, new DeltaChange.PlanEntitlements(key, setDtos, request.unset()));
+        long newVersion = snapshotPublisher.publish(auditSeq, new DeltaChange.PlanEntitlements(key, setDtos, request.unset()));
 
         return new PlanApplyResponseDto(key, affected, newVersion, auditSeq, 60);
     }
@@ -220,7 +207,7 @@ public class PlanAdminService {
 
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
             .entityType("PLAN").entityId(key).action("ARCHIVE").planId(row.id()).build());
-        snapshotPublisher.publish((base, v) -> SnapshotMutator.withPlan(base, v, plan), auditSeq, new DeltaChange.PlanArchived(key));
+        snapshotPublisher.publish(auditSeq, new DeltaChange.PlanArchived(key));
     }
 
     @Transactional
@@ -238,14 +225,7 @@ public class PlanAdminService {
         long auditSeq = auditRecorder.record(AuditEntry.builder().actor(actorResolver.currentActor()).source("UI")
             .entityType("DEFAULT_PLAN").entityId(key).action("DESIGNATE").planId(row.id()).build());
 
-        snapshotPublisher.publish((base, v) -> {
-            Snapshot next = SnapshotMutator.withPlan(base, v, newDefaultPlan);
-            if (previousDefault.isPresent() && !previousDefault.get().key().equals(key)) {
-                var old = previousDefault.get();
-                next = SnapshotMutator.withPlan(next, v, new Plan(old.key(), old.name(), Plan.Status.ACTIVE, false));
-            }
-            return next;
-        }, auditSeq, new DeltaChange.PlanDefaultChanged(key));
+        snapshotPublisher.publish(auditSeq, new DeltaChange.PlanDefaultChanged(key));
     }
 
     private Snapshot applyEdit(Snapshot base, String key, PlanEntitlementEditRequest request, long version) {
