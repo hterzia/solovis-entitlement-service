@@ -333,6 +333,8 @@ The spec is satisfied when every criterion below can be demonstrated.
 
 Every criterion above is demonstrable through the UI or the evaluation interface by someone with no access to internals, and criteria 25–31 are evidenced by a demonstration at the stated volumes, run **against data that is changing during the demonstration**.
 
+That demonstration is specified and delivered as its own feature, [`004-load-demonstration`](../004-load-demonstration/spec.md). The promises in §7 remain v1's — they are stated here because they are v1's requirements, and criteria 25–31 stay in the list above for the same reason. What moved is the evidence: measuring a running deployment at a hundred thousand accounts, with someone changing the data throughout, is a different kind of work from building the service, and keeping it on this document's task list is what allowed it to stay unbuilt while everything around it was finished. **Until 004 has been run, criteria 25–31 are designed for and not evidenced, and must not be described as met.**
+
 ---
 
 ## 11. Deliberately left to the technical implementation plan

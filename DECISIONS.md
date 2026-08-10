@@ -161,6 +161,10 @@ starts in.
 - **Ship the load harness.** The performance criteria are designed for but not yet evidenced.
   In-memory lookups behind an atomic reference make the targets easy in principle, and easy in
   principle is not evidence — the widest gap between what the design claims and what it has proved.
+  *(2026-08-10: now specified as its own feature, `.specs/004-load-demonstration/`. Keeping it on
+  v1's task list is what let it stay unbuilt while everything around it finished — it is not a task
+  like the others, because its output is a measurement of a running deployment rather than code.
+  Criteria 25–31 remain v1's promises; only the evidence moved.)*
 - **Push instead of polling.** A 5 s poll of one integer lands ten times inside the freshness
   requirement, so it was right for v1, but SSE fits better before the consumer count grows.
 - **Override categories earlier.** Overrides can't be edited, so everything created before that
