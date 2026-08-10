@@ -25,9 +25,21 @@
 # write that has not already been replicated.
 sync-interval: 1s
 
+# The replica path is versioned, and bumping it is the supported way to start from an
+# empty database. Deleting objects under the old path is NOT equivalent: during a
+# deploy the outgoing revision is still replicating, so a delete races it and the old
+# state comes straight back.
+#
+# Bumped to v2 on 2026-08-10. The seeder became marker-based (seed.started /
+# seed.completed in service_state) while the replica still held a database seeded by
+# the older "are there any plans?" inference. The new seeder saw no completion marker,
+# tried to seed a database that already had rows, failed partway, and left a started
+# marker behind — after which every boot refused to start, by design. Starting from an
+# empty replica lets the seeder write its dataset in time order, which is the only way
+# a backdated history can be written at all.
 dbs:
   - path: /data/entitlement.db
     replica:
       type: gs
       bucket: $LITESTREAM_BUCKET
-      path: entitlement
+      path: entitlement-v2
