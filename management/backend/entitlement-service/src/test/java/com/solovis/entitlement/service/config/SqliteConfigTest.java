@@ -41,6 +41,14 @@ class SqliteConfigTest {
 	@Autowired
 	PlatformTransactionManager transactionManager;
 
+	@Autowired
+	@Qualifier("entitlementTransactionManager")
+	PlatformTransactionManager writeTransactionManager;
+
+	@Autowired
+	@Qualifier("entitlementReadTransactionManager")
+	PlatformTransactionManager readTransactionManager;
+
 	@Test
 	void propertiesAreBound() {
 		assertThat(properties.path()).contains("entitlement-test-");
@@ -108,5 +116,21 @@ class SqliteConfigTest {
 				        '2026-08-09T00:00:00.000Z', '2026-08-09T00:00:00.000Z')
 				""").update())
 				.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	void bothTransactionManagerBeansExist() {
+		assertThat(writeTransactionManager).isNotNull();
+		assertThat(readTransactionManager).isNotNull();
+	}
+
+	@Test
+	void writeTransactionManagerIsThePrimaryOne() {
+		assertThat(transactionManager).isSameAs(writeTransactionManager);
+	}
+
+	@Test
+	void readTransactionManagerIsDistinctFromWrite() {
+		assertThat(readTransactionManager).isNotSameAs(writeTransactionManager);
 	}
 }

@@ -50,8 +50,15 @@ public class SqliteConfig {
 	}
 
 	@Bean
+	@Primary
 	public PlatformTransactionManager entitlementTransactionManager(
 			@Qualifier("entitlementWriteDataSource") DataSource entitlementWriteDataSource) {
 		return new DataSourceTransactionManager(entitlementWriteDataSource);
+	}
+
+	@Bean
+	public PlatformTransactionManager entitlementReadTransactionManager(
+			@Qualifier("entitlementReadDataSource") DataSource entitlementReadDataSource) {
+		return new DataSourceTransactionManager(entitlementReadDataSource);
 	}
 }
