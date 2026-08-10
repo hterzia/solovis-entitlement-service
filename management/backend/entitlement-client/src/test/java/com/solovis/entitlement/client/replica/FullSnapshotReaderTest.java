@@ -121,6 +121,18 @@ class FullSnapshotReaderTest {
         assertThat(replica.snapshot().capabilities()).hasSize(1);
     }
 
+    /**
+     * The only untested branch of the whole-or-nothing rule that stops a truncated body becoming a
+     * wrong answer: a line after the footer means the feed is not what it claims to be, so it must
+     * be discarded rather than silently ignored.
+     */
+    @Test
+    void aLineAppearingAfterTheFooterIsDiscardedRatherThanSilentlyIgnored() {
+        assertThatThrownBy(() -> FullSnapshotReader.read(feed(HEADER, CAP_SWITCH, FOOTER, PLAN)))
+            .isInstanceOf(FullSnapshotReader.MalformedFeedException.class)
+            .hasMessageContaining("footer");
+    }
+
     @Test
     void blankLinesAreToleratedBecauseTrailingNewlinesAreNormal() {
         var replica = FullSnapshotReader.read(feed(HEADER, CAP_SWITCH, FOOTER, ""));
