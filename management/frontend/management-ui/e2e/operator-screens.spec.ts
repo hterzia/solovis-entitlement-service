@@ -7,9 +7,12 @@ import { expect, test } from '@playwright/test'
  * by the component tests; what those cannot cover is whether the shape the SPA expects is the shape
  * the service sends, which is the single thing that has actually broken in this codebase.
  *
- * Fixtures come from `DemoDataSeeder`: capabilities `api.access`, `reports.monthly`, `seats.count`
- * and `support.tier`; plans `free` (default) and `pro`; accounts `acct_9931` (Northwind Capital, on
- * `pro`, with a GRANT of 200 monthly reports) and `acct_1177` (Example Co, on `free`).
+ * Fixtures come from `DemoDataSeeder`, which applies `seed/demo-seed.json` across an authored
+ * 240-day timeline: 16 capabilities over six areas (one retired), plans `free` (Evaluation, the
+ * default), `core`, `pro` (Professional), `enterprise` and `ocio`, and ~61 accounts. `acct_9931`
+ * (Northwind Capital, on `pro`) still carries the GRANT of 200 monthly reports; `acct_1177`
+ * (Cascadia Endowment, on `free`) still carries the three standings 002 seeded. Every key this
+ * suite and `windows.spec.ts` locate by is preserved -- only display names changed.
  */
 
 test.describe('Screen 1 — capability registry', () => {
@@ -61,23 +64,24 @@ test.describe('Screen 2 — plans', () => {
   test('lists plans with the account counts the service computed', async ({ page }) => {
     await page.goto('/plans')
     await expect(page.getByRole('heading', { name: 'Plans' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Pro', exact: true })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Free', exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Professional', exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Evaluation', exact: true })).toBeVisible()
 
     // c6: a plan with accounts on it cannot be archived, and the UI says why rather than just
     // greying out. The count in that tooltip came from the service.
     await expect(page.getByRole('button', { name: 'Archive pro' })).toBeDisabled()
-    // The count is the service's, and it is stated in the operator's language: one account is
-    // "1 account", not "1 accounts".
+    // The count is the service's, not the SPA's: 15 accounts sit on `pro` in the seed, and the
+    // number has to survive the round trip. The singular wording ("1 account is", never
+    // "1 accounts") is proved by PlansListRoute.test.tsx against a one-account fixture.
     await expect(page.getByRole('button', { name: 'Archive pro' }))
-      .toHaveAttribute('title', /1 account is on this plan/)
+      .toHaveAttribute('title', /15 accounts are on this plan/)
   })
 
   test('the editor refuses to save until a preview has stated the blast radius', async ({ page }) => {
     await page.goto('/plans')
-    await page.getByRole('link', { name: 'Pro', exact: true }).click()
+    await page.getByRole('link', { name: 'Professional', exact: true }).click()
 
-    await expect(page.getByRole('heading', { name: 'Pro' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Professional' })).toBeVisible()
 
     // c34/c35: Save is gated on a previewToken the operator's own preview returned. A save button
     // that is enabled before a preview would mean a plan edit could reach thousands of accounts
@@ -102,7 +106,7 @@ test.describe('Screen 3 — account view', () => {
 
     // Scoped to the header definition list and exact: a capability key like `e2e.probe.switch`
     // contains "pro" as a substring, and these tests share one service.
-    await expect(page.locator('dl').getByText('Pro', { exact: true })).toBeVisible()
+    await expect(page.locator('dl').getByText('Professional', { exact: true })).toBeVisible()
     // c36: whether the assignment came from a person or an upstream system is on the record.
     await expect(page.locator('dl')).toContainText('a person')
   })
@@ -113,10 +117,11 @@ test.describe('Screen 3 — account view', () => {
 
     // c39: each value marked as coming from a default, a plan, a GRANT or a HOLD — in the
     // contract's vocabulary (`default` · `plan` · `GRANT` · `HOLD`), not the wire enum. The seeded
-    // account has one of each of the first three.
+    // account has one of each of the first three: `pro` entitles api.access, a GRANT raises
+    // reports.monthly, and portfolio.private-markets is one of the four `pro` leaves alone.
     await expect(page.getByTestId('entitlement-reports.monthly')).toContainText('GRANT')
     await expect(page.getByTestId('entitlement-api.access')).toContainText('plan')
-    await expect(page.getByTestId('entitlement-seats.count')).toContainText('default')
+    await expect(page.getByTestId('entitlement-portfolio.private-markets')).toContainText('default')
     // The wire enum must not reach the operator.
     await expect(page.getByText('CAPABILITY_DEFAULT')).toHaveCount(0)
   })
@@ -153,11 +158,15 @@ test.describe('Screen 3 — account view', () => {
     await page.getByLabel('New account external id').fill(external)
     await page.getByRole('button', { name: 'Create account' }).click()
 
+    // The seed is past the 50-row page boundary, so a new account is not on the first page. An
+    // operator finds it the way the screen offers -- by searching -- and that exercises the filter
+    // the fuller dataset made worth having.
+    await page.getByLabel('Search accounts').fill(external)
     await expect(page.getByRole('link', { name: external })).toBeVisible()
 
     // c7: never without entitlements. `free` is the designated default in the seed.
     await page.getByRole('link', { name: external }).click()
-    await expect(page.getByText('Free')).toBeVisible()
+    await expect(page.getByText('Evaluation')).toBeVisible()
   })
 })
 
