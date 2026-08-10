@@ -60,4 +60,25 @@ public class SnapshotVersionRepository {
 				.query(ROW_MAPPER)
 				.optional();
 	}
+
+	/**
+	 * Drops delta rows published before {@code cutoff}, never touching {@code keepVersion}.
+	 *
+	 * <p>Unlike {@code audit_event}, which is append-only and protected by triggers, versions are a
+	 * transport concern: once no replica can still be asking for one, the row is dead weight
+	 * (data-model.md, {@code snapshot_version}). The {@code keepVersion} guard exists because the
+	 * feed reads {@code published_at} for the <em>current</em> version on every poll — pruning that
+	 * row on a quiet estate would make an unchanged version report a new publish time each time it
+	 * was asked for.
+	 *
+	 * @return how many rows were removed
+	 */
+	public int deleteOlderThan(String cutoff, long keepVersion) {
+		return jdbcClient.sql("""
+				DELETE FROM snapshot_version WHERE published_at < :cutoff AND version <> :keepVersion
+				""")
+				.param("cutoff", cutoff)
+				.param("keepVersion", keepVersion)
+				.update();
+	}
 }

@@ -3,6 +3,8 @@ package com.solovis.entitlement.service.error;
 import com.solovis.entitlement.core.error.RetiredCapabilityException;
 import com.solovis.entitlement.core.error.UnknownAccountException;
 import com.solovis.entitlement.core.error.UnknownCapabilityException;
+import com.solovis.entitlement.service.api.SnapshotVersionHeader;
+import com.solovis.entitlement.service.snapshot.SnapshotHolder;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +27,7 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Extends {@link ResponseEntityExceptionHandler} so Spring's own MVC exceptions (404s from
@@ -40,27 +43,33 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    private final SnapshotHolder snapshotHolder;
+
+    public GlobalExceptionHandler(SnapshotHolder snapshotHolder) {
+        this.snapshotHolder = snapshotHolder;
+    }
+
     @ExceptionHandler(EntitlementApiException.class)
-    public ProblemDetail handleApiException(EntitlementApiException ex, HttpServletRequest request) {
-        return problem(ex.errorCode(), ex.getMessage(), request, ex.extraProperties());
+    public ResponseEntity<ProblemDetail> handleApiException(EntitlementApiException ex, HttpServletRequest request) {
+        return respond(problem(ex.errorCode(), ex.getMessage(), request, ex.extraProperties()), request);
     }
 
     @ExceptionHandler(UnknownAccountException.class)
-    public ProblemDetail handleUnknownAccount(UnknownAccountException ex, HttpServletRequest request) {
-        return problem(ErrorCode.UNKNOWN_ACCOUNT, ex.getMessage(), request,
-            Map.of("account", ex.accountExternalId()));
+    public ResponseEntity<ProblemDetail> handleUnknownAccount(UnknownAccountException ex, HttpServletRequest request) {
+        return respond(problem(ErrorCode.UNKNOWN_ACCOUNT, ex.getMessage(), request,
+            Map.of("account", ex.accountExternalId())), request);
     }
 
     @ExceptionHandler(UnknownCapabilityException.class)
-    public ProblemDetail handleUnknownCapability(UnknownCapabilityException ex, HttpServletRequest request) {
-        return problem(ErrorCode.UNKNOWN_CAPABILITY, ex.getMessage(), request,
-            Map.of("capability", ex.capabilityKey()));
+    public ResponseEntity<ProblemDetail> handleUnknownCapability(UnknownCapabilityException ex, HttpServletRequest request) {
+        return respond(problem(ErrorCode.UNKNOWN_CAPABILITY, ex.getMessage(), request,
+            Map.of("capability", ex.capabilityKey())), request);
     }
 
     @ExceptionHandler(RetiredCapabilityException.class)
-    public ProblemDetail handleRetiredCapability(RetiredCapabilityException ex, HttpServletRequest request) {
-        return problem(ErrorCode.RETIRED_CAPABILITY, ex.getMessage(), request,
-            Map.of("capability", ex.capabilityKey()));
+    public ResponseEntity<ProblemDetail> handleRetiredCapability(RetiredCapabilityException ex, HttpServletRequest request) {
+        return respond(problem(ErrorCode.RETIRED_CAPABILITY, ex.getMessage(), request,
+            Map.of("capability", ex.capabilityKey())), request);
     }
 
     @Override
@@ -70,7 +79,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             .map(FieldError::toString).toList();
         ProblemDetail problem = problem(ErrorCode.VALIDATION_FAILED, "Request failed validation.", request,
             Map.of("violations", violations));
-        return handleExceptionInternal(ex, problem, headers, HttpStatusCode.valueOf(problem.getStatus()), request);
+        return handleExceptionInternal(ex, problem, withSnapshotVersion(headers, request),
+            HttpStatusCode.valueOf(problem.getStatus()), request);
     }
 
     @Override
@@ -78,7 +88,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             HttpHeaders headers, HttpStatusCode status, WebRequest request) {
         ProblemDetail problem = problem(ErrorCode.VALIDATION_FAILED, "The request body is missing or malformed.",
             request, Map.of());
-        return handleExceptionInternal(ex, problem, headers, HttpStatusCode.valueOf(problem.getStatus()), request);
+        return handleExceptionInternal(ex, problem, withSnapshotVersion(headers, request),
+            HttpStatusCode.valueOf(problem.getStatus()), request);
     }
 
     @Override
@@ -86,7 +97,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             HttpStatusCode status, WebRequest request) {
         ProblemDetail problem = problem(ErrorCode.VALIDATION_FAILED, "Request failed validation.", request,
             Map.of("violations", List.of("'" + ex.getPropertyName() + "' has an invalid value.")));
-        return handleExceptionInternal(ex, problem, headers, HttpStatusCode.valueOf(problem.getStatus()), request);
+        return handleExceptionInternal(ex, problem, withSnapshotVersion(headers, request),
+            HttpStatusCode.valueOf(problem.getStatus()), request);
     }
 
     @Override
@@ -94,19 +106,71 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             HttpHeaders headers, HttpStatusCode status, WebRequest request) {
         ProblemDetail problem = problem(ErrorCode.VALIDATION_FAILED, "Request failed validation.", request,
             Map.of("violations", List.of("'" + ex.getParameterName() + "' is required.")));
-        return handleExceptionInternal(ex, problem, headers, HttpStatusCode.valueOf(problem.getStatus()), request);
+        return handleExceptionInternal(ex, problem, withSnapshotVersion(headers, request),
+            HttpStatusCode.valueOf(problem.getStatus()), request);
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
-    public ProblemDetail handleDataIntegrityViolation(DataIntegrityViolationException ex, HttpServletRequest request) {
-        return problem(ErrorCode.WRITE_CONFLICT, "A concurrent change conflicted with an existing record.", request,
-            Map.of());
+    public ResponseEntity<ProblemDetail> handleDataIntegrityViolation(DataIntegrityViolationException ex,
+            HttpServletRequest request) {
+        return respond(problem(ErrorCode.WRITE_CONFLICT, "A concurrent change conflicted with an existing record.",
+            request, Map.of()), request);
     }
 
     @ExceptionHandler(Exception.class)
-    public ProblemDetail handleUnexpected(Exception ex, HttpServletRequest request) {
+    public ResponseEntity<ProblemDetail> handleUnexpected(Exception ex, HttpServletRequest request) {
         log.error("Unhandled exception while processing {} {}", request.getMethod(), request.getRequestURI(), ex);
-        return problem(ErrorCode.INTERNAL_ERROR, "An unexpected error occurred.", request, Map.of());
+        return respond(problem(ErrorCode.INTERNAL_ERROR, "An unexpected error occurred.", request, Map.of()), request);
+    }
+
+    /**
+     * Wraps a problem body, adding the {@code /v1} snapshot-version header where the contract calls
+     * for it. contracts/README.md promises the header on every {@code /v1} response, and an error is
+     * where a caller most needs it: without it, a 404 caused by a lagging read and a 404 caused by a
+     * genuinely absent account are indistinguishable.
+     */
+    /**
+     * The {@link ResponseEntityExceptionHandler} overrides above route through Spring's own
+     * {@code handleExceptionInternal}, which takes headers as a parameter rather than letting the
+     * handler build a {@link ResponseEntity}. Same contract, different seam.
+     */
+    private HttpHeaders withSnapshotVersion(HttpHeaders headers, WebRequest request) {
+        String uri = request instanceof ServletWebRequest servletRequest
+            ? servletRequest.getRequest().getRequestURI()
+            : null;
+        return snapshotVersionHeader(uri).map(version -> {
+            HttpHeaders merged = new HttpHeaders();
+            merged.addAll(headers);
+            merged.set(SnapshotVersionHeader.NAME, version);
+            return merged;
+        }).orElse(headers);
+    }
+
+    private ResponseEntity<ProblemDetail> respond(ProblemDetail problem, HttpServletRequest request) {
+        var response = ResponseEntity.status(problem.getStatus());
+        snapshotVersionHeader(request.getRequestURI())
+            .ifPresent(version -> response.header(SnapshotVersionHeader.NAME, version));
+        return response.body(problem);
+    }
+
+    /**
+     * The current version, but only for {@code /v1} paths. Errors carry no body resolved against a
+     * snapshot, so "current at the moment of failure" is the only meaningful answer — and it is the
+     * honest one, since the request never reached a resolution step. {@code /admin/v1} is excluded:
+     * it backs the SPA and may change with it, so the header must not become a commitment there.
+     */
+    private Optional<String> snapshotVersionHeader(String requestUri) {
+        if (requestUri == null || !requestUri.startsWith("/v1/")) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(String.valueOf(snapshotHolder.current().snapshotVersion()));
+        } catch (IllegalStateException noSnapshotYet) {
+            // The holder is empty only before SnapshotStartup completes, and the web connector is
+            // not meant to accept traffic that early. If it somehow does, an error response missing
+            // one header is a far better outcome than the error handler itself throwing.
+            return Optional.empty();
+        }
     }
 
     private ProblemDetail problem(ErrorCode code, String detail, HttpServletRequest request, Map<String, Object> extra) {

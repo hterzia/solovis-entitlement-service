@@ -43,7 +43,7 @@ public class DecisionController {
         var capability = snapshot.capability(key).orElseThrow();
         var body = DecisionMapper.toResponse(explanation, capability);
         return ResponseEntity.ok()
-            .header("X-Entitlement-Snapshot-Version", String.valueOf(snapshot.snapshotVersion()))
+            .header(SnapshotVersionHeader.NAME, String.valueOf(snapshot.snapshotVersion()))
             .cacheControl(CacheControl.maxAge(Duration.ofSeconds(10)).staleIfError(Duration.ofHours(24)))
             .body(body);
     }
@@ -61,7 +61,7 @@ public class DecisionController {
             }).toList();
         var body = new WholeAccountResponseDto(accountExternalId, account.planKey(), snapshot.snapshotVersion(),
             Timestamps.iso(evaluatedAt), entitlements);
-        return ResponseEntity.ok().header("X-Entitlement-Snapshot-Version", String.valueOf(snapshot.snapshotVersion())).body(body);
+        return ResponseEntity.ok().header(SnapshotVersionHeader.NAME, String.valueOf(snapshot.snapshotVersion())).body(body);
     }
 
     @GetMapping("/capabilities")
@@ -83,7 +83,7 @@ public class DecisionController {
             .map(CapabilityDescriptorMapper::toDescriptor).toList();
         var body = new CapabilityListResponseDto(descriptors, snapshot.snapshotVersion());
         return ResponseEntity.ok()
-            .header("X-Entitlement-Snapshot-Version", String.valueOf(snapshot.snapshotVersion()))
+            .header(SnapshotVersionHeader.NAME, String.valueOf(snapshot.snapshotVersion()))
             .body(body);
     }
 
@@ -94,7 +94,7 @@ public class DecisionController {
             .orElseThrow(() -> new com.solovis.entitlement.core.error.UnknownCapabilityException(capabilityKey));
         var body = CapabilityDescriptorMapper.toDescriptor(capability);
         return ResponseEntity.ok()
-            .header("X-Entitlement-Snapshot-Version", String.valueOf(snapshot.snapshotVersion()))
+            .header(SnapshotVersionHeader.NAME, String.valueOf(snapshot.snapshotVersion()))
             .body(body);
     }
 

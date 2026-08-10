@@ -88,6 +88,37 @@ class DecisionControllerTest {
             .andExpect(jsonPath("$.type").value("entitlement/unknown-account"));
     }
 
+    // contracts/README.md scopes the header to "every /v1 response", not every /v1 *success*. An
+    // error is exactly when a caller most wants to know which snapshot answered it — a 404 from a
+    // replica-lagging read and a 404 from a genuinely absent account look identical otherwise.
+    @Test
+    void errorResponsesOnV1AlsoCarryTheSnapshotVersionHeader() throws Exception {
+        long current = snapshotHolder.current().snapshotVersion();
+
+        mockMvc.perform(get("/v1/accounts/acct_missing/capabilities/reports.t4.monthly"))
+            .andExpect(status().isNotFound())
+            .andExpect(header().string("X-Entitlement-Snapshot-Version", String.valueOf(current)));
+
+        mockMvc.perform(get("/v1/accounts/acct_t4_1/capabilities/reports.t28.retired"))
+            .andExpect(status().isConflict())
+            .andExpect(header().string("X-Entitlement-Snapshot-Version", String.valueOf(current)));
+
+        mockMvc.perform(get("/v1/capabilities").param("status", "nonsense"))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(header().string("X-Entitlement-Snapshot-Version", String.valueOf(current)));
+    }
+
+    // The header is a /v1 product-contract promise. /admin/v1 backs the SPA and may change with it,
+    // so the error handler does not stamp it there. The one admin route that does carry it is
+    // /admin/v1/check, which admin-api.md defines as returning the /v1 payload "byte for byte" and
+    // therefore copies the upstream response's headers on purpose.
+    @Test
+    void adminResponsesDoNotCarryTheSnapshotVersionHeader() throws Exception {
+        mockMvc.perform(get("/admin/v1/meta"))
+            .andExpect(status().isOk())
+            .andExpect(header().doesNotExist("X-Entitlement-Snapshot-Version"));
+    }
+
     @Test
     void wholeAccountOmitsTraces() throws Exception {
         mockMvc.perform(get("/v1/accounts/acct_t4_1/entitlements"))

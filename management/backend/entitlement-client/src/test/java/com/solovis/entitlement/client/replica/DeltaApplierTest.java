@@ -231,10 +231,71 @@ class DeltaApplierTest {
     @Test
     void anUnknownChangeKindStopsTheSyncRatherThanBeingSkippedIntoSilentDivergence() {
         assertThatThrownBy(() -> DeltaApplier.apply(base, delta(100, 101, """
-            {"version":101,"kind":"conformance.changed","vectors":[]}""")))
+            {"version":101,"kind":"capability.renamed","key":"reports.monthly"}""")))
             .isInstanceOf(DeltaApplier.UnknownChangeKindException.class)
             .extracting(e -> ((DeltaApplier.UnknownChangeKindException) e).kind())
-            .isEqualTo("conformance.changed");
+            .isEqualTo("capability.renamed");
+    }
+
+    // snapshot-feed.md, "Change kinds": conformance.changed carries a replacement vector set and the
+    // replica must "re-run the gate before serving". A replica that stays up across a service
+    // redeploy would otherwise keep the vectors it started with forever — delta-derived candidates
+    // inherit their predecessor's set, and only a full resync fetches a new one.
+    @Test
+    void aConformanceChangedDeltaReplacesTheVectorSetAndAdvancesTheVersion() {
+        assertThat(base.vectors()).isEmpty();
+
+        var applied = DeltaApplier.apply(base, delta(100, 101, """
+            {"version":101,"kind":"conformance.changed","vectors":[\
+            {"kind":"conformance","id":"cv_probe",\
+            "model":{"account":"acct_1","capability":"api.access",\
+            "capabilities":[{"kind":"capability","key":"api.access","area":"api","valueType":"SWITCH",\
+            "default":{"type":"SWITCH","enabled":false},"status":"ACTIVE"}],\
+            "plans":[{"kind":"plan","key":"pro","status":"ACTIVE","isDefaultForNewAccounts":true,\
+            "entitlements":{"api.access":{"type":"SWITCH","enabled":true}}}],\
+            "accounts":[{"kind":"account","external":"acct_1","planKey":"pro"}],\
+            "overrides":[]},\
+            "expect":{"allowed":true,"value":{"type":"SWITCH","enabled":true}}}]}"""));
+
+        assertThat(applied.version()).isEqualTo(101L);
+        assertThat(applied.vectors()).singleElement()
+            .extracting(v -> v.name()).isEqualTo("cv_probe");
+        assertThat(ConformanceGate.evaluate(applied).passed())
+            .as("the replacement set is what the gate now runs, and this engine satisfies it")
+            .isTrue();
+    }
+
+    @Test
+    void aConformanceChangedDeltaLeavesTheModelUntouched() {
+        var applied = DeltaApplier.apply(base, delta(100, 101, """
+            {"version":101,"kind":"conformance.changed","vectors":[]}"""));
+
+        // It describes the service's build, not the model: no decision may move because of it.
+        assertThat(applied.snapshot().planEntitlement("pro", new CapabilityKey("reports.monthly")))
+            .get().extracting(pe -> pe.value()).isEqualTo(EntitlementValue.Quantity.of(50));
+        assertThat(applied.overridesByRef()).containsKey(4471L);
+    }
+
+    @Test
+    void aConformanceChangedDeltaCarryingAVectorThisEngineFailsIsCaughtByTheGate() {
+        // The whole point of the announcement: a tightened set must be able to fail a replica that
+        // was previously passing, rather than being accepted because it arrived by delta.
+        var applied = DeltaApplier.apply(base, delta(100, 101, """
+            {"version":101,"kind":"conformance.changed","vectors":[\
+            {"kind":"conformance","id":"cv_impossible",\
+            "model":{"account":"acct_1","capability":"api.access",\
+            "capabilities":[{"kind":"capability","key":"api.access","area":"api","valueType":"SWITCH",\
+            "default":{"type":"SWITCH","enabled":false},"status":"ACTIVE"}],\
+            "plans":[{"kind":"plan","key":"pro","status":"ACTIVE","isDefaultForNewAccounts":true,\
+            "entitlements":{"api.access":{"type":"SWITCH","enabled":false}}}],\
+            "accounts":[{"kind":"account","external":"acct_1","planKey":"pro"}],\
+            "overrides":[]},\
+            "expect":{"allowed":true,"value":{"type":"SWITCH","enabled":true}}}]}"""));
+
+        var gate = ConformanceGate.evaluate(applied);
+
+        assertThat(gate.passed()).isFalse();
+        assertThat(gate.reason()).contains("cv_impossible");
     }
 
     @Test

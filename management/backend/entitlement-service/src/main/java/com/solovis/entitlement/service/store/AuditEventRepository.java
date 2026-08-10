@@ -65,6 +65,21 @@ public class AuditEventRepository {
 		return keyHolder.getKey().longValue();
 	}
 
+	/**
+	 * The highest sequence recorded so far, or empty on a database where nothing has happened yet.
+	 *
+	 * <p>Every {@code snapshot_version} row references an audit event — "the moment it captures"
+	 * (data-model.md). A publish that records no business change of its own, such as a
+	 * {@code conformance.changed} announcement, references the latest existing moment rather than
+	 * manufacturing an audit event for something no person did. §8's history stays a record of
+	 * business changes only.
+	 */
+	public Optional<Long> findMaxSeq() {
+		return jdbcClient.sql("SELECT MAX(seq) FROM audit_event")
+				.query(Long.class)
+				.optional();
+	}
+
 	public Optional<AuditEventRow> findBySeq(long seq) {
 		return jdbcClient.sql("SELECT * FROM audit_event WHERE seq = :seq")
 				.param("seq", seq)

@@ -5,6 +5,7 @@ import com.solovis.entitlement.client.wire.DeltaDtos;
 import com.solovis.entitlement.client.wire.FeedDtos;
 import com.solovis.entitlement.client.wire.ValueDto;
 import com.solovis.entitlement.client.wire.WireMapper;
+import com.solovis.entitlement.core.conformance.ConformanceVector;
 import com.solovis.entitlement.core.model.AccountAssignment;
 import com.solovis.entitlement.core.model.AccountOverride;
 import com.solovis.entitlement.core.model.Capability;
@@ -15,7 +16,9 @@ import com.solovis.entitlement.core.model.PlanEntitlement;
 import com.solovis.entitlement.core.view.Snapshot;
 import com.solovis.entitlement.core.view.SnapshotMutator;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
 import tools.jackson.databind.JsonNode;
@@ -63,6 +66,7 @@ public final class DeltaApplier {
         long expected = current.version() + 1;
         var snapshot = current.snapshot();
         var byRef = new HashMap<>(current.overridesByRef());
+        var vectors = current.vectors();
 
         for (var change : delta.changes()) {
             long version = change.get("version").asLong();
@@ -76,12 +80,31 @@ public final class DeltaApplier {
                     "Delta batch jumps from version " + (expected - 1) + " to " + version
                         + "; a gap means this replica must full-resync.");
             }
-            snapshot = applyOne(snapshot, byRef, change, version, publishedAt);
+            // conformance.changed replaces this replica's vector set rather than mutating the model,
+            // so it is handled here where the set is in scope. The caller re-runs ConformanceGate
+            // over the returned candidate before swapping it in, which is the entire point: a
+            // replica that has been up across a service redeploy re-validates its engine against the
+            // new checks instead of coasting on the ones it started with.
+            if ("conformance.changed".equals(change.get("kind").asString())) {
+                vectors = readVectors(change, publishedAt);
+                snapshot = SnapshotMutator.withVersion(snapshot, version);
+            } else {
+                snapshot = applyOne(snapshot, byRef, change, version, publishedAt);
+            }
             expected = version + 1;
         }
 
-        return new Replica(snapshot, byRef, publishedAt, current.vectors(),
+        return new Replica(snapshot, byRef, publishedAt, vectors,
             current.format(), current.resolverContract());
+    }
+
+    private static List<ConformanceVector> readVectors(JsonNode change, Instant publishedAt) {
+        var vectors = new ArrayList<ConformanceVector>();
+        for (JsonNode vectorNode : change.get("vectors")) {
+            vectors.add(FullSnapshotReader.toVector(
+                ClientJson.MAPPER.treeToValue(vectorNode, FeedDtos.ConformanceLine.class), publishedAt));
+        }
+        return List.copyOf(vectors);
     }
 
     private static Snapshot applyOne(

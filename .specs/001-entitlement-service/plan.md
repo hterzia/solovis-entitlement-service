@@ -45,7 +45,7 @@ No constitution is defined for this project ("None defined"), so this gate is no
 **Post-Phase-1 re-check (Step 5): still N-A.** The Phase 1 design introduced no constitutional question because there is no constitution to answer to. The design was instead re-checked against the specification's own 41 acceptance criteria, which surfaced two things worth recording and nothing that blocks Phase 2:
 
 - **Two readings that could reasonably go the other way**, now recorded as decisions in "Recorded interpretations" below rather than left implicit: the scope of criterion 21's trace requirement, and append-only tier ordering.
-- **Criteria 25–31 are designed for but not yet evidenced.** The spec's definition of done requires a demonstration at 100,000 accounts and 5,000 decisions/second *against data changing during the demonstration*. The design makes those targets easy (decisions are in-memory map lookups against an immutably swapped snapshot), but "easy in principle" is not evidence — `entitlement-loadtest` exists as a module precisely so this is measured rather than asserted.
+- **Criteria 25–31 are designed for but not yet evidenced.** The spec's definition of done requires a demonstration at 100,000 accounts and 5,000 decisions/second *against data changing during the demonstration*. The design makes those targets easy (decisions are in-memory map lookups against an immutably swapped snapshot), but "easy in principle" is not evidence. **That demonstration is now specified as its own feature, [`004-load-demonstration`](../004-load-demonstration/spec.md)** (decision 2026-08-10), and the `entitlement-loadtest` module described under Project Structure below belongs to it rather than to this plan. Nothing about the criteria changed — only who owns proving them.
 - **One risk the design creates and must answer for**: the resolution rule now runs in every consuming service, so two replicas on different SDK versions could disagree about the same account — the scattered-logic failure §1 exists to prevent, reappearing one layer down. It is dormant while §4's rule is frozen, and becomes live the moment `future-spec.md` §1 (time-bounded overrides) or §3 (relative grants) changes what "most generous" means. Answered by the `resolverContract` version and startup conformance vectors (`research.md` §20), not by discipline.
 
 The one deviation from the specification, below, is unchanged by Phase 1.
@@ -154,7 +154,7 @@ entitlement-ui/                            # React SPA, built by Vite
     │                                      search), AffectedAccountsBanner, LivenessNotice
     └── styles/tokens.css                  imported from .claude/design/solovis/tokens.css
 
-entitlement-loadtest/
+entitlement-loadtest/                      # NOT this feature — see .specs/004-load-demonstration/
 ├── k6/decision-single.js                  criterion 25
 ├── k6/whole-account.js                    criterion 26
 ├── k6/churn-writer.js                     concurrent mutation for criterion 27

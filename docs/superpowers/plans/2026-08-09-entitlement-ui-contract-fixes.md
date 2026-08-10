@@ -1,5 +1,7 @@
 # Entitlement Operator UI Contract Fixes Implementation Plan
 
+> **Status: complete and merged.** All five tasks landed — `AccountSummary.account` + `status`, `createAccount({externalId})` with the narrowed response, `CapabilityRetireResult`'s nested shape, the remaining response-shape fixes, and `staticData.requiredRole` on all nine routes. The `- [ ]` checkboxes were never ticked back — this file is an archived record, not outstanding work. Verify against the code, not the boxes.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Fix five places where the operator UI (`management/frontend/management-ui`) was built against MSW mocks that don't match the real, now-merged `entitlement-service` backend, plus add the `requiredRole` route metadata `ui-screens.md` calls for. Two of these (account-list navigation, account creation) are outright broken against the real service; the rest are type lies with no crash today but wrong contracts.
@@ -836,4 +838,4 @@ git commit -m "feat(management-ui): route definitions carry requiredRole per ui-
 - [ ] `npm test` — full green run (expect 107 + the new tests from Tasks 1–5 above).
 - [ ] `npm run build` — succeeds.
 - [ ] `npm run lint` — clean.
-- [ ] Manual smoke test against the real backend (once `2026-08-09-entitlement-admin-api-contract-fixes.md` has also landed): `spring-boot:run` the service, `npm run dev -- --host 0.0.0.0` the SPA, and walk through: search accounts → open one → the link now resolves; create an account → it appears in the list; retire a capability → the confirmation shows real usage counts instead of crashing.
+- [ ] Manual smoke test against the real backend (the matching admin-API fixes landed as the post-merge addendum inside `2026-08-09-entitlement-service-api-layer.md`, Tasks 11–12; there is no separate `entitlement-admin-api-contract-fixes` plan and there never was): `spring-boot:run` the service, `npm run dev -- --host 0.0.0.0` the SPA, and walk through: search accounts → open one → the link now resolves; create an account → it appears in the list; retire a capability → the confirmation shows real usage counts instead of crashing.

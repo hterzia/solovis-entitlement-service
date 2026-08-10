@@ -1,5 +1,7 @@
 # Entitlement Service — API Layer Implementation Plan
 
+> **Status: complete and merged**, including the post-merge addendum (Tasks 11–12: capability usage on `GET`, accounts cursor pagination). The `- [ ]` checkboxes were never ticked back — this file is an archived record of how the REST surface was built, not outstanding work. Verify against the code, not the boxes. This plan also carries the admin-API contract fixes that `2026-08-09-entitlement-ui-contract-fixes.md` refers to by a filename that never existed.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the REST surface of `entitlement-service` on top of the already-complete `entitlement-core` (domain model, `Resolver`, immutable `Snapshot`) and `entitlement-service/store` (JdbcClient repositories) — the shared value/error contracts, the in-memory snapshot lifecycle, and all four API surfaces from `.specs/001-entitlement-service/contracts/` (decision API, admin API, snapshot feed) — so the operator SPA (being built concurrently in the `worktree-entitlement-ui-frontend` worktree) and future SDK/product-service consumers have a real, running contract to build against instead of only the markdown documents.

@@ -292,6 +292,8 @@ GET /admin/v1/audit?account=&planKey=&actor=&entityType=&from=&to=&cursor=&limit
 
 The three filters §8 requires — account, plan, actor — plus a time window, cursor-paged descending by `seq`.
 
+`nextCursor` is **`null` on the last page**, including a last page that happens to be exactly `limit` rows long. "This page is full" and "there is more" are different facts, and only the second one warrants a cursor — otherwise the history screen offers a next page that turns out to be empty.
+
 ```jsonc
 {
   "events": [

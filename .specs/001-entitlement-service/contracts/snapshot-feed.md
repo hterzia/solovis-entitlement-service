@@ -114,6 +114,8 @@ Everything needed to move a replica from `since` to the current version.
 | `override.removed` | `ref` | drop |
 | `conformance.changed` | replacement vector set | re-run the gate before serving |
 
+The vector set is part of the service's build, not its data, so `conformance.changed` is published **at service startup**, and only when the set differs from the one already announced. It exists because a delta-derived replica inherits its predecessor's vectors — only a full resync fetches a new set — so a replica that stays up across a service deployment would otherwise keep validating against the vectors it started with, which is exactly the case a newly added vector was meant to catch. It carries the whole set rather than a diff, because a partial set could not be gated. It advances the version and changes nothing a decision depends on.
+
 Overrides are immutable once created — creation and removal are the only override mutations, and the admin API exposes no edit — so every override change on this feed is `override.created` or `override.removed`, and no write can ever touch a field the projection omits.
 
 Changes are ordered by `version` ascending and **must be applied in that order**. Applying the list is the only way a replica reaches `toVersion`; a replica must not reorder or skip.

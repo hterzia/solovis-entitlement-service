@@ -6,3 +6,7 @@ entitlement:
     busy-timeout-millis: 5000
   seed:
     enabled: false
+  snapshot:
+    # The sweep is driven explicitly by SnapshotVersionPrunerTest. Leaving the timer on would let a
+    # background delete race every other test's fixtures on the shared context.
+    prune-enabled: false

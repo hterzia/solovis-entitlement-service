@@ -1,5 +1,7 @@
 # Entitlement Client SDK Implementation Plan
 
+> **Status: complete and merged.** Every task below is implemented and covered by the test suite. The `- [ ]` checkboxes were never ticked back — this file is an archived record of how `entitlement-client` was built, not outstanding work. Verify against the code, not the boxes.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build `entitlement-client`, the embeddable Java SDK that keeps a local replica of the entitlement model and answers decisions in-process — microseconds, and still correct while the management service is down.
