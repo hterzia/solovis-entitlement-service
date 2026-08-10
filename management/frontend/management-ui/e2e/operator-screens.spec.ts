@@ -186,13 +186,13 @@ test.describe('Screen 4 — checker', () => {
     // as substrings and this suite shares one service.
     const capabilityValues = () =>
       page.locator('#checker-capabilities option')
-        .evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value))
+        .evaluateAll((els) => els.map((e) => (e as unknown as { value: string }).value))
 
     await expect.poll(capabilityValues).toContain('reports.monthly')
 
     const accountValues = () =>
       page.locator('#checker-accounts option')
-        .evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value))
+        .evaluateAll((els) => els.map((e) => (e as unknown as { value: string }).value))
 
     // Empty until asked, then filled from a live `q` search.
     expect(await accountValues()).toEqual([])
