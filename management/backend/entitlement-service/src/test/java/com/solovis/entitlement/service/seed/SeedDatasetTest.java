@@ -1,6 +1,5 @@
 package com.solovis.entitlement.service.seed;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -12,10 +11,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SeedDatasetTest {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-
     private SeedDataset load(String json) {
-        return SeedDataset.of(json.getBytes(StandardCharsets.UTF_8), MAPPER);
+        return SeedDataset.of(json.getBytes(StandardCharsets.UTF_8));
     }
 
     private static final String VALID = """
@@ -148,7 +145,7 @@ class SeedDatasetTest {
 
     @Test
     void theShippedDatasetIsValid() {
-        SeedDataset dataset = SeedDataset.of(shipped(), MAPPER);
+        SeedDataset dataset = SeedDataset.of(shipped());
 
         dataset.validate();
 
@@ -160,7 +157,7 @@ class SeedDatasetTest {
 
     @Test
     void theShippedDatasetKeepsTheFixturesTheEndToEndSuiteLocatesBy() {
-        SeedDataset dataset = SeedDataset.of(shipped(), MAPPER);
+        SeedDataset dataset = SeedDataset.of(shipped());
 
         assertThat(dataset.capabilities()).extracting(SeedDataset.Capability::key)
             .contains("api.access", "reports.monthly", "seats.count", "support.tier");
@@ -178,7 +175,7 @@ class SeedDatasetTest {
 
     @Test
     void theWindowsFlagshipCarriesAllFourStandings() {
-        SeedDataset dataset = SeedDataset.of(shipped(), MAPPER);
+        SeedDataset dataset = SeedDataset.of(shipped());
         int timeline = dataset.timelineDays();
         var sterling = dataset.events().stream().filter(e -> "acct_2947".equals(e.account())).toList();
 
@@ -202,7 +199,7 @@ class SeedDatasetTest {
 
     @Test
     void theThreeStandingsSeededByZeroZeroTwoSurviveOnTheirAccount() {
-        SeedDataset dataset = SeedDataset.of(shipped(), MAPPER);
+        SeedDataset dataset = SeedDataset.of(shipped());
 
         // 002 put these on acct_1177 on purpose; screen 3's grouping renders them and windows.spec.ts
         // uses that account. They are carried across verbatim, reasons included.

@@ -1,108 +1,105 @@
 package com.solovis.entitlement.service.seed;
 
-import com.solovis.entitlement.service.admin.dto.*;
-import com.solovis.entitlement.service.admin.service.*;
+import com.solovis.entitlement.service.admin.service.AccountAdminService;
+import com.solovis.entitlement.service.admin.service.CapabilityAdminService;
+import com.solovis.entitlement.service.admin.service.OverrideAdminService;
+import com.solovis.entitlement.service.admin.service.PlanAdminService;
 import com.solovis.entitlement.service.audit.AuditSource;
-import com.solovis.entitlement.service.dto.ValueDto;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.ApplicationArguments;
-import org.springframework.boot.ApplicationRunner;
-import org.springframework.core.annotation.Order;
+import com.solovis.entitlement.service.store.ServiceStateRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.InitializingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
-import java.util.List;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.time.Duration;
 
 /**
- * A small, fixed development dataset — not the 100,000-account load-test seed research.md §18
- * describes (that belongs to the future entitlement-loadtest module). Runs through the same admin
- * services every real write path uses, so it can never declare data the validation rules reject.
+ * Writes the demo dataset into an empty database, before the service accepts traffic.
+ *
+ * <p>An {@link InitializingBean} rather than an {@code ApplicationRunner}, for two reasons. Boot
+ * starts the web connector during context refresh, before any runner fires, so a runner would leave
+ * a window where the console is reachable and half populated. And {@code @Scheduled} tasks start
+ * with the context lifecycle, also after every {@code InitializingBean} — which is what keeps
+ * {@code WindowBoundaryRoller} (fixed delay, {@code initialDelay = 0}, reads
+ * {@code LocalDate.now(clock)}) from ever observing the wound clock. As a runner it would fire
+ * mid-seed, take an authored day for today, record {@code window.rolledThrough} in the fictional
+ * past, and then publish a flood of boundary transitions for moments nobody observed.
+ *
+ * <p>It needs no {@code @DependsOn}: {@code SnapshotPublisher} derives its version from the
+ * {@code snapshot_version} autoincrement rather than from anything held in memory, so a migrated
+ * schema is the only precondition and context refresh already guarantees it. This mirrors
+ * {@code ConformanceAnnouncementStartup}, which states the same reasoning.
+ *
+ * <p>Whether a database has been seeded is recorded, not inferred. The old check asked whether any
+ * plan existed — one question standing in for the whole sequence, so a crash partway through left a
+ * permanently half-populated demo that every later boot skipped in silence. A started-but-never-
+ * completed marker now fails startup instead, which for a demo database is the better failure: the
+ * history must be written in time order into an empty database, so the recovery is to delete the
+ * file rather than to patch up what is there.
  */
 @Component
-@Order(1)
-public class DemoDataSeeder implements ApplicationRunner {
+@ConditionalOnProperty(name = "entitlement.seed.enabled", havingValue = "true")
+public class DemoDataSeeder implements InitializingBean {
 
-    private final CapabilityAdminService capabilityService;
-    private final PlanAdminService planService;
-    private final AccountAdminService accountService;
-    private final OverrideAdminService overrideService;
-    private final AuditSource auditSource;
-    private final java.time.Clock clock;
-    private final boolean enabled;
+    private static final Logger log = LoggerFactory.getLogger(DemoDataSeeder.class);
+    private static final String RESOURCE = "seed/demo-seed.json";
+
+    private final SeedApplier applier;
+    private final SeedState seedState;
+    private final SeedClock clock;
 
     public DemoDataSeeder(CapabilityAdminService capabilityService, PlanAdminService planService,
             AccountAdminService accountService, OverrideAdminService overrideService, AuditSource auditSource,
-            java.time.Clock clock, @Value("${entitlement.seed.enabled:false}") boolean enabled) {
-        this.capabilityService = capabilityService;
-        this.planService = planService;
-        this.accountService = accountService;
-        this.overrideService = overrideService;
-        this.auditSource = auditSource;
+            ServiceStateRepository serviceStateRepository, SeedClock clock) {
+        this.applier = new SeedApplier(capabilityService, planService, accountService, overrideService,
+            auditSource, clock);
+        this.seedState = new SeedState(serviceStateRepository, clock);
         this.clock = clock;
-        this.enabled = enabled;
     }
 
     @Override
-    public void run(ApplicationArguments args) {
-        if (!enabled || !planService.list().isEmpty()) {
-            return; // already seeded, or seeding disabled (tests, and any future non-dev profile)
+    public void afterPropertiesSet() {
+        SeedState.Status status = seedState.status();
+        if (status == SeedState.Status.COMPLETED) {
+            log.info("Demo seed: already present, nothing to do.");
+            return;
+        }
+        if (status == SeedState.Status.STARTED) {
+            throw new IllegalStateException("Demo seed: a previous attempt ("
+                + seedState.startedFingerprint().orElse("unknown") + ") started but never completed, so this "
+                + "database is half populated. Refusing to start rather than serve an incomplete demo — "
+                + "delete the database file and restart.");
         }
 
-        auditSource.runAs("SEED", () -> {
-            capabilityService.create(new CapabilityCreateRequest("api.access", "API access", null, "SWITCH",
-                new ValueDto("SWITCH", false, null, null, null, null), null, null));
-            capabilityService.create(new CapabilityCreateRequest("reports.monthly", "Monthly reports", null, "QUANTITY",
-                new ValueDto("QUANTITY", null, 0L, null, null, null), null, null));
-            capabilityService.create(new CapabilityCreateRequest("seats.count", "Seats", null, "QUANTITY",
-                new ValueDto("QUANTITY", null, 5L, null, null, null), null, null));
-            capabilityService.create(new CapabilityCreateRequest("support.tier", "Support level", null, "TIER",
-                new ValueDto("TIER", null, null, null, "community", null),
-                new ValueDto("TIER", null, null, null, "community", null),
-                List.of(new CapabilityCreateRequest.TierRequest("community", "Community"),
-                        new CapabilityCreateRequest.TierRequest("standard", "Standard"),
-                        new CapabilityCreateRequest.TierRequest("gold", "Gold"))));
+        SeedDataset dataset = load();
+        dataset.validate();
 
-            planService.create(new PlanCreateRequest("free", "Free", "Default plan for new signups."));
-            planService.designateDefault("free");
-            planService.create(new PlanCreateRequest("pro", "Pro", "Paid tier."));
-            var proPreview = planService.preview("pro", new PlanEntitlementEditRequest(
-                java.util.Map.of("api.access", new ValueDto("SWITCH", true, null, null, null, null),
-                                  "reports.monthly", new ValueDto("QUANTITY", null, 50L, null, null, null),
-                                  "support.tier", new ValueDto("TIER", null, null, null, "standard", null)),
-                List.of(), null, null));
-            planService.apply("pro", new PlanEntitlementEditRequest(
-                java.util.Map.of("api.access", new ValueDto("SWITCH", true, null, null, null, null),
-                                  "reports.monthly", new ValueDto("QUANTITY", null, 50L, null, null, null),
-                                  "support.tier", new ValueDto("TIER", null, null, null, "standard", null)),
-                List.of(), null, proPreview.previewToken()));
+        long began = System.nanoTime();
+        try {
+            seedState.markStarted(dataset.fingerprint());
+            SeedApplier.Summary summary = applier.apply(dataset);
+            seedState.markCompleted(dataset.fingerprint());
+            log.info("Demo seed: {} capabilities, {} plans, {} accounts, {} overrides — {} writes spanning {} "
+                    + "days, in {} ms.", summary.capabilities(), summary.plans(), summary.accounts(),
+                summary.overrides(), summary.writes(),
+                Duration.between(summary.firstEvent(), summary.lastEvent()).toDays(),
+                Duration.ofNanos(System.nanoTime() - began).toMillis());
+        } finally {
+            // Released before the connector opens and before @Scheduled tasks start: no request and
+            // no roll ever observes a wound clock.
+            clock.release();
+        }
+    }
 
-            accountService.create(new AccountCreateRequest("acct_9931", "Northwind Capital"));
-            accountService.reassignPlan("acct_9931", new PlanReassignRequest("pro", "PERSON", "dev-operator", "Initial demo setup"));
-            overrideService.create("acct_9931", new OverrideCreateRequest("reports.monthly", "GRANT",
-                new ValueDto("QUANTITY", null, 200L, null, null, null), "Renewal concession — Q3 pilot"));
-            accountService.create(new AccountCreateRequest("acct_1177", "Example Co"));
-
-            // 002: one override in each standing an operator can be shown today, so screen 3's
-            // grouping and the checker's not-in-force entries have something real to render.
-            //
-            // Deliberately on acct_1177, never acct_9931: the e2e suite asserts on acct_9931's
-            // *resolved* state, and another override on its capabilities would change the answer
-            // and fail tests that are perfectly correct.
-            //
-            // ENDED is missing from this list on purpose. c7 forbids saving a wholly-past window
-            // through the API, and the seeder writes through the same admin services as everything
-            // else, so it cannot manufacture one either. The seats.count grant below expires
-            // *today*, which means the demo shows a real ending when the clock next passes midnight
-            // — a better demonstration of c12 than a row that was born expired.
-            var today = java.time.LocalDate.now(clock);
-            overrideService.create("acct_1177", new OverrideCreateRequest("seats.count", "GRANT",
-                new ValueDto("QUANTITY", null, 25L, null, null, null),
-                "Trial seats through the end of today", null, today.toString()));
-            overrideService.create("acct_1177", new OverrideCreateRequest("reports.monthly", "GRANT",
-                new ValueDto("QUANTITY", null, 500L, null, null, null),
-                "Reporting pilot agreed for next month", today.plusDays(30).toString(), today.plusDays(120).toString()));
-            var lifted = overrideService.create("acct_1177", new OverrideCreateRequest("api.access", "HOLD",
-                new ValueDto("SWITCH", false, null, null, null, null),
-                "Suspended pending investigation"));
-            overrideService.delete("acct_1177", lifted.overrideId(), "Investigation closed, access restored");
-        });
+    private SeedDataset load() {
+        try (var in = new ClassPathResource(RESOURCE).getInputStream()) {
+            return SeedDataset.of(in.readAllBytes());
+        } catch (IOException e) {
+            throw new UncheckedIOException("Demo seed: " + RESOURCE + " is not readable", e);
+        }
     }
 }

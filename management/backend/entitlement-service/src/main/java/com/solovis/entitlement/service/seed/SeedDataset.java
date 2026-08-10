@@ -1,10 +1,9 @@
 package com.solovis.entitlement.service.seed;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.solovis.entitlement.service.dto.ValueDto;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
@@ -59,15 +58,17 @@ public record SeedDataset(
     public static final String PLAN_REASSIGN = "plan.reassign";
     public static final String CAPABILITY_RETIRE = "capability.retire";
 
-    public static SeedDataset of(byte[] raw, ObjectMapper mapper) {
-        try {
-            SeedDataset parsed = mapper.readValue(raw, SeedDataset.class);
-            return new SeedDataset(parsed.seedVersion(), parsed.timelineDays(), parsed.capabilities(),
-                parsed.plans(), parsed.accounts(), parsed.events(),
-                "v" + parsed.seedVersion() + ":" + sha256(raw));
-        } catch (IOException e) {
-            throw new UncheckedIOException("demo seed dataset is not readable", e);
-        }
+    /**
+     * A dedicated, minimal mapper: this format is internal to the seed and has no business tracking
+     * the API-response Jackson configuration, exactly as {@code DeltaJson} reasons about its own.
+     */
+    private static final ObjectMapper MAPPER = JsonMapper.builder().build();
+
+    public static SeedDataset of(byte[] raw) {
+        SeedDataset parsed = MAPPER.readValue(raw, SeedDataset.class);
+        return new SeedDataset(parsed.seedVersion(), parsed.timelineDays(), parsed.capabilities(),
+            parsed.plans(), parsed.accounts(), parsed.events(),
+            "v" + parsed.seedVersion() + ":" + sha256(raw));
     }
 
     private static String sha256(byte[] raw) {
