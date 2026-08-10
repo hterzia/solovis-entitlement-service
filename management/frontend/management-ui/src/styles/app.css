@@ -739,6 +739,62 @@ body {
 
 /* ---- Narrow viewports ---------------------------------------------------------------------
    Chrome padding tightens; grids keep their natural width and scroll inside their own panel. */
+
+/* --------------------------------------------------------------- 002 windows
+   An override that is not in force is present but visibly not counting (c18,
+   c19). Dimmed rather than hidden: an explanation that omitted the GRANT which
+   ended last week would fail at its only job, which is saying why the answer
+   changed. Colour and spacing come from the tokens; nothing new is introduced. */
+
+.trace-candidate--not-in-force {
+  color: var(--sv-slate-500);
+}
+
+.trace-candidate__window {
+  font-size: var(--sv-type-12);
+}
+
+.override-group {
+  margin-bottom: var(--sv-space-16);
+}
+
+.override-group__heading {
+  font-size: var(--sv-type-12);
+  letter-spacing: var(--sv-app-tracking-caps);
+  text-transform: uppercase;
+  color: var(--sv-slate-600);
+}
+
+.override-row--not-in-force {
+  color: var(--sv-slate-500);
+}
+
+/* The date fields sit together and read as one control, because they are one
+   promise: "in force from X to Y inclusive" is what the operator is agreeing. */
+.window-fields {
+  display: flex;
+  gap: var(--sv-space-16);
+  align-items: flex-end;
+}
+
+.window-sentence {
+  font-size: var(--sv-type-12);
+  color: var(--sv-slate-600);
+}
+
+/* The checker is showing the past. Persistent, and not dismissible, because the
+   difference between "today" and "14 March" is the whole meaning of the screen. */
+.as-at-banner {
+  background: var(--sv-surface-alt);
+  border: 1px solid var(--sv-slate-500);
+  border-radius: var(--sv-radius-16, 16px);
+  padding: var(--sv-space-12);
+  margin-bottom: var(--sv-space-16);
+  display: flex;
+  gap: var(--sv-space-16);
+  align-items: center;
+}
+
 @media (max-width: 768px) {
   .app-canvas {
     padding: var(--sv-space-16);

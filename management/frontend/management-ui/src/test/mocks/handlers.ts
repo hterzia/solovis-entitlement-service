@@ -220,7 +220,7 @@ export const handlers = [
 
   http.post('/admin/v1/accounts/:external/overrides', async ({ params, request }) => {
     if (params.external !== db.account.account) return problem(404, 'entitlement/unknown-account', `No account '${params.external}'.`)
-    const body = (await request.json()) as { capability: string; kind: 'GRANT' | 'HOLD'; value: unknown; reason?: string }
+    const body = (await request.json()) as { capability: string; kind: 'GRANT' | 'HOLD'; value: unknown; reason?: string; startsOn?: string; expiresOn?: string }
     if (!body.reason || body.reason.trim() === '') return problem(422, 'entitlement/reason-required', 'Reason is required.')
     const created = {
       id: `ovr_${Math.floor(Math.random() * 100000)}`,
@@ -231,6 +231,11 @@ export const handlers = [
       createdBy: 'dev-operator',
       createdAt: new Date(0).toISOString(),
       effectNow: 'WINNING' as const,
+      // The service decides standing; a handler that made one up would be inventing the very rule
+      // the SPA is forbidden from re-deriving. IN_FORCE is what a windowless create really returns.
+      startsOn: body.startsOn ?? null,
+      expiresOn: body.expiresOn ?? null,
+      standing: 'IN_FORCE' as const,
     }
     db.account.overrides.push(created)
     return HttpResponse.json({ overrideId: created.id, decision: { allowed: true, value: body.value, trace: RESULT_TRACE }, snapshotVersion: 48212, changeVisibleEverywhereWithinSeconds: 60 }, { status: 201 })

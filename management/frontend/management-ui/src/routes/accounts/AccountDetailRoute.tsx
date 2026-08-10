@@ -13,7 +13,7 @@ import { SaveConfirmation } from '../../components/SaveConfirmation'
 import { ErrorNotice } from '../../components/ErrorNotice'
 import { zeroValueFor } from '../../types/value'
 import type { EntitlementValue } from '../../types/value'
-import type { AssignmentSource, CapabilityStatus, Decision, EntitlementSource, Override, OverrideEffect, OverrideKind } from '../../types/domain'
+import type { AssignmentSource, CapabilityStatus, Decision, EntitlementSource, Override, OverrideEffect, OverrideKind, OverrideStanding } from '../../types/domain'
 
 const EFFECT_LABELS: Record<OverrideEffect, string> = {
   WINNING: 'winning',
@@ -45,6 +45,38 @@ function effectLabel(override: Override, capabilityStatus?: CapabilityStatus): s
 
 function overrideCount(count: number): string {
   return `${count} override${count === 1 ? '' : 's'}`
+}
+
+/** The service clock every date on this screen is entered and shown against (c5). */
+const SERVICE_CLOCK = 'US Eastern'
+
+/** c18 — in force first and prominent; the rest present but visibly not counting. */
+const STANDING_ORDER: OverrideStanding[] = ['IN_FORCE', 'PENDING', 'ENDED', 'REMOVED']
+
+const STANDING_HEADINGS: Record<OverrideStanding, string> = {
+  IN_FORCE: 'In force',
+  PENDING: 'Not yet begun',
+  ENDED: 'Ended',
+  REMOVED: 'Removed',
+}
+
+/**
+ * c6 — what the dates mean, in words, before the operator saves. Written here rather than taken
+ * from the service because nothing has been sent yet; it restates the operator's own input, and
+ * makes no claim about what the answer will be.
+ */
+function windowSentence(startsOn: string, expiresOn: string): string {
+  if (!startsOn && !expiresOn) return `In force from now until it is removed (${SERVICE_CLOCK}).`
+  if (startsOn && !expiresOn) return `In force from ${startsOn} until it is removed (${SERVICE_CLOCK}).`
+  if (!startsOn && expiresOn) return `In force from now to ${expiresOn} inclusive (${SERVICE_CLOCK}).`
+  return `In force from ${startsOn} to ${expiresOn} inclusive (${SERVICE_CLOCK}).`
+}
+
+/** The window an override was granted under, for the list. Reads dates; derives no standing. */
+function windowSummary(o: Override): string | null {
+  if (!o.startsOn && !o.expiresOn) return null
+  if (o.startsOn && o.expiresOn) return `${o.startsOn} to ${o.expiresOn} inclusive`
+  return o.startsOn ? `from ${o.startsOn}` : `to ${o.expiresOn} inclusive`
 }
 
 function groupByArea<T extends { area: string }>(items: T[]): [string, T[]][] {
@@ -87,12 +119,17 @@ export function AccountDetailRoute({ external: externalProp }: { external?: stri
   const [newKind, setNewKind] = useState<OverrideKind | ''>('')
   const [newValue, setNewValue] = useState<EntitlementValue | null>(null)
   const [newReason, setNewReason] = useState('')
+  const [newStartsOn, setNewStartsOn] = useState('')
+  const [newExpiresOn, setNewExpiresOn] = useState('')
   // The capability travels with the decision because the form is emptied on success: the result
   // panel still has to know which capability's declared tiers to render its trace with.
   const [addedDecision, setAddedDecision] = useState<{ capability: string; decision: Decision } | null>(null)
 
   const addMutation = useMutation({
-    mutationFn: () => addOverride(external, { capability: newCapability, kind: newKind as OverrideKind, value: newValue!, reason: newReason }),
+    mutationFn: () => addOverride(external, {
+      capability: newCapability, kind: newKind as OverrideKind, value: newValue!, reason: newReason,
+      startsOn: newStartsOn || undefined, expiresOn: newExpiresOn || undefined,
+    }),
     onSuccess: (result) => {
       setAddedDecision({ capability: newCapability, decision: result.decision })
       invalidateAccount()
@@ -100,6 +137,8 @@ export function AccountDetailRoute({ external: externalProp }: { external?: stri
       setNewKind('')
       setNewValue(null)
       setNewReason('')
+      setNewStartsOn('')
+      setNewExpiresOn('')
     },
   })
 
@@ -249,10 +288,20 @@ export function AccountDetailRoute({ external: externalProp }: { external?: stri
       )}
 
       <h2>Overrides</h2>
-      <ul>
-        {account.overrides.map((o) => (
-          <li key={o.id} data-testid={`override-${o.id}`}>
+      {/* Grouped by standing, in force first (c18). Removed is collapsed by default: the record of
+          a removal survives for ever (c17), so that group only grows and is the least often wanted. */}
+      {STANDING_ORDER.map((standing) => {
+        // `?? 'IN_FORCE'` is not defensive noise: an override whose standing the service did not
+        // state must still appear. Dropping it would hide an exception from the one screen whose
+        // job is listing them, and "in force" is what every override meant before 002.
+        const inGroup = account.overrides.filter((o) => (o.standing ?? 'IN_FORCE') === standing)
+        if (inGroup.length === 0) return null
+        const body = (
+          <ul>
+            {inGroup.map((o) => (
+          <li key={o.id} data-testid={`override-${o.id}`} className={standing === 'IN_FORCE' ? undefined : 'override-row--not-in-force'}>
             {o.capability} — {o.kind} <ValueBadge value={o.value} tiers={capabilityFor(o.capability)?.tiers ?? []} /> — {o.reason} — {o.createdBy}, {o.createdAt} — {effectLabel(o, capabilityFor(o.capability)?.status)}
+            {windowSummary(o) && <span className="trace-candidate__window"> · {windowSummary(o)}</span>}
             {confirmingRemoveId === o.id ? (
               <span>
                 {/* The known v1 gap, stated where it matters: §8 and future-spec.md §2 permit any
@@ -273,11 +322,28 @@ export function AccountDetailRoute({ external: externalProp }: { external?: stri
                 <button type="button" className="sv-btn--secondary" onClick={() => setConfirmingRemoveId(null)}>Cancel</button>
               </span>
             ) : (
-              <button type="button" className="sv-btn--secondary" data-testid={`remove-${o.id}`} onClick={() => { clearActionResults(); setConfirmingRemoveId(o.id) }}>Remove</button>
+              standing !== 'REMOVED' && (
+                <button type="button" className="sv-btn--secondary" data-testid={`remove-${o.id}`} onClick={() => { clearActionResults(); setConfirmingRemoveId(o.id) }}>Remove</button>
+              )
             )}
           </li>
-        ))}
-      </ul>
+            ))}
+          </ul>
+        )
+        return (
+          <section key={standing} className="override-group" data-testid={`override-group-${standing}`}>
+            <h3 className="override-group__heading">{STANDING_HEADINGS[standing]} ({inGroup.length})</h3>
+            {standing === 'REMOVED' ? (
+              <details>
+                <summary>Show removed overrides</summary>
+                {body}
+              </details>
+            ) : (
+              body
+            )}
+          </section>
+        )
+      })}
       <ErrorNotice error={removalPreview.error} action="Could not work out what this removal returns to" />
       <ErrorNotice error={removeMutation.error} action="Could not remove the override" />
       {removedDecision && removeMutation.data && (
@@ -328,6 +394,16 @@ export function AccountDetailRoute({ external: externalProp }: { external?: stri
           <label className="sv-label">Reason
             <input className="sv-field" aria-label="Reason" value={newReason} onChange={(e) => setNewReason(e.target.value)} />
           </label>
+          {/* Both optional, and leaving them blank stays the fastest path through the form (c1). */}
+          <div className="window-fields">
+            <label className="sv-label">Starts on ({SERVICE_CLOCK})
+              <input className="sv-field" type="date" aria-label={`Starts on (${SERVICE_CLOCK})`} value={newStartsOn} onChange={(e) => setNewStartsOn(e.target.value)} />
+            </label>
+            <label className="sv-label">Expires on ({SERVICE_CLOCK})
+              <input className="sv-field" type="date" aria-label={`Expires on (${SERVICE_CLOCK})`} value={newExpiresOn} onChange={(e) => setNewExpiresOn(e.target.value)} />
+            </label>
+          </div>
+          <p className="window-sentence" data-testid="window-sentence">{windowSentence(newStartsOn, newExpiresOn)}</p>
           <button type="submit" className="sv-btn" disabled={!newCapability || !newKind || newReason.trim() === ''}>Save override</button>
         </form>
       )}

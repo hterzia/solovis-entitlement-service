@@ -130,7 +130,9 @@ public class AccountAdminService {
         }
 
         var overrides = new ArrayList<AccountDetailDto.OverrideRow>();
-        for (var overrideRow : accountOverrideRepository.findLiveForAccount(row.id())) {
+        // Every override, not only the live ones: c18 groups by standing and names removed as one
+        // of the four states, so a list that dropped them could not show it.
+        for (var overrideRow : accountOverrideRepository.findAllForAccount(row.id())) {
             var capRow = capabilityRepository.findById(overrideRow.capabilityId()).orElseThrow();
             var explanation = explanationsByCapabilityId.get(overrideRow.capabilityId());
             String effectNow = explanation == null ? null : effectNow(overrideRow, explanation.trace());

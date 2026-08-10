@@ -1,6 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { checkDecision } from '../../api/checker'
+import { checkDecision, type CheckParams } from '../../api/checker'
 import { listCapabilities } from '../../api/capabilities'
 import { ApiError } from '../../api/http'
 import { queryKeys } from '../../queries/keys'
@@ -18,14 +18,21 @@ const ERROR_MESSAGES: Record<string, string> = {
   'entitlement/unknown-account': 'No such account.',
   'entitlement/unknown-capability': 'No such capability.',
   'entitlement/retired-capability': 'That capability is retired and is no longer evaluated.',
+  // 002's three refusals about the past. Each is a thing the service knows and is saying, not a
+  // failure to answer, so each keeps its own wording rather than collapsing into "error" (c26, c27).
+  'entitlement/future-date': 'That date is in the future. The service reports what was, not what will be.',
+  'entitlement/before-account-existed': 'That date is before this account existed.',
+  'entitlement/beyond-history': 'The change history does not reach back that far.',
 }
 
-interface CheckParams { account?: string; capability?: string; override?: string }
+/** The service clock every date on this screen is read against (c5). */
+const SERVICE_CLOCK = 'US Eastern'
 
 export function CheckerRoute() {
   const [account, setAccount] = useState('')
   const [capability, setCapability] = useState('')
   const [overrideRef, setOverrideRef] = useState('')
+  const [asAt, setAsAt] = useState('')
   const [submitted, setSubmitted] = useState<CheckParams | null>(null)
   const [copyOutcome, setCopyOutcome] = useState<'COPIED' | 'FAILED' | null>(null)
   const explanationRef = useRef<HTMLDivElement>(null)
@@ -52,7 +59,8 @@ export function CheckerRoute() {
     e.preventDefault()
     // An override reference resolves to its own account, so sending one would only be a
     // second, redundant constraint the operator may not know.
-    setSubmitted(overrideRef ? { override: overrideRef } : { account, capability })
+    const asAtParam = asAt ? { asAt } : {}
+    setSubmitted(overrideRef ? { override: overrideRef, ...asAtParam } : { account, capability, ...asAtParam })
     // The confirmation belongs to the explanation that was on screen when it was copied; leaving it
     // up over a fresh answer would claim that answer is on the operator's clipboard.
     setCopyOutcome(null)
@@ -82,8 +90,36 @@ export function CheckerRoute() {
         <label className="sv-label">Override reference
           <input className="sv-field" aria-label="Override reference" value={overrideRef} disabled={capability !== ''} onChange={(e) => setOverrideRef(e.target.value)} />
         </label>
+        <label className="sv-label">As at ({SERVICE_CLOCK})
+          <input
+            type="date"
+            className="sv-field"
+            aria-label={`As at (${SERVICE_CLOCK})`}
+            value={asAt}
+            onChange={(e) => setAsAt(e.target.value)}
+          />
+        </label>
         <button type="submit" className="sv-btn" disabled={!(account && capability) && !overrideRef}>Check</button>
       </form>
+
+      {/* Persistent, and not dismissible: which day the answer describes is the whole meaning of
+          the screen, and the current answer stays one click away rather than one scroll. */}
+      {query.data?.asAt && (
+        <div className="as-at-banner" role="status">
+          <span>Showing <strong>{query.data.asAt}</strong> ({SERVICE_CLOCK}), not today.</span>
+          <button
+            type="button"
+            className="sv-btn--secondary"
+            onClick={() => {
+              setAsAt('')
+              setSubmitted(overrideRef ? { override: overrideRef } : { account, capability })
+              setCopyOutcome(null)
+            }}
+          >
+            Show the current answer
+          </button>
+        </div>
+      )}
 
       {query.isFetching && <p role="status">Checking…</p>}
 
@@ -100,6 +136,12 @@ export function CheckerRoute() {
               Account: {query.data.account} · Capability: {query.data.capability} · Allowed: {String(query.data.allowed)} ·
               {' '}Snapshot v{query.data.snapshotVersion} · Evaluated {query.data.evaluatedAt}
             </p>
+            {query.data.capabilityRetiredSince && (
+              <p>
+                This capability has been retired since {query.data.capabilityRetiredSince}. It was
+                {' '}evaluated normally on the date asked about.
+              </p>
+            )}
             <TraceView trace={query.data.trace} tiers={tiers} />
           </div>
           <button type="button" className="sv-btn--secondary" onClick={copyExplanation}>Copy explanation</button>

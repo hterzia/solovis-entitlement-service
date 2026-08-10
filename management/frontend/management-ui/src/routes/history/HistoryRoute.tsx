@@ -8,11 +8,22 @@ import { ErrorNotice } from '../../components/ErrorNotice'
 
 const ENTITY_TYPES = ['CAPABILITY', 'CAPABILITY_TIER', 'PLAN', 'PLAN_ENTITLEMENT', 'ACCOUNT', 'ACCOUNT_PLAN', 'DEFAULT_PLAN', 'OVERRIDE'] as const
 
+/**
+ * A beginning and an ending were made by the passage of time, not by an operator, and c30 requires
+ * them to read as such and to be as legible as any other entry. Rendering them as "clock BEGIN
+ * OVERRIDE" would satisfy neither: it reads as an actor named clock doing something.
+ */
+const TRANSITION_TEXT: Record<string, string> = {
+  BEGIN: 'came into force on its start date',
+  END: 'ended after its expiry date',
+}
+
 export function HistoryRoute() {
   const [account, setAccount] = useState('')
   const [planKey, setPlanKey] = useState('')
   const [actor, setActor] = useState('')
   const [entityType, setEntityType] = useState('')
+  const [capability, setCapability] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
 
@@ -22,6 +33,7 @@ export function HistoryRoute() {
   const params = {
     account: account || undefined, planKey: planKey || undefined, actor: actor || undefined,
     entityType: entityType || undefined, from: from || undefined, to: to || undefined,
+    capability: capability || undefined,
   }
   // Every capability, retired included: history keeps naming a capability long after it is retired
   // (c8), and its rows still have to render a tier by name.
@@ -61,6 +73,9 @@ export function HistoryRoute() {
             {ENTITY_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </label>
+        <label className="sv-label">Capability
+          <input className="sv-field" aria-label="Capability" value={capability} onChange={(e) => setCapability(e.target.value)} />
+        </label>
         <label className="sv-label">From
           <input className="sv-field" type="date" aria-label="From" value={from} onChange={(e) => setFrom(e.target.value)} />
         </label>
@@ -77,9 +92,21 @@ export function HistoryRoute() {
           {events.map((event) => (
             <tr key={event.seq}>
               <td>{event.occurredAt}</td>
-              <td>{event.actor.id} ({event.actor.kind === 'PERSON' ? 'person' : 'system'})</td>
               <td>
-                {event.action} {event.entityType} {event.capability ?? event.planKey ?? event.entityId}
+                {TRANSITION_TEXT[event.action]
+                  ? 'the passage of time'
+                  : `${event.actor.id} (${event.actor.kind === 'PERSON' ? 'person' : 'system'})`}
+              </td>
+              <td>
+                {TRANSITION_TEXT[event.action] ? (
+                  <>
+                    {event.entityId} on {event.capability ?? event.entityId} {TRANSITION_TEXT[event.action]}
+                  </>
+                ) : (
+                  <>
+                    {event.action} {event.entityType} {event.capability ?? event.planKey ?? event.entityId}
+                  </>
+                )}
                 {event.reason && ` — ${event.reason}`}
                 {event.affectedAccountCount != null && ` — affected ${event.affectedAccountCount} accounts`}
               </td>

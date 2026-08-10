@@ -56,6 +56,13 @@ export type OverrideEffect =
   | 'NO_EFFECT_PLAN_MORE_GENEROUS'
   | 'NO_EFFECT_NOT_MORE_RESTRICTIVE'
 
+/**
+ * What an override is doing at one moment (002 c18). The service computes it — the SPA must never
+ * derive `ENDED` by comparing `expiresOn` to the browser's clock, which would put a second
+ * implementation of a date rule in a different time zone from the service's.
+ */
+export type OverrideStanding = 'IN_FORCE' | 'PENDING' | 'ENDED' | 'REMOVED'
+
 export interface Override {
   id: string
   capability: string
@@ -64,7 +71,11 @@ export interface Override {
   reason: string
   createdBy: string
   createdAt: string
-  effectNow: OverrideEffect
+  /** Only ever set while the override is IN_FORCE; `standing` describes every other state. */
+  effectNow: OverrideEffect | null
+  startsOn?: string | null
+  expiresOn?: string | null
+  standing: OverrideStanding
 }
 
 export type EntitlementSource = 'CAPABILITY_DEFAULT' | 'PLAN' | 'GRANT' | 'HOLD'
@@ -109,7 +120,13 @@ export interface TraceCandidate {
   reason: string
   createdBy: string
   createdAt: string
+  /** Includes the three `NOT_IN_FORCE_*` outcomes since 002. Typed as `string` since v1, so
+   *  new outcomes need new labels rather than a type change. */
   outcome: string
+  startsOn?: string | null
+  expiresOn?: string | null
+  /** The day it stopped counting: expiry-day-plus-one, or the day it was removed (c20). */
+  notInForceSince?: string | null
 }
 
 export interface Trace {

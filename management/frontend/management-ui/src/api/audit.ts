@@ -6,6 +6,8 @@ export interface AuditQuery {
   planKey?: string
   actor?: string
   entityType?: string
+  /** c31 — the history is filterable by capability. */
+  capability?: string
   from?: string
   to?: string
   cursor?: string

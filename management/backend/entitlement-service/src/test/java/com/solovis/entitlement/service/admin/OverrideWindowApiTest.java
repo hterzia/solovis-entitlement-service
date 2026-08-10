@@ -139,9 +139,12 @@ class OverrideWindowApiTest {
 		overrideService.delete(account, created.overrideId(), "cancelled before it began");
 
 		assertThat(publishedVersion()).isEqualTo(versionBefore);
-		assertThat(accountService.get(account).overrides())
-				.as("removed overrides leave the live list; the record itself survives (c17)")
-				.isEmpty();
+		assertThat(onlyOverride().standing())
+				.as("the record survives its removal, marked as such — c17, and one of c18's four states")
+				.isEqualTo("REMOVED");
+		assertThat(onlyOverride().effectNow())
+				.as("and it is doing nothing to the result")
+				.isNull();
 	}
 
 	@Test

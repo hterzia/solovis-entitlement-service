@@ -165,6 +165,20 @@ public class AccountOverrideRepository {
 				.list();
 	}
 
+	/**
+	 * Every override this account has ever had, removed ones included — screen 3 groups by standing
+	 * and c18 names all four states, so the account view cannot be built from the live set alone.
+	 *
+	 * <p>Unbounded by design, and the reason the UI collapses the removed group: the record of a
+	 * removal survives for ever (c17), so this list only grows.
+	 */
+	public List<AccountOverrideRow> findAllForAccount(long accountId) {
+		return jdbcClient.sql("SELECT * FROM account_override WHERE account_id = :accountId ORDER BY capability_id, id")
+				.param("accountId", accountId)
+				.query(ROW_MAPPER)
+				.list();
+	}
+
 	/** Every in-force override across all accounts — snapshot assembly, which publishes only what is in force. */
 	public List<AccountOverrideRow> findAllInForce(LocalDate asOf) {
 		return jdbcClient.sql("SELECT * FROM account_override WHERE " + IN_FORCE)
