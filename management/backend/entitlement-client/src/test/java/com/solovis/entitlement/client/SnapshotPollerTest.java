@@ -314,4 +314,68 @@ class SnapshotPollerTest {
         Thread.sleep(100);
         assertThat(stub.versionCalls()).isLessThanOrEqualTo(calls + 1);
     }
+
+    // markUngatedAtStartup(): a replica seeded from disk cache (DiskCache does not persist
+    // conformance vectors) must not be treated as verified just because the service happens to
+    // report the same version — the equality fast path below must not let it dodge the gate.
+
+    @Test
+    void aReplicaSeededUngatedForcesAFullFetchAndGatesEvenWhenTheServiceReportsTheSameVersion() {
+        stub.respondVersion(100L, "2026-08-09T14:03:10.900Z", 1, 1);
+        stub.respondFull(feedAt(100L, null));
+        var before = holder.get();
+        var poller = poller();
+        poller.markUngatedAtStartup();
+
+        assertThat(poller.syncOnce()).isTrue();
+
+        assertThat(stub.fullCalls())
+            .as("the fast path must not short-circuit an ungated replica even at a matching version")
+            .isEqualTo(1);
+        assertThat(stub.deltaCalls()).isEqualTo(0);
+        assertThat(holder.get())
+            .as("a real gated swap must have happened, not just the equality shortcut returning success")
+            .isNotSameAs(before);
+        assertThat(holder.get().version()).isEqualTo(100L);
+    }
+
+    @Test
+    void aForcedFetchThatFailsTheGateOnAnUngatedReplicaDiscardsTheCandidateAndKeepsTheCacheReplicaServing() {
+        var badVector = "{\"kind\":\"conformance\",\"id\":\"a vector this engine disagrees with\","
+            + "\"model\":{\"account\":\"acct_c1\",\"capability\":\"api.access\","
+            + "\"capabilities\":[{\"kind\":\"capability\",\"key\":\"api.access\",\"area\":\"api\","
+            + "\"valueType\":\"SWITCH\",\"default\":{\"type\":\"SWITCH\",\"enabled\":false},"
+            + "\"status\":\"ACTIVE\"}],"
+            + "\"plans\":[{\"kind\":\"plan\",\"key\":\"p\",\"status\":\"ACTIVE\","
+            + "\"isDefaultForNewAccounts\":true,\"entitlements\":{}}],"
+            + "\"accounts\":[{\"kind\":\"account\",\"external\":\"acct_c1\",\"planKey\":\"p\"}],"
+            + "\"overrides\":[]},"
+            + "\"expect\":{\"allowed\":true,\"value\":{\"type\":\"SWITCH\",\"enabled\":true}}}";
+        stub.respondVersion(100L, "2026-08-09T14:03:10.900Z", 1, 1);
+        stub.respondFull(feedAt(100L, badVector));
+        var before = holder.get();
+        var poller = poller();
+        poller.markUngatedAtStartup();
+
+        assertThat(poller.syncOnce()).isFalse();
+
+        assertThat(holder.get()).isSameAs(before);
+        assertThat(poller.state().lastError()).isNotNull();
+    }
+
+    @Test
+    void afterOneSuccessfulGatedSyncFromAnUngatedSeedASubsequentSameVersionPollTakesTheFastPath() {
+        stub.respondVersion(100L, "2026-08-09T14:03:10.900Z", 1, 1);
+        stub.respondFull(feedAt(100L, null));
+        var poller = poller();
+        poller.markUngatedAtStartup();
+        assertThat(poller.syncOnce()).isTrue();
+        assertThat(stub.fullCalls()).isEqualTo(1);
+
+        assertThat(poller.syncOnce()).isTrue();
+
+        assertThat(stub.fullCalls())
+            .as("once gated, the ordinary equality fast path must resume rather than fetching forever")
+            .isEqualTo(1);
+    }
 }

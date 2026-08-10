@@ -42,6 +42,7 @@ final class SnapshotPoller implements AutoCloseable {
     private volatile boolean closed;
     private volatile Thread thread;
     private volatile boolean warnedStale;
+    private volatile boolean ungated;           // seeded replica has never passed the gate; see markUngatedAtStartup()
 
     record SyncState(Instant lastSuccessfulSync, String lastError, boolean stale) {}
 
@@ -84,6 +85,22 @@ final class SnapshotPoller implements AutoCloseable {
      */
     void markStaleAtStartup() {
         state.set(new SyncState(clock.instant(), null, true));
+    }
+
+    /**
+     * Called once, before {@link #start()}, alongside {@link #markStaleAtStartup()}, when the
+     * replica this poller was constructed with came from disk rather than a gated sync. {@link
+     * DiskCache} deliberately does not persist conformance vectors, so a cache-loaded replica has
+     * never actually been checked against this SDK's engine.
+     *
+     * <p>While this flag is set, {@link #syncOnce()} bypasses its equality fast path and forces a
+     * full fetch through {@link ConformanceGate} even when the service already reports the cached
+     * version — otherwise a same-version poll would call {@code succeed()} and report "current and
+     * verified" for a replica whose conformance was never actually run. The flag clears the moment
+     * a gated snapshot is swapped in, so ordinary polls do not pay for a full fetch forever.
+     */
+    void markUngatedAtStartup() {
+        ungated = true;
     }
 
     void start() {
@@ -153,30 +170,41 @@ final class SnapshotPoller implements AutoCloseable {
                 return false;
             }
             var current = holder.get();
-            if (version.version() == current.version()) {
+            if (!ungated && version.version() == current.version()) {
                 return succeed();
             }
             Replica candidate;
-            try {
-                // Scoped to the delta path only: the version endpoint is deliberately trivial and
-                // never reports snapshot-too-old (spec: snapshot-feed.md) — SnapshotTooOldException
-                // can only come from feed.delta() below, and OutOfOrderDeltaException /
-                // UnknownChangeKindException only from DeltaApplier.apply's inspection of the
-                // batch it returns, so both are covered by wrapping this one statement.
-                candidate = DeltaApplier.apply(current, feed.delta(current.version()));
-            } catch (SnapshotTooOldException | DeltaApplier.OutOfOrderDeltaException e) {
-                metrics.fullResync();
+            if (ungated) {
+                // The seeded replica has never passed the gate (a cache load — DiskCache does not
+                // persist conformance vectors). A delta would not give the gate anything complete
+                // to evaluate, and would also skip evaluation entirely at a matching version — so
+                // go straight to a full snapshot regardless of what the version poll reported.
                 candidate = feed.full();
-            } catch (DeltaApplier.UnknownChangeKindException e) {
-                halt("Feed delivered an unknown change kind '" + e.kind()
-                    + "'. Replication has stopped; the last good replica keeps serving.");
-                return false;
+            } else {
+                try {
+                    // Scoped to the delta path only: the version endpoint is deliberately trivial
+                    // and never reports snapshot-too-old (spec: snapshot-feed.md) —
+                    // SnapshotTooOldException can only come from feed.delta() below, and
+                    // OutOfOrderDeltaException / UnknownChangeKindException only from
+                    // DeltaApplier.apply's inspection of the batch it returns, so both are covered
+                    // by wrapping this one statement.
+                    candidate = DeltaApplier.apply(current, feed.delta(current.version()));
+                } catch (SnapshotTooOldException | DeltaApplier.OutOfOrderDeltaException e) {
+                    metrics.fullResync();
+                    candidate = feed.full();
+                } catch (DeltaApplier.UnknownChangeKindException e) {
+                    halt("Feed delivered an unknown change kind '" + e.kind()
+                        + "'. Replication has stopped; the last good replica keeps serving.");
+                    return false;
+                }
             }
             var gate = ConformanceGate.evaluate(candidate);
             if (!gate.passed()) {
                 metrics.conformanceFailed();
                 LOG.severe("Discarding a snapshot that failed the conformance gate; keeping version "
                     + current.version() + ". " + gate.reason());
+                // ungated stays set: the replica this poller serves is still unverified, so the
+                // next sync must force another full fetch rather than resuming the fast path.
                 return fail(gate.reason());
             }
             holder.set(candidate);
@@ -185,6 +213,7 @@ final class SnapshotPoller implements AutoCloseable {
             }
             metrics.snapshotVersion(candidate.version());
             metrics.resolverContract(candidate.resolverContract());
+            ungated = false;   // a gated snapshot is now serving; the fast path may resume
             return succeed();
         } catch (FeedUnavailableException e) {
             return fail(e.getMessage());

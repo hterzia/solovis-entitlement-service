@@ -187,7 +187,13 @@ public final class EntitlementClientBuilder {
 
         var poller = new SnapshotPoller(feed, holder, pollInterval, staleAfter, cache, metrics, clock);
         if (startingFromCache) {
+            // A cache-loaded replica has neither synced with the service nor ever been gated —
+            // DiskCache does not persist conformance vectors. Both facts must stay visible until a
+            // real sync corrects them: markUngatedAtStartup() forces the first sync to fetch and
+            // gate a full snapshot even at a matching version, instead of trusting the equality
+            // fast path for a replica that was never actually checked.
             poller.markStaleAtStartup();
+            poller.markUngatedAtStartup();
         }
         var client = new DefaultEntitlementClient(holder, poller, feed, clock, metrics);
         poller.start();
