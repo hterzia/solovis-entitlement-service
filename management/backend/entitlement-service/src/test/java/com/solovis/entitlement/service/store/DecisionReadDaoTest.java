@@ -103,6 +103,26 @@ class DecisionReadDaoTest {
 	}
 
 	@Test
+	void searchAccountsMatchesExternalIdOrNameAndHidesClosed() {
+		String suffix = unique();
+		long planId = seedPlan("plan_" + suffix);
+		String token = "north_" + suffix;
+		String matchExternalId = token;
+		accountRepository.insert(new AccountRow(null, matchExternalId, "Northwind Capital", planId,
+				"2026-08-10T00:00:00.000Z", "SYSTEM", "dao-test", "ACTIVE",
+				"2026-08-10T00:00:00.000Z", "2026-08-10T00:00:00.000Z"));
+		// Matches by name, not id — proves the OR — but CLOSED, so it must still be hidden.
+		accountRepository.insert(new AccountRow(null, "closed_" + suffix, "Old " + token + " Ltd", planId,
+				"2026-08-10T00:00:00.000Z", "SYSTEM", "dao-test", "CLOSED",
+				"2026-08-10T00:00:00.000Z", "2026-08-10T00:00:00.000Z"));
+		seedAccount("unrelated_" + suffix, planId, "ACTIVE");
+
+		List<AccountRow> hits = dao.searchAccounts(token, 10);
+
+		assertThat(hits).extracting(AccountRow::externalId).containsExactly(matchExternalId);
+	}
+
+	@Test
 	void planKeyByIdRoundTripsAndIsEmptyForUnknownId() {
 		String suffix = unique();
 		long planId = seedPlan("plan_" + suffix);

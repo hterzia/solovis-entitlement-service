@@ -35,6 +35,7 @@ export const handlers = [
       answerReuseMaxSeconds: 10,
       snapshotVersion: 48211,
       capabilityAreas: ['api', 'export', 'reports', 'seats', 'support'],
+      askEnabled: true,
     }),
   ),
 
@@ -298,6 +299,25 @@ export const handlers = [
     return HttpResponse.json({
       account, capability, allowed: true, value: { type: 'QUANTITY', amount: 0 },
       snapshotVersion: 48211, evaluatedAt: '2026-08-09T14:03:11.482Z', trace: RESULT_TRACE,
+    })
+  }),
+
+  // A default, sane ANSWERED response — individual tests override with server.use for
+  // CLARIFY/NO_MATCH/RETIRED_CAPABILITY/unavailable, since interpretation is otherwise a real
+  // model call this suite never makes.
+  http.post('/admin/v1/check/ask', async ({ request }) => {
+    const body = (await request.json()) as { question?: string }
+    if (!body.question || body.question.trim() === '') {
+      return problem(422, 'entitlement/validation-failed', 'Request failed validation.')
+    }
+    const capability = db.capabilities.find((c) => c.status === 'ACTIVE')!.key
+    return HttpResponse.json({
+      status: 'ANSWERED',
+      interpretation: { account: { external: db.account.account, name: db.account.name }, capability },
+      result: {
+        account: db.account.account, capability, allowed: true, value: { type: 'QUANTITY', amount: 0 },
+        snapshotVersion: 48211, evaluatedAt: '2026-08-09T14:03:11.482Z', trace: RESULT_TRACE,
+      },
     })
   }),
 

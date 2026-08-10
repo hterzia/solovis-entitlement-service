@@ -4,6 +4,7 @@ import com.solovis.entitlement.core.error.RetiredCapabilityException;
 import com.solovis.entitlement.core.error.UnknownAccountException;
 import com.solovis.entitlement.core.error.UnknownCapabilityException;
 import com.solovis.entitlement.service.api.SnapshotVersionHeader;
+import com.solovis.entitlement.service.ask.AskUnavailableException;
 import com.solovis.entitlement.service.store.DecisionReadDao;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -70,6 +71,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     public ResponseEntity<ProblemDetail> handleRetiredCapability(RetiredCapabilityException ex, HttpServletRequest request) {
         return respond(problem(ErrorCode.RETIRED_CAPABILITY, ex.getMessage(), request,
             Map.of("capability", ex.capabilityKey())), request);
+    }
+
+    @ExceptionHandler(AskUnavailableException.class)
+    public ResponseEntity<ProblemDetail> handleAskUnavailable(AskUnavailableException ex, HttpServletRequest request) {
+        return respond(problem(ErrorCode.ASK_UNAVAILABLE,
+            "The plain-English checker is not available right now; use the account and capability pickers.",
+            request, Map.of()), request);
     }
 
     @Override

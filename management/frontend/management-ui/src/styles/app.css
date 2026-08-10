@@ -793,6 +793,21 @@ body {
   color: var(--sv-slate-600);
 }
 
+/* The ask box: one field, one button. The question is the whole point of the row, so it takes
+   every pixel the "Ask" button doesn't need, rather than the form system's default label width. */
+.ask-form {
+  flex-wrap: nowrap;
+}
+
+.ask-form__label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ask-form__label .sv-field {
+  width: 100%;
+}
+
 /* The checker is showing the past. Persistent, and not dismissible, because the
    difference between "today" and "14 March" is the whole meaning of the screen. */
 .as-at-banner {

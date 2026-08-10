@@ -235,6 +235,94 @@ describe('CheckerRoute', () => {
     await user.click(screen.getByRole('button', { name: 'Check' }))
     await waitFor(() => expect(screen.queryByText('Copied.')).not.toBeInTheDocument())
   })
+
+  it('an answered ask fills the pickers and date field and the trace renders', async () => {
+    server.use(
+      http.post('/admin/v1/check/ask', () =>
+        HttpResponse.json({
+          status: 'ANSWERED',
+          interpretation: {
+            account: { external: 'acct_9931', name: 'Northwind Capital' },
+            capability: 'reports.monthly',
+            asAt: '2026-07-15',
+            dateMention: 'last month',
+          },
+          result: { account: 'acct_9931', capability: 'reports.monthly', allowed: true },
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(<CheckerRoute />)
+    await waitFor(() => expect(screen.getByLabelText('Ask')).not.toBeDisabled())
+    await user.type(screen.getByLabelText('Ask'), 'How many reports could Acme export last month?')
+    await user.click(screen.getByRole('button', { name: 'Ask' }))
+
+    await waitFor(() => expect(screen.getByLabelText('Account')).toHaveValue('acct_9931'))
+    expect(screen.getByLabelText('Capability')).toHaveValue('reports.monthly')
+    expect(screen.getByLabelText('As at (US Eastern)')).toHaveValue('2026-07-15')
+    await waitFor(() => expect(screen.getByText(/Most restrictive HOLD/)).toBeInTheDocument())
+  })
+
+  it('a CLARIFY pick runs the classic check', async () => {
+    server.use(
+      http.post('/admin/v1/check/ask', () =>
+        // Account ambiguous, capability already resolved — the shape AskService actually sends
+        // when AccountMatch.Candidates wins and exactly one capability key survived.
+        HttpResponse.json({
+          status: 'CLARIFY',
+          interpretation: { accountMention: 'Acme', capability: 'reports.monthly' },
+          accountCandidates: [
+            { external: 'acct_9931', name: 'Northwind Capital' },
+            { external: 'acme-emea', name: 'Acme EMEA' },
+          ],
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(<CheckerRoute />)
+    await waitFor(() => expect(screen.getByLabelText('Ask')).not.toBeDisabled())
+    await user.type(screen.getByLabelText('Ask'), 'Can Acme get reports?')
+    await user.click(screen.getByRole('button', { name: 'Ask' }))
+
+    const pick = await screen.findByRole('button', { name: 'Northwind Capital (acct_9931)' })
+    await user.click(pick)
+
+    await waitFor(() => expect(screen.getByText(/Most restrictive HOLD/)).toBeInTheDocument())
+  })
+
+  it('disables the ask box when askEnabled is false', async () => {
+    server.use(
+      http.get('/admin/v1/meta', () =>
+        HttpResponse.json({
+          changeVisibleEverywhereWithinSeconds: 60, answerReuseMaxSeconds: 10,
+          snapshotVersion: 48211, capabilityAreas: [], askEnabled: false,
+        }),
+      ),
+    )
+    renderWithProviders(<CheckerRoute />)
+    await waitFor(() => expect(screen.getByLabelText('Ask')).toBeDisabled())
+    expect(screen.getByText('Ask is unavailable — use the pickers below.')).toBeInTheDocument()
+  })
+
+  it('a NO_MATCH ask answer shows no "allowed:" text anywhere', async () => {
+    server.use(
+      http.post('/admin/v1/check/ask', () =>
+        HttpResponse.json({
+          status: 'NO_MATCH',
+          unmatched: { accountMention: 'Acme Ltd' },
+          detail: "No account matching 'Acme Ltd'.",
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(<CheckerRoute />)
+    await waitFor(() => expect(screen.getByLabelText('Ask')).not.toBeDisabled())
+    await user.type(screen.getByLabelText('Ask'), 'Can Acme Ltd export parquet?')
+    await user.click(screen.getByRole('button', { name: 'Ask' }))
+
+    await waitFor(() => expect(screen.getByText("No account matching 'Acme Ltd'.")).toBeInTheDocument())
+    expect(screen.queryByText(/Allowed:/)).not.toBeInTheDocument()
+  })
 })
 
 /** A decision over the seeded TIER capability `support`, whose tiers are community/standard/gold. */

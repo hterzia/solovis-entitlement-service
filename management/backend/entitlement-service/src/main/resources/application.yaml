@@ -33,6 +33,12 @@ entitlement:
     # One zone for the whole service. Dates an operator types mean this zone and no other.
     # Must be a zone whose midnight is unambiguous — asserted at startup (ServiceZone).
     zone: "${ENTITLEMENT_CLOCK_ZONE:America/New_York}"
+  ask:
+    # Blank api-key ⇒ no interpreter bean ⇒ /check/ask answers 503 ⇒ askEnabled: false.
+    # Loaded from the repo-root .env, never committed.
+    api-key: "${GOOGLE_AI_GEMINI_API_KEY:}"
+    model: gemini-3.5-flash-lite
+    timeout: 5s
   database:
     path: "${ENTITLEMENT_DB_PATH:./data/entitlement.db}"
     write-pool-size: 1

@@ -8,6 +8,7 @@ describe('getMeta', () => {
       answerReuseMaxSeconds: 10,
       snapshotVersion: 48211,
       capabilityAreas: ['api', 'export', 'reports', 'seats', 'support'],
+      askEnabled: true,
     })
   })
 })

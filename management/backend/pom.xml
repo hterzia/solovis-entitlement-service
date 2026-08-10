@@ -22,6 +22,7 @@
 		<sqlite-jdbc.version>3.49.1.0</sqlite-jdbc.version>
 		<springdoc-openapi.version>2.8.6</springdoc-openapi.version>
 		<jqwik.version>1.9.2</jqwik.version>
+		<langchain4j.version>1.18.0</langchain4j.version>
 	</properties>
 
 	<modules>
@@ -47,6 +48,11 @@
 				<artifactId>jqwik</artifactId>
 				<version>${jqwik.version}</version>
 				<scope>test</scope>
+			</dependency>
+			<dependency>
+				<groupId>dev.langchain4j</groupId>
+				<artifactId>langchain4j-google-ai-gemini</artifactId>
+				<version>${langchain4j.version}</version>
 			</dependency>
 		</dependencies>
 	</dependencyManagement>

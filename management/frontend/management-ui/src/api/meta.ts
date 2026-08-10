@@ -5,6 +5,7 @@ export interface ServiceMeta {
   answerReuseMaxSeconds: number
   snapshotVersion: number
   capabilityAreas: string[]
+  askEnabled: boolean
 }
 
 export function getMeta(): Promise<ServiceMeta> {
