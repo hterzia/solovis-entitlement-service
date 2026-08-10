@@ -9,6 +9,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
@@ -35,6 +37,21 @@ class AskServiceTest {
 		return new AskService(
 				(question, catalog, today) -> proposal,
 				(accountExternalId, capabilityKey, asAt) -> CHECK_PAYLOAD,
+				mention -> match,
+				CATALOGS,
+				FIXED_CLOCK);
+	}
+
+	/** Captures the asAt the checker port actually receives, and how many times it was called. */
+	private static AskService serviceCapturingAsAt(Proposal proposal, AccountMatch match,
+			AtomicReference<String> capturedAsAt, AtomicInteger checkerCalls) {
+		return new AskService(
+				(question, catalog, today) -> proposal,
+				(accountExternalId, capabilityKey, asAt) -> {
+					capturedAsAt.set(asAt);
+					checkerCalls.incrementAndGet();
+					return CHECK_PAYLOAD;
+				},
 				mention -> match,
 				CATALOGS,
 				FIXED_CLOCK);
@@ -161,6 +178,90 @@ class AskServiceTest {
 
 		assertThat(response.status()).isEqualTo(AskResponse.RETIRED_CAPABILITY);
 		assertThat(response.interpretation().capability()).isEqualTo("export.csv");
+	}
+
+	@Test
+	void noDateMeansThePortReceivesNull() {
+		AtomicReference<String> capturedAsAt = new AtomicReference<>("unset");
+		AtomicInteger checkerCalls = new AtomicInteger();
+
+		AskResponse response = serviceCapturingAsAt(
+				new Proposal("Acme Corp", List.of("export.parquet"), null),
+				new AccountMatch.One(account("acme", "Acme Corp")), capturedAsAt, checkerCalls)
+				.ask("Can Acme export parquet?");
+
+		assertThat(response.status()).isEqualTo(AskResponse.ANSWERED);
+		assertThat(response.interpretation().asAt()).isNull();
+		assertThat(response.interpretation().dateMention()).isNull();
+		assertThat(capturedAsAt).hasValue(null);
+		assertThat(checkerCalls).hasValue(1);
+	}
+
+	@Test
+	void aResolvedDateReachesThePortAsAnIsoString() {
+		AtomicReference<String> capturedAsAt = new AtomicReference<>();
+		AtomicInteger checkerCalls = new AtomicInteger();
+
+		AskResponse response = serviceCapturingAsAt(
+				new Proposal("Acme Corp", List.of("export.parquet"), null, "last month", "2026-07-15"),
+				new AccountMatch.One(account("acme", "Acme Corp")), capturedAsAt, checkerCalls)
+				.ask("How many exports could Acme do last month?");
+
+		assertThat(response.status()).isEqualTo(AskResponse.ANSWERED);
+		assertThat(response.interpretation().asAt()).isEqualTo("2026-07-15");
+		assertThat(response.interpretation().dateMention()).isEqualTo("last month");
+		assertThat(capturedAsAt).hasValue("2026-07-15");
+		assertThat(checkerCalls).hasValue(1);
+	}
+
+	@Test
+	void aDateMentionWithNoResolvedDateIsUnmatchedAndNeverReachesTheChecker() {
+		// Criterion 18: "recently" cannot be pinned to one day — never rounded into a guess.
+		AtomicReference<String> capturedAsAt = new AtomicReference<>();
+		AtomicInteger checkerCalls = new AtomicInteger();
+
+		AskResponse response = serviceCapturingAsAt(
+				new Proposal("Acme Corp", List.of("export.parquet"), null, "recently", null),
+				new AccountMatch.One(account("acme", "Acme Corp")), capturedAsAt, checkerCalls)
+				.ask("Did Acme export recently?");
+
+		assertThat(response.status()).isEqualTo(AskResponse.NO_MATCH);
+		assertThat(response.unmatched().dateMention()).isEqualTo("recently");
+		assertThat(response.detail()).contains("recently");
+		assertThat(checkerCalls).hasValue(0);
+	}
+
+	@Test
+	void anUnparseableResolvedDateIsUnmatchedAndNeverReachesTheChecker() {
+		// A malformed string is a broken interpretation, not a rejected date (§5) — still NO_MATCH.
+		AtomicReference<String> capturedAsAt = new AtomicReference<>();
+		AtomicInteger checkerCalls = new AtomicInteger();
+
+		AskResponse response = serviceCapturingAsAt(
+				new Proposal("Acme Corp", List.of("export.parquet"), null, "sometime", "July-ish"),
+				new AccountMatch.One(account("acme", "Acme Corp")), capturedAsAt, checkerCalls)
+				.ask("q");
+
+		assertThat(response.status()).isEqualTo(AskResponse.NO_MATCH);
+		assertThat(response.unmatched().dateMention()).isEqualTo("sometime");
+		assertThat(checkerCalls).hasValue(0);
+	}
+
+	@Test
+	void retiredCapabilityWithADateProceedsToTheChecker() {
+		// Criterion 20: retired-since-that-date is answered normally; 002's route states the
+		// retirement itself. Only the date-less case (already covered) short-circuits locally.
+		AtomicReference<String> capturedAsAt = new AtomicReference<>();
+		AtomicInteger checkerCalls = new AtomicInteger();
+
+		AskResponse response = serviceCapturingAsAt(
+				new Proposal("Acme Corp", List.of("export.csv"), null, "last month", "2026-07-15"),
+				new AccountMatch.One(account("acme", "Acme Corp")), capturedAsAt, checkerCalls)
+				.ask("Could Acme use CSV export last month?");
+
+		assertThat(response.status()).isEqualTo(AskResponse.ANSWERED);
+		assertThat(capturedAsAt).hasValue("2026-07-15");
+		assertThat(checkerCalls).hasValue(1);
 	}
 
 	@Test

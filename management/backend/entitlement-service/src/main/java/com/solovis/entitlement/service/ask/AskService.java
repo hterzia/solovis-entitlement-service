@@ -5,6 +5,7 @@ import com.solovis.entitlement.service.store.AccountRow;
 
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 
 /**
@@ -54,9 +55,27 @@ public class AskService {
 			return capabilityNotUnderstood(proposal, catalog);
 		}
 
-		if (keys.size() == 1 && catalog.find(keys.getFirst()).map(CapabilityCatalog.Entry::retired).orElse(false)) {
-			// Criterion 7: retirement is a fact worth stating, decided locally and before any
-			// account lookup or check — asking about a retired capability never reaches the checker.
+		// The date is resolved once, before anything downstream needs it. Absence of a date is
+		// never treated as one (c16); a mention too vague to pin to one day is unmatched (c18) —
+		// the local parse exists only to separate "the model could not pin this down" from "the
+		// model named a day"; once it has, every judgement about whether that day is answerable
+		// belongs to the checker's own point-in-time route (002's three refusals, delegated).
+		String dateMention = proposal.dateMention();
+		String asAt = null;
+		if (dateMention != null || proposal.resolvedDate() != null) {
+			LocalDate day = parseIsoOrNull(proposal.resolvedDate());
+			if (day == null) {
+				return AskResponse.noMatchDate(dateMention);
+			}
+			asAt = day.toString();
+		}
+
+		boolean retired = keys.size() == 1
+				&& catalog.find(keys.getFirst()).map(CapabilityCatalog.Entry::retired).orElse(false);
+		if (retired && asAt == null) {
+			// Criterion 7: retirement without a date is a plain statement, no check runs. With a
+			// date, 002's own route answers normally and states the retirement itself (criterion
+			// 20) — that case falls through to the checker below, not here.
 			return AskResponse.retired(keys.getFirst());
 		}
 
@@ -70,12 +89,11 @@ public class AskService {
 			case AccountMatch.One(AccountRow account) -> {
 				AskResponse.AccountRef ref = new AskResponse.AccountRef(account.externalId(), account.name());
 				if (keys.size() == 1) {
-					// asAt is always null until T7 adds date resolution — every question is about now.
-					yield AskResponse.answered(ref, keys.getFirst(),
-							checker.explain(account.externalId(), keys.getFirst(), null));
+					yield AskResponse.answered(ref, keys.getFirst(), asAt, dateMention,
+							checker.explain(account.externalId(), keys.getFirst(), asAt));
 				}
 				// Account resolved, capability ambiguous: the pick runs the classic check.
-				yield AskResponse.clarify(mention, List.of(ref), null, keys);
+				yield AskResponse.clarify(mention, List.of(ref), null, keys, asAt, dateMention);
 			}
 			case AccountMatch.Candidates(List<AccountRow> accounts) -> AskResponse.clarify(
 					mention,
@@ -83,7 +101,8 @@ public class AskService {
 							.map(row -> new AskResponse.AccountRef(row.externalId(), row.name()))
 							.toList(),
 					keys.size() == 1 ? keys.getFirst() : null,
-					keys.size() == 1 ? null : keys);
+					keys.size() == 1 ? null : keys,
+					asAt, dateMention);
 			case AccountMatch.TooMany() -> AskResponse.noMatch(mention, null,
 					"Several accounts match '%s' — be more specific.".formatted(mention));
 			case AccountMatch.None() -> AskResponse.noMatch(mention, null,
@@ -109,5 +128,17 @@ public class AskService {
 		return AskResponse.noMatch(null, mention, mention == null
 				? "Tell me which capability you mean."
 				: "Nothing in the registry matches '%s'.".formatted(mention));
+	}
+
+	private static LocalDate parseIsoOrNull(String value) {
+		if (value == null) {
+			return null;
+		}
+		try {
+			return LocalDate.parse(value.trim());
+		}
+		catch (DateTimeParseException e) {
+			return null;
+		}
 	}
 }

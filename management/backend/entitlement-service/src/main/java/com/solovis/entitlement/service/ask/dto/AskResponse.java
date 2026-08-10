@@ -26,31 +26,44 @@ public record AskResponse(
 	public record AccountRef(String external, String name) {
 	}
 
-	/** What was understood — displayed with every answer so a misread question is visible. */
-	public record Interpretation(AccountRef account, String accountMention, String capability) {
+	/**
+	 * What was understood — displayed with every answer so a misread question is visible.
+	 * {@code asAt}/{@code dateMention} are both null whenever the question named no date
+	 * (criterion 16 — absence is never treated as a date).
+	 */
+	public record Interpretation(AccountRef account, String accountMention, String capability,
+			String asAt, String dateMention) {
 	}
 
-	public record Unmatched(String accountMention, String capabilityMention) {
+	public record Unmatched(String accountMention, String capabilityMention, String dateMention) {
 	}
 
-	public static AskResponse answered(AccountRef account, String capability, Object result) {
-		return new AskResponse(ANSWERED, new Interpretation(account, null, capability), result,
+	public static AskResponse answered(AccountRef account, String capability, String asAt, String dateMention,
+			Object result) {
+		return new AskResponse(ANSWERED, new Interpretation(account, null, capability, asAt, dateMention), result,
 				null, null, null, null);
 	}
 
 	public static AskResponse clarify(String accountMention, List<AccountRef> accountCandidates,
-			String capability, List<String> capabilityCandidates) {
-		return new AskResponse(CLARIFY, new Interpretation(null, accountMention, capability), null,
-				accountCandidates, capabilityCandidates, null, null);
+			String capability, List<String> capabilityCandidates, String asAt, String dateMention) {
+		return new AskResponse(CLARIFY, new Interpretation(null, accountMention, capability, asAt, dateMention),
+				null, accountCandidates, capabilityCandidates, null, null);
 	}
 
 	public static AskResponse noMatch(String accountMention, String capabilityMention, String detail) {
 		return new AskResponse(NO_MATCH, null, null, null, null,
-				new Unmatched(accountMention, capabilityMention), detail);
+				new Unmatched(accountMention, capabilityMention, null), detail);
+	}
+
+	/** Criterion 18 — a date named but too vague to pin to one day is unmatched, never rounded. */
+	public static AskResponse noMatchDate(String dateMention) {
+		return new AskResponse(NO_MATCH, null, null, null, null,
+				new Unmatched(null, null, dateMention),
+				"'%s' isn't a date I can pin down — give me a day.".formatted(dateMention));
 	}
 
 	public static AskResponse retired(String capabilityKey) {
-		return new AskResponse(RETIRED_CAPABILITY, new Interpretation(null, null, capabilityKey), null,
+		return new AskResponse(RETIRED_CAPABILITY, new Interpretation(null, null, capabilityKey, null, null), null,
 				null, null, null,
 				"Capability '%s' is retired and no longer evaluable.".formatted(capabilityKey));
 	}
