@@ -8,6 +8,7 @@ import { queryKeys } from '../../queries/keys'
 import { TraceView } from '../../components/TraceView'
 import { ErrorNotice } from '../../components/ErrorNotice'
 import { copyText } from '../../lib/clipboard'
+import { AskBox } from './AskBox'
 
 /**
  * The three §6.3 answers, and only those three. Each is a thing the service knows and is telling the
@@ -90,6 +91,10 @@ export function CheckerRoute() {
   return (
     <div className="app-panel">
       <h1 className="app-page-title">Checker</h1>
+      <AskBox onResolved={(resolvedAccount, resolvedCapability, resolvedAsAt) => {
+        setAccount(resolvedAccount); setCapability(resolvedCapability); setAsAt(resolvedAsAt ?? ''); setOverrideRef('')
+        setSubmitted({ account: resolvedAccount, capability: resolvedCapability, asAt: resolvedAsAt }); setCopyOutcome(null)
+      }} />
       <form onSubmit={handleSubmit}>
         <label className="sv-label">Account
           <input list="checker-accounts" className="sv-field" aria-label="Account" value={account} disabled={overrideRef !== ''} onChange={(e) => setAccount(e.target.value)} />
