@@ -36,6 +36,8 @@ class MetaControllerTest {
             .andExpect(jsonPath("$.answerReuseMaxSeconds").value(10))
             .andExpect(jsonPath("$.snapshotVersion").isNumber())
             .andExpect(jsonPath("$.snapshotVersion").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)))
-            .andExpect(jsonPath("$.capabilityAreas").isArray());
+            .andExpect(jsonPath("$.capabilityAreas").isArray())
+            // No GOOGLE_AI_GEMINI_API_KEY in the test environment, so no interpreter bean exists.
+            .andExpect(jsonPath("$.askEnabled").value(false));
     }
 }
