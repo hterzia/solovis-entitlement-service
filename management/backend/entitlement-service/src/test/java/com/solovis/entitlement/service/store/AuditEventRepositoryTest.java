@@ -27,7 +27,7 @@ class AuditEventRepositoryTest {
 	PlanAdminService planAdminService;
 
 	private AuditEventRow event(String actorId, Long accountId, String occurredAt) {
-		return new AuditEventRow(null, occurredAt, "PERSON", actorId, "UI",
+		return AuditEventRow.operatorAct(null, occurredAt, "PERSON", actorId, "UI",
 				"PLAN_ENTITLEMENT", "pro", "UPDATE",
 				accountId, null, null, null, null, null, null);
 	}

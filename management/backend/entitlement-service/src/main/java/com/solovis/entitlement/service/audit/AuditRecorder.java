@@ -23,7 +23,8 @@ public class AuditRecorder {
             null, Timestamps.iso(clock.instant()), entry.actor().kind().name(), entry.actor().id(),
             entry.source(), entry.entityType(), entry.entityId(), entry.action(),
             entry.accountId(), entry.planId(), entry.capabilityId(),
-            entry.beforeJson(), entry.afterJson(), entry.reason(), entry.affectedAccountCount());
+            entry.beforeJson(), entry.afterJson(), entry.reason(), entry.affectedAccountCount(),
+            entry.windowTransition());
         return repository.insert(row);
     }
 }

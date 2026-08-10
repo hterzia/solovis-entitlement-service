@@ -66,7 +66,7 @@ class DecisionControllerTest {
             "2026-08-09T00:00:00.000Z", "2026-08-09T00:00:00.000Z"));
         accountRepository.insert(new AccountRow(null, "acct_t4_1", null, planId, "2026-08-09T00:00:00.000Z",
             "PERSON", "dev-operator", "ACTIVE", "2026-08-09T00:00:00.000Z", "2026-08-09T00:00:00.000Z"));
-        long auditSeq = auditEventRepository.insert(new AuditEventRow(null, "2026-08-09T00:00:00.000Z", "PERSON",
+        long auditSeq = auditEventRepository.insert(AuditEventRow.operatorAct(null, "2026-08-09T00:00:00.000Z", "PERSON",
             "dev-operator", "UI", "PLAN", "t4-free", "CREATE", null, null, null, null, null, null, null));
         snapshotVersionRepository.insert(new SnapshotVersionRow(null, "2026-08-09T00:00:00.000Z", auditSeq, "{}"));
     }

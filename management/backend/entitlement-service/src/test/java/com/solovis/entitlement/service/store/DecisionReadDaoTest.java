@@ -52,7 +52,7 @@ class DecisionReadDaoTest {
 	}
 
 	private long seedAuditEvent() {
-		return auditEventRepository.insert(new AuditEventRow(null, "2026-08-10T00:00:00.000Z", "SYSTEM",
+		return auditEventRepository.insert(AuditEventRow.operatorAct(null, "2026-08-10T00:00:00.000Z", "SYSTEM",
 				"dao-test", "API", "CAPABILITY", "decision-read-dao-test", "CREATE",
 				null, null, null, null, null, null, null));
 	}

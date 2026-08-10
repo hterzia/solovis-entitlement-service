@@ -266,7 +266,7 @@ class RecordViewAssemblerAgreementTest {
 	}
 
 	private long seedAuditEvent() {
-		return auditEventRepository.insert(new AuditEventRow(null, TS, "SYSTEM", "record-view-test", "API",
+		return auditEventRepository.insert(AuditEventRow.operatorAct(null, TS, "SYSTEM", "record-view-test", "API",
 				"CAPABILITY", "record-view-agreement-test", "CREATE", null, null, null, null, null, null, null));
 	}
 }

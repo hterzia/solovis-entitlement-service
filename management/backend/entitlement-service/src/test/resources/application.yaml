@@ -12,3 +12,7 @@ entitlement:
     # The sweep is driven explicitly by SnapshotVersionPrunerTest. Leaving the timer on would let a
     # background delete race every other test's fixtures on the shared context.
     prune-enabled: false
+  window:
+    # Same reasoning: WindowBoundaryRollerTest drives roll() explicitly. A background roll firing
+    # every 30s against a driven clock would publish boundaries in the middle of other assertions.
+    roll-enabled: false

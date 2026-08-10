@@ -7,6 +7,10 @@ spring:
     name: entitlement-service
   flyway:
     enabled: true
+    # SQL migrations only. V5 is Java — it rebuilds audit_event to widen a CHECK, which needs
+    # PRAGMA foreign_keys=OFF, which SQLite ignores inside a transaction, so it opts out of
+    # Flyway's. It reaches Flyway as a @Component: Boot collects JavaMigration beans and hands
+    # them over, which works regardless of what package it sits in.
     locations: classpath:db/migration
   jackson:
     default-property-inclusion: non_null

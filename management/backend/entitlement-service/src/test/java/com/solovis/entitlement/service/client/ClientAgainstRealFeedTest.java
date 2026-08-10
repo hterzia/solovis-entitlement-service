@@ -138,7 +138,7 @@ class ClientAgainstRealFeedTest {
         holdOverrideId = accountOverrideRepository.insert(AccountOverrideRow.openEnded(null, accountId, tierCapId,
             "HOLD", null, null, false, "silver", HOLD_REASON, TS, "dev-operator", "PERSON", null, null, null));
 
-        long auditSeq = auditEventRepository.insert(new AuditEventRow(null, TS, "PERSON", "dev-operator", "UI",
+        long auditSeq = auditEventRepository.insert(AuditEventRow.operatorAct(null, TS, "PERSON", "dev-operator", "UI",
             "PLAN", "t15-plan", "CREATE", null, null, null, null, null, null, null));
         snapshotVersionRepository.insert(new SnapshotVersionRow(null, TS, auditSeq, "{}"));
 

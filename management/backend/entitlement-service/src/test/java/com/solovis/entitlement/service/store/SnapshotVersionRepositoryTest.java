@@ -18,7 +18,7 @@ class SnapshotVersionRepositoryTest {
 	AuditEventRepository auditEventRepository;
 
 	private long newAuditSeq() {
-		return auditEventRepository.insert(new AuditEventRow(null, "2026-08-09T00:00:00.000Z", "PERSON", "a.reyes",
+		return auditEventRepository.insert(AuditEventRow.operatorAct(null, "2026-08-09T00:00:00.000Z", "PERSON", "a.reyes",
 				"UI", "PLAN_ENTITLEMENT", "pro", "UPDATE", null, null, null, null, null, null, null));
 	}
 
