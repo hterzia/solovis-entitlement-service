@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Design source of truth: `docs/superpowers/specs/2026-08-10-fuller-demo-seed-design.md`.
-- Reactor root is `management/backend`. Service tests need `-am`: `./mvnw -pl entitlement-service -am test`.
+- Reactor root is `management/backend`. Service tests need `-am`: `./mvnw -pl entitlement-service -am test`. Any `-Dtest=` run also needs `-Dsurefire.failIfNoSpecifiedTests=false`, because `-am` builds `entitlement-core` too and surefire fails the build when a named test matches nothing there.
 - Package root `com.solovis.entitlement.service.seed`.
 - No JPA. Timestamps are ISO-8601 UTC with milliseconds, always computed in Java — never `datetime('now')`.
 - Never call `Instant.now()` directly; inject `java.time.Clock`. `NoDirectClockAccessTest` scans `src/main/java` and fails the build on `Instant.now()`, `LocalDate.now()`, `System.currentTimeMillis()`, `Clock.systemUTC()`, `Clock.systemDefaultZone()` and `new Date()` anywhere except `ClockConfig.java`. `System.nanoTime()` is not banned.
@@ -131,7 +131,7 @@ Note: replace the helper with a static import of `org.assertj.core.api.Assertion
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd management/backend && ./mvnw -pl entitlement-service -am test -Dtest=SeedClockTest`
+Run: `cd management/backend && ./mvnw -pl entitlement-service -am test -Dtest=SeedClockTest -Dsurefire.failIfNoSpecifiedTests=false`
 Expected: FAIL — `SeedClock` does not exist (compilation error).
 
 - [ ] **Step 3: Write the implementation**
@@ -259,12 +259,12 @@ public class SeedClockConfig {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd management/backend && ./mvnw -pl entitlement-service -am test -Dtest=SeedClockTest`
+Run: `cd management/backend && ./mvnw -pl entitlement-service -am test -Dtest=SeedClockTest -Dsurefire.failIfNoSpecifiedTests=false`
 Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Prove the clock guard still holds**
 
-Run: `cd management/backend && ./mvnw -pl entitlement-service -am test -Dtest=NoDirectClockAccessTest`
+Run: `cd management/backend && ./mvnw -pl entitlement-service -am test -Dtest=NoDirectClockAccessTest -Dsurefire.failIfNoSpecifiedTests=false`
 Expected: PASS. This is the test that fails if `SeedClock` or `SeedClockConfig` reads the wall clock directly. If it fails, do not add an exemption — route through `ClockConfig.base`.
 
 - [ ] **Step 6: Prove the wiring both ways**
@@ -335,7 +335,7 @@ Note: these two tests share the suite's one SQLite file, so `anUnseededDatabaseR
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd management/backend && ./mvnw -pl entitlement-service -am test -Dtest=SeedStateTest`
+Run: `cd management/backend && ./mvnw -pl entitlement-service -am test -Dtest=SeedStateTest -Dsurefire.failIfNoSpecifiedTests=false`
 Expected: FAIL — `SeedState` does not exist.
 
 - [ ] **Step 3: Write the implementation**
@@ -398,7 +398,7 @@ public class SeedState {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd management/backend && ./mvnw -pl entitlement-service -am test -Dtest=SeedStateTest`
+Run: `cd management/backend && ./mvnw -pl entitlement-service -am test -Dtest=SeedStateTest -Dsurefire.failIfNoSpecifiedTests=false`
 Expected: PASS, 2 tests.
 
 - [ ] **Step 5: Commit**
@@ -570,7 +570,7 @@ class SeedDatasetTest {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd management/backend && ./mvnw -pl entitlement-service -am test -Dtest=SeedDatasetTest`
+Run: `cd management/backend && ./mvnw -pl entitlement-service -am test -Dtest=SeedDatasetTest -Dsurefire.failIfNoSpecifiedTests=false`
 Expected: FAIL — `SeedDataset` does not exist.
 
 - [ ] **Step 3: Write the implementation**
@@ -757,7 +757,7 @@ Note on `fingerprint`: it is a component of the record but never present in the 
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd management/backend && ./mvnw -pl entitlement-service -am test -Dtest=SeedDatasetTest`
+Run: `cd management/backend && ./mvnw -pl entitlement-service -am test -Dtest=SeedDatasetTest -Dsurefire.failIfNoSpecifiedTests=false`
 Expected: PASS, 12 tests.
 
 - [ ] **Step 5: Commit**
@@ -877,7 +877,7 @@ Append to `SeedDatasetTest`:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd management/backend && ./mvnw -pl entitlement-service -am test -Dtest=SeedDatasetTest`
+Run: `cd management/backend && ./mvnw -pl entitlement-service -am test -Dtest=SeedDatasetTest -Dsurefire.failIfNoSpecifiedTests=false`
 Expected: FAIL — the resource is null.
 
 - [ ] **Step 3: Author the dataset**
@@ -1032,7 +1032,7 @@ Note the two stories this puts on screen that nothing in the project currently s
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `cd management/backend && ./mvnw -pl entitlement-service -am test -Dtest=SeedDatasetTest`
+Run: `cd management/backend && ./mvnw -pl entitlement-service -am test -Dtest=SeedDatasetTest -Dsurefire.failIfNoSpecifiedTests=false`
 Expected: PASS, 16 tests. If validation rejects the file, the message names the offending entry — fix the JSON, not the validator.
 
 - [ ] **Step 7: Commit**
@@ -1512,7 +1512,7 @@ Note: three shapes must be checked against the source before running, and the ca
 
 - [ ] **Step 2: Run it**
 
-Run: `cd management/backend && ./mvnw -pl entitlement-service -am test -Dtest=DemoDataSeederIT`
+Run: `cd management/backend && ./mvnw -pl entitlement-service -am test -Dtest=DemoDataSeederIT -Dsurefire.failIfNoSpecifiedTests=false`
 Expected: PASS, 8 tests. A failure here is a real finding — read the message before adjusting the dataset.
 
 - [ ] **Step 3: Run the whole backend suite**
