@@ -1,6 +1,7 @@
 package com.solovis.entitlement.service.time;
 
 import com.solovis.entitlement.service.config.EntitlementClockProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -34,12 +35,23 @@ public class ClockConfig {
 	}
 
 	/**
-	 * Ticks in whole milliseconds because every stored and published timestamp is ISO-8601 with
+	 * The one construction of a wall clock in the service, extracted so {@code SeedClockConfig} can
+	 * decorate it without repeating it — and without putting a second wall-clock call in a file
+	 * {@code NoDirectClockAccessTest} does not exempt.
+	 *
+	 * <p>Ticks in whole milliseconds because every stored and published timestamp is ISO-8601 with
 	 * millisecond precision (contracts/README.md). Truncating at the source rather than at each
 	 * formatting site is what stops a microsecond tail reaching the wire.
 	 */
+	public static Clock base(ZoneId zone) {
+		return Clock.tick(Clock.system(zone), Duration.ofMillis(1));
+	}
+
+	// Mirrored by SeedClockConfig, which decorates this with a windable Clock while the demo seed
+	// runs. The two conditions are exhaustive and mutually exclusive: exactly one Clock bean exists.
 	@Bean
+	@ConditionalOnProperty(name = "entitlement.seed.enabled", havingValue = "false", matchIfMissing = true)
 	public Clock clock(ZoneId entitlementZone) {
-		return Clock.tick(Clock.system(entitlementZone), Duration.ofMillis(1));
+		return base(entitlementZone);
 	}
 }
